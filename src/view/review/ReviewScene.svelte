@@ -5,7 +5,7 @@
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
   import { deckPolygons, type DeckPolygon } from '../../lib/geometry/deck'
   import { floorWorldDatum, groundPad, levelField, pointInRing, wallDatum } from '../../lib/geometry/pad'
-  import { buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { BLOCK_HEIGHT, DEFAULT_STOREY_HEIGHT, FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -21,7 +21,13 @@
 
   let { sunDate }: Props = $props()
 
-  type WallMeshes = { key: string; wallId: string; datumY: number; geoms: BufferGeometry[] }
+  type WallMeshes = {
+    key: string
+    wallId: string
+    datumY: number
+    geoms: BufferGeometry[]
+    lintel: BufferGeometry | null
+  }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
 
   const WALL_HEAD = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT) * BLOCK_HEIGHT
@@ -91,12 +97,14 @@
         if (wall.skin === 'logical') continue
         const samples = bottomSamplesForWall(floor, wall)
         const geoms = buildWallGeometries(floor, wall, samples)
-        if (geoms.length === 0) continue
+        const lintel = buildLintelGeometry(floor, wall)
+        if (geoms.length === 0 && !lintel) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
           wallId: wall.id,
           datumY: floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0),
           geoms,
+          lintel,
         })
       }
     }
@@ -112,6 +120,7 @@
       major?.dispose()
       for (const wall of built) {
         for (const g of wall.geoms) g.dispose()
+        wall.lintel?.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
     }
@@ -297,6 +306,11 @@
           <T.MeshStandardMaterial color="#c4b5a0" />
         </T.Mesh>
       {/each}
+      {#if wall.lintel}
+        <T.Mesh geometry={wall.lintel} castShadow receiveShadow>
+          <T.MeshStandardMaterial color="#8a8680" />
+        </T.Mesh>
+      {/if}
     </T.Group>
   {/each}
 </Canvas>

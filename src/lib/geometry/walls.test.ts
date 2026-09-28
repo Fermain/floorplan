@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Floor, Wall } from '../model/types'
 import {
+  buildLintelGeometry,
   buildWallGeometries,
+  collectLintelSpans,
   collectWallBlockSpans,
   geometryTriangleCount,
   wallSolidContains,
@@ -205,5 +207,61 @@ describe('buildWallGeometries', () => {
       )
     expect(endU(0)).toBeCloseTo(4.075, 3)
     expect(endU(1)).toBeCloseTo(3.925, 3)
+  })
+})
+
+describe('lintels', () => {
+  const windowOpening = {
+    id: 'o1',
+    u: 1.5,
+    v: 0.9,
+    width: 0.9,
+    height: 1.2,
+    kind: 'window' as const,
+    aligned: true,
+  }
+
+  it('bears one course past the opening on each leaf', () => {
+    const wall = straightWall({ openings: [windowOpening] })
+    const floor = floorWithWall(wall)
+    const spans = collectLintelSpans(floor, wall)
+    expect(spans).toHaveLength(2)
+    for (const span of spans) {
+      expect(span.u0).toBeCloseTo(1.35, 5)
+      expect(span.u1).toBeCloseTo(2.55, 5)
+      expect(span.y0).toBeCloseTo(2.1, 5)
+      expect(span.y1).toBeCloseTo(2.315, 5)
+    }
+    expect(wallSolidContains(floor, wall, 1.95, 2.2, 0)).toBe(false)
+    expect(wallSolidContains(floor, wall, 1.4, 2.2, 0)).toBe(false)
+    expect(wallSolidContains(floor, wall, 1.4, 1.5, 0)).toBe(true)
+    expect(wallSolidContains(floor, wall, 1.95, 2.34, 0)).toBe(true)
+    const lintel = buildLintelGeometry(floor, wall)
+    expect(lintel).not.toBeNull()
+    expect(geometryTriangleCount(lintel!)).toBeGreaterThan(0)
+    lintel?.dispose()
+  })
+
+  it('stops the bearing at the middle of a tight gap', () => {
+    const wall = straightWall({
+      openings: [
+        windowOpening,
+        { ...windowOpening, id: 'o2', u: 2.5 },
+      ],
+    })
+    const floor = floorWithWall(wall)
+    const first = collectLintelSpans(floor, wall).find((span) => span.leaf === 0 && span.u0 < 2)
+    const second = collectLintelSpans(floor, wall).find((span) => span.leaf === 0 && span.u0 >= 2)
+    expect(first?.u1).toBeCloseTo(2.45, 5)
+    expect(second?.u0).toBeCloseTo(2.45, 5)
+  })
+
+  it('omits a lintel when the opening reaches the wall head', () => {
+    const wall = straightWall({
+      openings: [{ ...windowOpening, v: 2.2, height: 0.2 }],
+    })
+    const floor = floorWithWall(wall)
+    expect(collectLintelSpans(floor, wall)).toEqual([])
+    expect(buildLintelGeometry(floor, wall)).toBeNull()
   })
 })

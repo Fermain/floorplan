@@ -10,11 +10,12 @@
     locked: boolean
     frame: WallElevationFrame
     wallGeometries: BufferGeometry[]
+    lintelGeometry: BufferGeometry | null
     orthoCamera: OrthographicCamera | undefined
     onOrthoCamera: (camera: OrthographicCamera) => void
   }
 
-  let { locked, frame, wallGeometries, orthoCamera, onOrthoCamera }: Props = $props()
+  let { locked, frame, wallGeometries, lintelGeometry, orthoCamera, onOrthoCamera }: Props = $props()
 
   const center = $derived(wallCenterWorld(frame))
   const orbitTarget = $derived<[number, number, number]>([
@@ -67,4 +68,9 @@
       <T.MeshStandardMaterial color="#c4b5a0" />
     </T.Mesh>
   {/each}
+  {#if lintelGeometry}
+    <T.Mesh geometry={lintelGeometry}>
+      <T.MeshStandardMaterial color="#8a8680" />
+    </T.Mesh>
+  {/if}
 </Canvas>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
-  import { buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU } from '../../lib/model/openings'
@@ -116,10 +116,10 @@
     return { ...wall, openings }
   })
 
-  const wallGeometries = $derived.by((): BufferGeometry[] => {
+  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return []
+      return { blocks: [], lintel: null }
     }
     let samples: { u: number; y: number }[] | undefined
     if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
@@ -136,7 +136,10 @@
         samples = raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
       }
     }
-    return buildWallGeometries(floor, shown, samples)
+    return {
+      blocks: buildWallGeometries(floor, shown, samples),
+      lintel: buildLintelGeometry(floor, shown),
+    }
   })
 
   $effect(() => {
@@ -157,11 +160,13 @@
   })
 
   $effect(() => {
-    const geoms = wallGeometries
+    const geoms = wallModel.blocks
+    const lintel = wallModel.lintel
     return () => {
       for (const g of geoms) {
         g.dispose()
       }
+      lintel?.dispose()
     }
   })
 
@@ -404,7 +409,8 @@
       <ElevationScene
         {locked}
         {frame}
-        {wallGeometries}
+        wallGeometries={wallModel.blocks}
+        lintelGeometry={wallModel.lintel}
         {orthoCamera}
         {onOrthoCamera}
       />

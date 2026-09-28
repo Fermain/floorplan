@@ -3,6 +3,7 @@ import {
   BLOCK_LENGTH,
   BLOCK_THICKNESS,
   DEFAULT_STOREY_HEIGHT,
+  LINTEL_BEARING,
 } from '../plot/fixture'
 import type { Floor, Opening, Wall } from '../model/types'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
@@ -21,6 +22,14 @@ export type BlockSpan = {
   leaf: number
   y0: number
   y1: number
+}
+
+export type LintelSpan = {
+  u0: number
+  u1: number
+  y0: number
+  y1: number
+  leaf: number
 }
 
 type Vec2 = { x: number; z: number }
@@ -179,6 +188,74 @@ function openingAffectsCourse(
   return intervalsOverlap(range.y0, range.y1, v0, v1)
 }
 
+const WALL_HEAD = COURSE_COUNT * BLOCK_HEIGHT
+
+function lintelBox(
+  opening: Opening,
+  others: Opening[],
+  uMin: number,
+  uMax: number,
+): { u0: number; u1: number; y0: number; y1: number } | null {
+  const head = opening.v + opening.height
+  if (head >= WALL_HEAD - 1e-6) return null
+  const y0 = head
+  const y1 = Math.min(WALL_HEAD, head + BLOCK_HEIGHT)
+  if (y1 - y0 <= 1e-4) return null
+  let u0 = Math.max(uMin, opening.u - LINTEL_BEARING)
+  let u1 = Math.min(uMax, opening.u + opening.width + LINTEL_BEARING)
+  const openingEnd = opening.u + opening.width
+  for (const other of others) {
+    const otherEnd = other.u + other.width
+    if (otherEnd <= opening.u + 1e-9) {
+      const mid = (otherEnd + opening.u) / 2
+      u0 = Math.max(u0, otherEnd, mid)
+    } else if (other.u >= openingEnd - 1e-9) {
+      const mid = (openingEnd + other.u) / 2
+      u1 = Math.min(u1, other.u, mid)
+    }
+  }
+  if (u1 - u0 <= 1e-4) return null
+  return { u0, u1, y0, y1 }
+}
+
+export function collectLintelSpans(floor: Floor, wall: Wall): LintelSpan[] {
+  if (wall.skin === 'logical') return []
+  const signs = leafSigns(wall.skin)
+  const spans: LintelSpan[] = []
+  for (let leaf = 0; leaf < signs.length; leaf++) {
+    const { uMin, uMax } = wallMeshURange(floor, wall, signs[leaf])
+    if (uMax - uMin <= 1e-9) continue
+    for (const opening of wall.openings) {
+      const others = wall.openings.filter((item) => item.id !== opening.id)
+      const box = lintelBox(opening, others, uMin, uMax)
+      if (!box) continue
+      spans.push({ ...box, leaf })
+    }
+  }
+  return spans
+}
+
+function carveSpan(
+  span: BlockSpan,
+  box: { u0: number; u1: number; y0: number; y1: number },
+): BlockSpan[] {
+  if (span.u1 <= box.u0 + 1e-9 || span.u0 >= box.u1 - 1e-9) return [span]
+  if (span.y1 <= box.y0 + 1e-9 || span.y0 >= box.y1 - 1e-9) return [span]
+  const parts: BlockSpan[] = []
+  const push = (u0: number, u1: number, y0: number, y1: number) => {
+    if (u1 - u0 > 1e-4 && y1 - y0 > 1e-4) {
+      parts.push({ ...span, u0, u1, y0, y1 })
+    }
+  }
+  if (span.u0 < box.u0) push(span.u0, Math.min(span.u1, box.u0), span.y0, span.y1)
+  if (span.u1 > box.u1) push(Math.max(span.u0, box.u1), span.u1, span.y0, span.y1)
+  const u0 = Math.max(span.u0, box.u0)
+  const u1 = Math.min(span.u1, box.u1)
+  if (span.y0 < box.y0) push(u0, u1, span.y0, Math.min(span.y1, box.y0))
+  if (span.y1 > box.y1) push(u0, u1, Math.max(span.y0, box.y1), span.y1)
+  return parts
+}
+
 function awayFromCorner(frame: WallFrame, cornerIsStart: boolean): Vec2 {
   if (cornerIsStart) return frame.dir
   return { x: -frame.dir.x, z: -frame.dir.z }
@@ -320,6 +397,15 @@ export function collectWallBlockSpans(
       }
     }
   }
+  for (const lintel of collectLintelSpans(floor, wall)) {
+    const next: BlockSpan[] = []
+    for (const span of spans) {
+      if (span.leaf !== lintel.leaf) next.push(span)
+      else next.push(...carveSpan(span, lintel))
+    }
+    spans.length = 0
+    spans.push(...next)
+  }
   return spans
 }
 
@@ -417,6 +503,30 @@ export function buildWallGeometries(
   }
   unitBox.dispose()
   return out
+}
+
+export function buildLintelGeometry(
+  floor: Floor,
+  wall: Wall,
+): BufferGeometry | null {
+  if (wall.skin === 'logical') return null
+  const spans = collectLintelSpans(floor, wall)
+  if (spans.length === 0) return null
+  const frame = buildFrame(floor, wall)
+  const signs = leafSigns(wall.skin)
+  const unitBox = new BoxGeometry(1, 1, 1)
+  const matrix = new Matrix4()
+  const parts: BufferGeometry[] = []
+  for (const span of spans) {
+    const leafSign = signs[span.leaf]
+    if (leafSign === undefined) continue
+    placeBox(frame, span.u0, span.u1, span.y0, span.y1, leafSign, unitBox, matrix, parts)
+  }
+  unitBox.dispose()
+  if (parts.length === 0) return null
+  const merged = mergeGeometries(parts, false)
+  for (const g of parts) g.dispose()
+  return merged ?? null
 }
 
 export function geometryTriangleCount(geometry: BufferGeometry): number {
