@@ -1,6 +1,6 @@
 # Floorplan multi-agent plan
 
-Status: accepted. Waves 0 and 1 are committed. The mesh decision is in "Spike results". Wave 2 is next.
+Status: accepted. Waves 0–2 are committed. The mesh decision is in "Spike results". Wave 3 is next.
 
 Orchestrator: the parent agent in this chat. Workers: Cursor Composer agents (`composer-2.5-fast`), local, `generalPurpose`. They share this working tree. They do not commit. Cloud agents are not part of this plan.
 
@@ -208,7 +208,7 @@ Document, roughly:
 - History: clone the document, cap 50, one entry per completed gesture
 - Fixture module loaded into a rune store
 
-Borrow the cycle walk and the intersection split from blueprint3d's model, and the floor list plus snapshot history from the Sims builder. Vitest: a crossing splits both walls; a closed rectangle yields one room; a logical wall splits that room into two; a segment outside the fixture ring is rejected; undo restores the previous document; aligned openings share sill and head until one is overridden.
+Borrow the cycle walk and the intersection split from blueprint3d's model, and the floor list plus snapshot history from the Sims builder. The room walk takes the next outgoing half-edge counter-clockwise, using `atan2(Δx, Δz)` as the heading. Cycles with positive shoelace area in x/z are rooms. A clockwise successor traces the exterior and is dropped. Vitest: a crossing splits both walls; a closed rectangle yields one room; a logical wall splits that room into two; a segment outside the fixture ring is rejected; undo restores the previous document; aligned openings share sill and head until one is overridden.
 
 Done when those tests pass and the store can load the fixture. No meshes, no views.
 
