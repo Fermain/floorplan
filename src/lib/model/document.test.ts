@@ -4,6 +4,8 @@ import {
   addCorner,
   addOpening,
   addWall,
+  removeOpening,
+  removeWall,
   setOpeningAligned,
   updateOpening,
 } from './mutations'
@@ -156,5 +158,41 @@ describe('aligned openings', () => {
     opening = realign.document.building.floors[0].walls[0].openings[0]
     expect(opening.v).toBe(DEFAULT_SILL)
     expect(opening.aligned).toBe(true)
+  })
+})
+
+describe('delete', () => {
+  it('removes a wall and keeps its corners', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const wallId = d.building.floors[0].walls[0].id
+    const removed = removeWall(d, fid, wallId)
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) return
+    expect(removed.document.building.floors[0].walls.some((w) => w.id === wallId)).toBe(false)
+    expect(removed.document.building.floors[0].corners).toHaveLength(4)
+    expect(removed.document.building.floors[0].walls).toHaveLength(3)
+  })
+
+  it('leaves the document unchanged when the wall is missing', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const missing = removeWall(d, floorId(d), 'missing')
+    expect(missing.ok).toBe(false)
+    expect(missing.document).toBe(d)
+  })
+
+  it('removes one opening', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const wallId = d.building.floors[0].walls[0].id
+    const added = addOpening(d, fid, wallId, 'window', 1)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    d = added.document
+    const openingId = d.building.floors[0].walls[0].openings[0].id
+    const removed = removeOpening(d, fid, wallId, openingId)
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) return
+    expect(removed.document.building.floors[0].walls[0].openings).toHaveLength(0)
   })
 })

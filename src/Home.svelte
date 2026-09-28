@@ -42,6 +42,7 @@
   <header>
     <h1>Floorplan</h1>
     <p>Three spikes. Open one and check it against what it should show.</p>
+    <p><a class="editor" href="/">Open the editor</a></p>
   </header>
   <ul>
     {#each experiments as experiment (experiment.href)}
@@ -78,6 +79,16 @@
   header p {
     margin: 0.35rem 0 0;
     color: #3f3f46;
+  }
+
+  a.editor {
+    display: inline-block;
+    margin-top: 0.75rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    background: #18181b;
+    color: #fff;
+    text-decoration: none;
   }
 
   h1 {

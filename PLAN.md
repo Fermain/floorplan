@@ -1,6 +1,6 @@
 # Floorplan multi-agent plan
 
-Status: accepted. Waves 0–2 are committed. The mesh decision is in "Spike results". Wave 3 is next.
+Status: accepted. Waves 0–5 are committed. The editor shell is the default page. `?exp=` still opens the spikes.
 
 Orchestrator: the parent agent in this chat. Workers: Cursor Composer agents (`composer-2.5-fast`), local, `generalPurpose`. They share this working tree. They do not commit. Cloud agents are not part of this plan.
 

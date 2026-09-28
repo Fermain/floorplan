@@ -4,16 +4,17 @@
   import { buildWallGeometries } from '../../lib/geometry/walls'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
-  import { documentStore } from '../../lib/state/document.svelte.ts'
+  import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
   import { pointerToWallUv } from './elevation'
   import { computeWallElevationFrame } from './wallFrame'
 
   interface Props {
     wallId?: string
+    onSelectOpening?: (id: string) => void
   }
 
-  let { wallId }: Props = $props()
+  let { wallId, onSelectOpening }: Props = $props()
 
   let locked = $state(false)
   let unalignedMode = $state(false)
@@ -55,12 +56,13 @@
   const wall = $derived(located?.wall)
 
   const displayWall = $derived.by((): Wall | undefined => {
-    if (!wall || !drag) return wall
+    const current = drag
+    if (!wall || !current) return wall
     return {
       ...wall,
       openings: wall.openings.map((opening) =>
-        opening.id === drag.id
-          ? { ...opening, u: drag.u, v: drag.aligned ? opening.v : drag.v }
+        opening.id === current.id
+          ? { ...opening, u: current.u, v: current.aligned ? opening.v : current.v }
           : opening,
       ),
     }
@@ -152,6 +154,7 @@
 
     const hit = openingAt(displayWall ?? wall, uv.u, uv.v)
     if (hit) {
+      onSelectOpening?.(hit.id)
       drag = {
         id: hit.id,
         originU: hit.u,
@@ -167,16 +170,25 @@
     }
 
     if (doorMode) {
-      documentStore.addOpening(floor.id, wall.id, 'door', uv.u)
+      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', uv.u))
       return
     }
 
     if (unalignedMode) {
-      documentStore.addOpening(floor.id, wall.id, 'window', uv.u, undefined, uv.v)
+      selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', uv.u, undefined, uv.v))
       return
     }
 
-    documentStore.addOpening(floor.id, wall.id, 'window', uv.u)
+    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', uv.u))
+  }
+
+  function selectAdded(result: { ok: boolean; document: typeof doc }): void {
+    if (!result.ok || !floor || !wall) return
+    const id = result.document.building.floors
+      .find((f) => f.id === floor.id)
+      ?.walls.find((w) => w.id === wall.id)
+      ?.openings.at(-1)?.id
+    if (id) onSelectOpening?.(id)
   }
 
   function onViewportPointerMove(event: PointerEvent) {

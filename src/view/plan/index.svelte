@@ -18,9 +18,15 @@
     startPoint?: { x: number; z: number }
   }
 
+  let {
+    selectedWallId = $bindable<string | null>(null),
+    activeFloorId = $bindable(''),
+  }: {
+    selectedWallId?: string | null
+    activeFloorId?: string
+  } = $props()
+
   let tool = $state<Tool>('select')
-  let activeFloorId = $state(documentStore.document.building.floors[0]?.id ?? '')
-  let selectedWallId = $state<string | null>(null)
   let pendingDraw = $state<PendingDraw | null>(null)
   let errorMessage = $state<string | null>(null)
   let pointerPlan = $state<{ x: number; z: number } | null>(null)
@@ -451,7 +457,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    min-height: 100vh;
+    min-height: 0;
     background: #f4f4f5;
   }
 

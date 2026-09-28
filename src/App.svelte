@@ -3,6 +3,7 @@
   import CsgExperiment from './experiments/csg/index.svelte'
   import OrthoExperiment from './experiments/ortho/index.svelte'
   import TerrainExperiment from './experiments/terrain/index.svelte'
+  import Editor from './view/shell/index.svelte'
 
   const exp = new URLSearchParams(window.location.search).get('exp')
 
@@ -18,7 +19,7 @@
 {#if title}
   <div class="shell">
     <header>
-      <a href="/">Experiments</a>
+      <a href="?exp=index">Spikes</a>
       <span>{title}</span>
     </header>
     <div class="stage">
@@ -31,8 +32,10 @@
       {/if}
     </div>
   </div>
-{:else}
+{:else if exp === 'index'}
   <Home />
+{:else}
+  <Editor />
 {/if}
 
 <style>

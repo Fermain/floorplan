@@ -76,6 +76,10 @@ export const documentStore = {
   ) => applyMutation((doc) => mutations.setOpeningAligned(doc, ...args)),
   addFloor: () => applyMutation((doc) => mutations.addFloor(doc)),
   removeFloor: (floorId: string) => applyMutation((doc) => mutations.removeFloor(doc, floorId)),
+  removeWall: (floorId: string, wallId: string) =>
+    applyMutation((doc) => mutations.removeWall(doc, floorId, wallId)),
+  removeOpening: (floorId: string, wallId: string, openingId: string) =>
+    applyMutation((doc) => mutations.removeOpening(doc, floorId, wallId, openingId)),
   setRoomFinish: (
     ...args: Parameters<typeof mutations.setRoomFinish> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.setRoomFinish(doc, ...args)),

@@ -254,6 +254,30 @@ export function addFloor(document: Document): MutationResult {
   })
 }
 
+export function removeWall(document: Document, floorId: string, wallId: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  if (!floor.walls.some((w) => w.id === wallId)) return fail(document, 'wall not found')
+  return ok(replaceFloor(document, { ...floor, walls: floor.walls.filter((w) => w.id !== wallId) }))
+}
+
+export function removeOpening(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  openingId: string,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((w) => w.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (!wall.openings.some((o) => o.id === openingId)) return fail(document, 'opening not found')
+  const walls = floor.walls.map((w) =>
+    w.id === wallId ? { ...w, openings: w.openings.filter((o) => o.id !== openingId) } : w,
+  )
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
 export function removeFloor(document: Document, floorId: string): MutationResult {
   if (document.building.floors.length <= 1) {
     return fail(document, 'cannot remove last floor')
