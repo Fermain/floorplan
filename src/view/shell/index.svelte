@@ -158,7 +158,6 @@
     {#if importError}
       <p class="error">{importError}</p>
     {/if}
-    <a href="?exp=index">Spikes</a>
   </header>
   <div class="stage">
     {#if mode === 'plan'}
@@ -229,11 +228,6 @@
   .error {
     margin: 0;
     color: #b91c1c;
-  }
-
-  a {
-    margin-left: auto;
-    color: #2563eb;
   }
 
   .stage {

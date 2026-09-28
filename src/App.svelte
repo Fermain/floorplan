@@ -19,7 +19,6 @@
 {#if title}
   <div class="shell">
     <header>
-      <a href="?exp=index">Spikes</a>
       <span>{title}</span>
     </header>
     <div class="stage">
@@ -59,10 +58,6 @@
     border-bottom: 1px solid #e4e4e7;
     background: #fff;
     font: 0.8125rem system-ui, sans-serif;
-  }
-
-  header a {
-    color: #2563eb;
   }
 
   .stage {
