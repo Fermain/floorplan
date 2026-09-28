@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Heightfield } from '../model/types'
-import { pointInPlot } from '../model/plot-check'
-import { fixtureHeightfield, fixturePlot } from '../plot/fixture'
-import { buildContourLines, contourInterval, contourPlanOverlay, isMajorContour } from './contours'
+import { fixtureHeightfield } from '../plot/fixture'
+import { buildContourLines, contourInterval, contourPlanPaths, isMajorContour } from './contours'
 
 function segmentsNear(
   positions: Float32Array,
@@ -83,7 +82,7 @@ describe('contour lines', () => {
     }
   })
 
-  it('projects the same lines onto the plan and labels major levels inside the plot', () => {
+  it('projects the same lines onto the plan', () => {
     const field: Heightfield = {
       originX: 0,
       originZ: 0,
@@ -92,16 +91,10 @@ describe('contour lines', () => {
       rows: 2,
       heights: [0, 0, 1, 1],
     }
-    const overlay = contourPlanOverlay(field, () => true)
+    const overlay = contourPlanPaths(field)
     expect(overlay.minor).toContain('M0 0.5L0.5 0.5')
     expect(overlay.minor).toContain('M0.5 0.5L1 0.5')
-
-    const plot = fixturePlot()
-    const site = contourPlanOverlay(fixtureHeightfield(), (x, z) => pointInPlot(plot, x, z))
-    expect(site.labels.map((label) => label.label)).toEqual(['1 m', '2 m'])
-    for (const label of site.labels) {
-      expect(pointInPlot(plot, label.x, label.z)).toBe(true)
-    }
+    expect(contourPlanPaths(fixtureHeightfield()).major.length).toBeGreaterThan(0)
   })
 
   it('draws nothing on a flat field', () => {

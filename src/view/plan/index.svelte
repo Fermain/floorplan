@@ -1,6 +1,6 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
-  import { contourPlanOverlay } from '../../lib/geometry/contours'
+  import { contourPlanPaths } from '../../lib/geometry/contours'
   import { solidWallPolygons, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms } from '../../lib/model/rooms'
@@ -67,21 +67,7 @@
   )
   const rooms = $derived(activeFloor ? deriveRooms(activeFloor) : [])
   const logicalWalls = $derived(activeFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
-  const contours = $derived.by(() => {
-    const ring = document.plot.ring
-    let x = 0
-    let z = 0
-    for (const [px, pz] of ring) {
-      x += px
-      z += pz
-    }
-    const n = ring.length || 1
-    return contourPlanOverlay(
-      document.heightfield,
-      (px, pz) => pointInPlot(document.plot, px, pz),
-      { x: x / n, z: z / n },
-    )
-  })
+  const contours = $derived(contourPlanPaths(document.heightfield))
 
   function plotBounds(ring: [number, number][], margin: number) {
     let minX = Infinity
@@ -647,22 +633,6 @@
         />
       {/if}
     </g>
-    {#each contours.labels as label (label.label)}
-      <text
-        x={label.x}
-        y={label.z}
-        fill="#3f3428"
-        stroke="#e7e5e4"
-        stroke-width="0.08"
-        paint-order="stroke"
-        font-size="0.55"
-        text-anchor="middle"
-        dominant-baseline="middle"
-        pointer-events="none"
-      >
-        {label.label}
-      </text>
-    {/each}
     {#if activeFloor}
       {#each rooms as room (room.cornerIds.join(','))}
         {@const pts = roomPolygonPoints(room.cornerIds, activeFloor)}
