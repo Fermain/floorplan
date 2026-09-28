@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Canvas, T } from '@threlte/core'
   import { OrbitControls } from '@threlte/extras'
-  import type { BufferGeometry } from 'three'
+  import { BufferGeometry, Float32BufferAttribute } from 'three'
+  import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { buildWallGeometries } from '../../lib/geometry/walls'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -19,6 +20,8 @@
   type FloorMeshes = { id: string; datumY: number; geoms: BufferGeometry[] }
 
   let groundGeometry = $state<BufferGeometry | null>(null)
+  let contourMinor = $state<BufferGeometry | null>(null)
+  let contourMajor = $state<BufferGeometry | null>(null)
   let floorMeshes = $state<FloorMeshes[]>([])
 
   const doc = $derived(documentStore.document)
@@ -68,6 +71,9 @@
     const heightfield = doc.heightfield
     const floors = doc.building.floors
     const ground = buildGroundGeometry(heightfield)
+    const contours = buildContourLines(heightfield, CONTOUR_LIFT_M)
+    const minor = lineGeometry(contours.minor)
+    const major = lineGeometry(contours.major)
     const built: FloorMeshes[] = floors.map((floor) => {
       const geoms: BufferGeometry[] = []
       for (const wall of floor.walls) {
@@ -80,9 +86,13 @@
       return { id: floor.id, datumY: floor.index === 0 ? 0 : floor.datumHeight, geoms }
     })
     groundGeometry = ground
+    contourMinor = minor
+    contourMajor = major
     floorMeshes = built
     return () => {
       ground.dispose()
+      minor?.dispose()
+      major?.dispose()
       for (const f of built) {
         for (const g of f.geoms) {
           g.dispose()
@@ -90,6 +100,13 @@
       }
     }
   })
+
+  function lineGeometry(positions: Float32Array): BufferGeometry | null {
+    if (positions.length < 6) return null
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    return geometry
+  }
 
   function configureSunLight(light: import('three').DirectionalLight) {
     light.target.position.set(plotCenter.x, plotCenter.y, plotCenter.z)
@@ -146,6 +163,16 @@
     <T.Mesh geometry={groundGeometry} receiveShadow>
       <T.MeshStandardMaterial color="#6b8f71" />
     </T.Mesh>
+  {/if}
+  {#if contourMinor}
+    <T.LineSegments geometry={contourMinor}>
+      <T.LineBasicMaterial color="#3f3428" />
+    </T.LineSegments>
+  {/if}
+  {#if contourMajor}
+    <T.LineSegments geometry={contourMajor}>
+      <T.LineBasicMaterial color="#1a120c" />
+    </T.LineSegments>
   {/if}
 
   {#each floorMeshes as floor (floor.id)}
