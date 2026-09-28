@@ -1,6 +1,7 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
   import { contourPlanPaths } from '../../lib/geometry/contours'
+  import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
   import { isUnlandedWall } from '../../lib/geometry/support'
   import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
@@ -1289,6 +1290,9 @@
     if (activeStoreyIndex >= 2) extra.push('Empirical masonry rules stop at two storeys.')
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
       extra.push('A wall on this storey does not land on a wall below.')
+    }
+    if (storeyHasLongSolidWall(levelFloors)) {
+      extra.push('A straight wall is longer than 8 m and wants a movement joint.')
     }
     const main = drawHintBody
     if (extra.length === 0) return main
