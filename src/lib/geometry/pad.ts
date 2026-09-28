@@ -1,7 +1,10 @@
 import { cornerById, signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
 import type { Document, Floor, Heightfield } from '../model/types'
+import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import { bilinearHeight } from './terrain'
+
+const WALL_OUTSTAND_M = CAVITY / 2 + BLOCK_THICKNESS
 
 export type Ring = { x: number; z: number }[]
 
@@ -111,13 +114,48 @@ export function groundPad(doc: Document): GroundPad | null {
   return { datum, rings }
 }
 
+function distanceToSegment(
+  x: number,
+  z: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number {
+  const dx = bx - ax
+  const dz = bz - az
+  const len2 = dx * dx + dz * dz
+  if (len2 === 0) return Math.hypot(x - ax, z - az)
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2))
+  return Math.hypot(x - (ax + t * dx), z - (az + t * dz))
+}
+
+export function ringDistance(ring: Ring, x: number, z: number): number {
+  if (pointInRing(ring, x, z)) return 0
+  let best = Infinity
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    best = Math.min(
+      best,
+      distanceToSegment(x, z, ring[j].x, ring[j].z, ring[i].x, ring[i].z),
+    )
+  }
+  return best
+}
+
+export function padBleed(field: Heightfield): number {
+  return field.cellSize * Math.SQRT2 + WALL_OUTSTAND_M
+}
+
 export function levelField(field: Heightfield, rings: Ring[], datum: number): Heightfield {
   const heights = field.heights.slice()
+  const bleed = padBleed(field)
   for (let r = 0; r < field.rows; r++) {
     for (let c = 0; c < field.cols; c++) {
       const x = field.originX + c * field.cellSize
       const z = field.originZ + r * field.cellSize
-      if (rings.some((ring) => pointInRing(ring, x, z))) heights[r * field.cols + c] = datum
+      if (rings.some((ring) => ringDistance(ring, x, z) <= bleed)) {
+        heights[r * field.cols + c] = datum
+      }
     }
   }
   return { ...field, heights }

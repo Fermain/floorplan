@@ -83,6 +83,8 @@ describe('ground pad', () => {
     expect(pad.datum).toBeCloseTo(4, 5)
     const leveled = levelField(linearField(), pad.rings, pad.datum)
     expect(leveled.heights[2 * 9 + 4]).toBeCloseTo(4, 5)
+    expect(leveled.heights[2 * 9 + 1]).toBeCloseTo(4, 5)
+    expect(leveled.heights[1]).toBeCloseTo(4, 5)
     expect(leveled.heights[0]).toBe(0)
   })
 
