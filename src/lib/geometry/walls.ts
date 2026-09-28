@@ -240,7 +240,7 @@ function miterUAtCorner(
     const otherLeft = leftWhenWalking(otherAway)
     const cross = away.x * otherAway.z - away.z * otherAway.x
     if (Math.abs(cross) < 1e-8) continue
-    const mateSide = -Math.sign(cross) * side
+    const mateSide = -side
     const mateOffset = other.skin === 'single' ? 0 : mateSide * LEAF_OFFSET
     const otherOrigin = {
       x: corner.x + mateOffset * otherLeft.x,

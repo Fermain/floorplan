@@ -10,10 +10,12 @@ export function nearestCorner(
   x: number,
   z: number,
   radius = CORNER_SNAP_M,
+  exceptId?: string,
 ): Corner | undefined {
   let best: Corner | undefined
   let bestD = radius
   for (const c of corners) {
+    if (c.id === exceptId) continue
     const d = Math.hypot(c.x - x, c.z - z)
     if (d <= bestD) {
       bestD = d
@@ -54,4 +56,18 @@ export function snapEndToModule(
     return { x: endX, z: endZ }
   }
   return snapped
+}
+
+export function smallerAngleDeg(ax: number, az: number, bx: number, bz: number): number | null {
+  const la = Math.hypot(ax, az)
+  const lb = Math.hypot(bx, bz)
+  if (la < 1e-9 || lb < 1e-9) return null
+  const dot = Math.min(1, Math.max(-1, (ax * bx + az * bz) / (la * lb)))
+  return (Math.acos(dot) * 180) / Math.PI
+}
+
+export function headingFromNorthDeg(dx: number, dz: number): number | null {
+  if (Math.hypot(dx, dz) < 1e-9) return null
+  const deg = (Math.atan2(dx, dz) * 180) / Math.PI
+  return (deg + 360) % 360
 }

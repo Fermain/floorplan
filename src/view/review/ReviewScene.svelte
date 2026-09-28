@@ -2,11 +2,13 @@
   import { Canvas, T } from '@threlte/core'
   import { OrbitControls } from '@threlte/extras'
   import type { BufferGeometry } from 'three'
-  import { buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { buildWallGeometries } from '../../lib/geometry/walls'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
   import type { Floor, Wall } from '../../lib/model/types'
+  import type { OrbitControls as OrbitControlsInstance } from 'three/examples/jsm/controls/OrbitControls.js'
+  import { liftAboveGround } from './ground-limit'
 
   interface Props {
     sunDate: Date
@@ -101,6 +103,19 @@
     light.shadow.camera.bottom = -extent
     light.shadow.camera.updateProjectionMatrix()
   }
+
+  function keepCameraAboveGround(controls: OrbitControlsInstance) {
+    const field = doc.heightfield
+    const camera = controls.object
+    const lifted = liftAboveGround(
+      camera.position.y,
+      controls.target.y,
+      bilinearHeight(field, camera.position.x, camera.position.z),
+      bilinearHeight(field, controls.target.x, controls.target.z),
+    )
+    camera.position.y = lifted.cameraY
+    controls.target.y = lifted.targetY
+  }
 </script>
 
 <Canvas shadows>
@@ -111,7 +126,10 @@
       ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
     }}
   >
-    <OrbitControls target={[plotCenter.x, plotCenter.y, plotCenter.z]} />
+    <OrbitControls
+      target={[plotCenter.x, plotCenter.y, plotCenter.z]}
+      onchange={(event) => keepCameraAboveGround(event.target)}
+    />
   </T.PerspectiveCamera>
 
   <T.AmbientLight intensity={0.35} />

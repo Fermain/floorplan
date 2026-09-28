@@ -112,6 +112,33 @@ describe('exportFloorSvg', () => {
     expect(pointInAnyPolygon(atU(1), polygons)).toBe(true)
   })
 
+  it('extends the outer leaf past an end-to-start corner', () => {
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    for (const [x, z] of [
+      [4, 4],
+      [10, 4],
+      [10, 10],
+    ] as const) {
+      const added = addCorner(d, fid, x, z)
+      expect(added.ok).toBe(true)
+      if (!added.ok) return
+      d = added.document
+    }
+    const ids = d.building.floors[0].corners.map((c) => c.id)
+    const south = addWall(d, fid, ids[0], ids[1], 'double')
+    expect(south.ok).toBe(true)
+    if (!south.ok) return
+    d = south.document
+    const east = addWall(d, fid, ids[1], ids[2], 'double')
+    expect(east.ok).toBe(true)
+    if (!east.ok) return
+    d = east.document
+    const polygons = solidWallPolygons(d, fid)
+    expect(pointInAnyPolygon([10.05, 3.92], polygons)).toBe(true)
+    expect(pointInAnyPolygon([9.9, 4.08], polygons)).toBe(true)
+  })
+
   it('scale bar spans one metre in user units', () => {
     const d = fixtureDocument()
     const fid = floorId(d)

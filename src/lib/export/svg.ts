@@ -1,3 +1,4 @@
+import { wallMeshURange } from '../geometry/walls'
 import { cornerById, wallLength } from '../model/geom'
 import type { Document, Floor, Opening, Wall } from '../model/types'
 import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
@@ -37,17 +38,22 @@ function openingIntervals(length: number, openings: Opening[]): [number, number]
   return mergeIntervals(raw)
 }
 
-function solidIntervals(length: number, openings: Opening[]): [number, number][] {
-  if (length <= 0) return []
+function solidIntervalsBetween(
+  u0: number,
+  u1: number,
+  length: number,
+  openings: Opening[],
+): [number, number][] {
+  if (u1 - u0 <= 0) return []
   const gaps = openingIntervals(length, openings)
   const solids: [number, number][] = []
-  let cursor = 0
+  let cursor = u0
   for (const [g0, g1] of gaps) {
-    if (g0 > cursor) solids.push([cursor, g0])
+    if (g0 > cursor) solids.push([cursor, Math.min(u1, g0)])
     cursor = Math.max(cursor, g1)
   }
-  if (cursor < length) solids.push([cursor, length])
-  return solids
+  if (cursor < u1) solids.push([cursor, u1])
+  return solids.filter(([a, b]) => b - a > 1e-9)
 }
 
 function wallFrame(wall: Wall, floor: Floor) {
@@ -98,8 +104,10 @@ export function solidWallPolygonsForFloor(floor: Floor): SvgPoint[][] {
     if (wall.skin === 'logical') continue
     const frame = wallFrame(wall, floor)
     if (frame.len <= 0) continue
-    const intervals = solidIntervals(frame.len, wall.openings)
     for (const leafOffset of leafOffsets(wall.skin)) {
+      const leafSign = leafOffset === 0 ? 0 : Math.sign(leafOffset)
+      const { uMin, uMax } = wallMeshURange(floor, wall, leafSign)
+      const intervals = solidIntervalsBetween(uMin, uMax, frame.len, wall.openings)
       for (const [u0, u1] of intervals) {
         if (u1 - u0 <= 0) continue
         polygons.push(skinQuad(frame, u0, u1, leafOffset))

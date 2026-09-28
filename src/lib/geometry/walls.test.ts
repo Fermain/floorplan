@@ -169,4 +169,41 @@ describe('buildWallGeometries', () => {
     expect(outer[0].u0).toBeCloseTo(-0.075, 3)
     expect(inner[0].u0).toBeCloseTo(0.075, 3)
   })
+
+  it('miters an end-to-start corner so the outer leaf extends and the inner leaf shortens', () => {
+    const south: Wall = {
+      id: 'south',
+      startCornerId: 'sw',
+      endCornerId: 'se',
+      skin: 'double',
+      openings: [],
+    }
+    const east: Wall = {
+      id: 'east',
+      startCornerId: 'se',
+      endCornerId: 'ne',
+      skin: 'double',
+      openings: [],
+    }
+    const floor: Floor = {
+      id: 'f0',
+      index: 0,
+      datumHeight: 0,
+      corners: [
+        { id: 'sw', x: 0, z: 0 },
+        { id: 'se', x: 4, z: 0 },
+        { id: 'ne', x: 4, z: 4 },
+      ],
+      walls: [south, east],
+      roomFinishes: {},
+    }
+    const endU = (leaf: number) =>
+      Math.max(
+        ...collectWallBlockSpans(floor, south)
+          .filter((s) => s.leaf === leaf && s.course === 0)
+          .map((s) => s.u1),
+      )
+    expect(endU(0)).toBeCloseTo(4.075, 3)
+    expect(endU(1)).toBeCloseTo(3.925, 3)
+  })
 })

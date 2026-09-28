@@ -6,7 +6,7 @@
   import type { Floor, WallSkin } from '../../lib/model/types'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { documentStore } from '../../lib/state/document.svelte'
-  import { nearestCorner, snapEndToModule } from './snap'
+  import { nearestCorner, snapEndToModule, CORNER_SNAP_M, headingFromNorthDeg, smallerAngleDeg } from './snap'
 
   type Tool = 'draw-double' | 'draw-logical' | 'select' | 'finish'
 
@@ -29,6 +29,7 @@
 
   let tool = $state<Tool>('select')
   let pendingDraw = $state<PendingDraw | null>(null)
+  let chainOriginId = $state<string | null>(null)
   let errorMessage = $state<string | null>(null)
   let pointerPlan = $state<{ x: number; z: number } | null>(null)
   let svgEl = $state<SVGSVGElement | undefined>(undefined)
@@ -209,7 +210,7 @@
       return
     }
 
-    const endCornerHit = nearestCorner(floor.corners, endX, endZ)
+    const endCornerHit = nearestCorner(floor.corners, endX, endZ, CORNER_SNAP_M, startId)
     let endId = endCornerHit?.id
     let endPoint = endCornerHit
       ? { x: endCornerHit.x, z: endCornerHit.z }
@@ -255,8 +256,18 @@
       rollbackCorners()
       return
     }
-    pendingDraw = null
-    pointerPlan = null
+    const origin = chainOriginId ?? startId
+    if (chainOriginId && endId === chainOriginId) {
+      pendingDraw = null
+      chainOriginId = null
+      pointerPlan = null
+      return
+    }
+    chainOriginId = origin
+    const placed = documentStore.document.building.floors.find((f) => f.id === activeFloorId)
+    const endCorner = placed ? cornerById(placed.corners, endId) : undefined
+    pendingDraw = { startCornerId: endId }
+    if (endCorner) pointerPlan = { x: endCorner.x, z: endCorner.z }
   }
 
   function onSvgPointerDown(event: PointerEvent) {
@@ -308,6 +319,7 @@
       if (event.key !== 'Escape' || !pendingDraw) return
       event.preventDefault()
       pendingDraw = null
+      chainOriginId = null
       pointerPlan = null
       errorMessage = null
     }
@@ -318,6 +330,7 @@
   function setTool(next: Tool) {
     tool = next
     pendingDraw = null
+    chainOriginId = null
   }
 
   function selectFloor(id: string) {
@@ -342,23 +355,120 @@
     }
   }
 
+  function angleReadout(
+    floor: Floor,
+    startCornerId: string | undefined,
+    start: { x: number; z: number },
+    dx: number,
+    dz: number,
+    length: number,
+  ): { label: string; path: string | null; x: number; z: number } | null {
+    if (length <= 0.05) return null
+    let best: { dx: number; dz: number; deg: number } | null = null
+    if (startCornerId) {
+      for (const wall of floor.walls) {
+        const atStart = wall.startCornerId === startCornerId
+        const atEnd = wall.endCornerId === startCornerId
+        if (!atStart && !atEnd) continue
+        const other = cornerById(floor.corners, atStart ? wall.endCornerId : wall.startCornerId)
+        if (!other) continue
+        const wx = other.x - start.x
+        const wz = other.z - start.z
+        const deg = smallerAngleDeg(wx, wz, dx, dz)
+        if (deg === null) continue
+        if (!best || deg < best.deg) best = { dx: wx, dz: wz, deg }
+      }
+    }
+    if (best) {
+      const a0 = Math.atan2(best.dz, best.dx)
+      const a1 = Math.atan2(dz, dx)
+      let delta = a1 - a0
+      while (delta > Math.PI) delta -= 2 * Math.PI
+      while (delta < -Math.PI) delta += 2 * Math.PI
+      const mid = a0 + delta / 2
+      return {
+        label: `${Math.round(best.deg)}°`,
+        path: arcPath(start.x, start.z, 0.75, a0, delta),
+        x: start.x + Math.cos(mid) * 1.15,
+        z: start.z + Math.sin(mid) * 1.15,
+      }
+    }
+    const heading = headingFromNorthDeg(dx, dz)
+    if (heading === null) return null
+    const len = Math.hypot(dx, dz)
+    return {
+      label: `${Math.round(heading)}° from N`,
+      path: null,
+      x: start.x + (dx / len) * 0.9 + (-dz / len) * 0.55,
+      z: start.z + (dz / len) * 0.9 + (dx / len) * 0.55,
+    }
+  }
+
+  function arcPath(cx: number, cz: number, radius: number, a0: number, delta: number): string | null {
+    if (Math.abs(delta) < 0.02) return null
+    const steps = 12
+    let d = ''
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (delta * i) / steps
+      const x = cx + radius * Math.cos(a)
+      const z = cz + radius * Math.sin(a)
+      d += `${i === 0 ? 'M' : 'L'}${fmt(x)} ${fmt(z)} `
+    }
+    return d.trim()
+  }
+
   const previewLine = $derived.by(() => {
     if (!pendingDraw || !pointerPlan || !activeFloor) return null
     const start = startCoords(activeFloor, pendingDraw)
     if (!start) return null
-    const length = Math.hypot(pointerPlan.x - start.x, pointerPlan.z - start.z)
+    const hit = nearestCorner(
+      activeFloor.corners,
+      pointerPlan.x,
+      pointerPlan.z,
+      CORNER_SNAP_M,
+      pendingDraw.startCornerId,
+    )
+    let end = hit ? { x: hit.x, z: hit.z } : { x: pointerPlan.x, z: pointerPlan.z }
+    if (!hit) {
+      end = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
+    }
+    const dx = end.x - start.x
+    const dz = end.z - start.z
+    const length = Math.hypot(dx, dz)
     const allowed =
       length <= 0.05 ||
-      segmentAllowedInPlot(document.plot, start.x, start.z, pointerPlan.x, pointerPlan.z)
-    return { x1: start.x, z1: start.z, x2: pointerPlan.x, z2: pointerPlan.z, length, allowed }
+      segmentAllowedInPlot(document.plot, start.x, start.z, end.x, end.z)
+    return {
+      x1: start.x,
+      z1: start.z,
+      x2: end.x,
+      z2: end.z,
+      length,
+      allowed,
+      cornerId: hit?.id,
+      angle: angleReadout(activeFloor, pendingDraw.startCornerId, start, dx, dz, length),
+    }
+  })
+
+  const hoveredCorner = $derived.by(() => {
+    if (!pointerPlan || !activeFloor) return undefined
+    return nearestCorner(
+      activeFloor.corners,
+      pointerPlan.x,
+      pointerPlan.z,
+      CORNER_SNAP_M,
+      pendingDraw?.startCornerId,
+    )
   })
 
   const drawHint = $derived.by(() => {
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
-    if (!previewLine) return 'Click inside the plot to start a wall, then click the end.'
-    if (previewLine.length <= 0.05) return 'Click to place the end. Escape cancels.'
-    if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m`
-    return `Click to place the end, ${previewLine.length.toFixed(2)} m. Escape cancels.`
+    if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Escape stops.'
+    if (previewLine.length <= 0.05) return 'Click the next corner. Escape stops.'
+    const angle = previewLine.angle ? `, ${previewLine.angle.label}` : ''
+    if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m${angle}`
+    const snap = previewLine.cornerId ? ' Snaps to the corner.' : ''
+    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Escape stops.`
   })
 
   function roomFill(finishId: string): string {
@@ -496,6 +606,48 @@
           stroke={previewLine.allowed ? '#2563eb' : '#b91c1c'}
           stroke-width="0.04"
           stroke-dasharray="0.15 0.1"
+          pointer-events="none"
+        />
+        {#if previewLine.angle?.path}
+          <path
+            d={previewLine.angle.path}
+            fill="none"
+            stroke="#2563eb"
+            stroke-width="0.03"
+            pointer-events="none"
+          />
+        {/if}
+        {#if previewLine.angle}
+          <text
+            x={previewLine.angle.x}
+            y={previewLine.angle.z}
+            fill="#1d4ed8"
+            font-size="0.42"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            pointer-events="none"
+          >
+            {previewLine.angle.label}
+          </text>
+        {/if}
+      {/if}
+      {#each activeFloor.corners as corner (corner.id)}
+        <circle
+          cx={corner.x}
+          cy={corner.z}
+          r={hoveredCorner?.id === corner.id ? 0.28 : 0.16}
+          fill={hoveredCorner?.id === corner.id ? '#2563eb' : '#18181b'}
+          pointer-events="none"
+        />
+      {/each}
+      {#if (tool === 'draw-double' || tool === 'draw-logical') && pointerPlan}
+        <circle
+          cx={pointerPlan.x}
+          cy={pointerPlan.z}
+          r={CORNER_SNAP_M}
+          fill="none"
+          stroke="#93c5fd"
+          stroke-width="0.025"
           pointer-events="none"
         />
       {/if}
