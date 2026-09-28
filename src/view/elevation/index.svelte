@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
+  import {
+    buildOpeningFrameGeometry,
+    buildOpeningGlassGeometry,
+  } from '../../lib/geometry/frames'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
@@ -126,10 +130,15 @@
     return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
-  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
+  const wallModel = $derived.by((): {
+    blocks: BufferGeometry[]
+    lintel: BufferGeometry | null
+    frame: BufferGeometry | null
+    glass: BufferGeometry | null
+  } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return { blocks: [], lintel: null }
+      return { blocks: [], lintel: null, frame: null, glass: null }
     }
     let samples: { u: number; y: number }[] | undefined
     if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
@@ -149,6 +158,8 @@
     return {
       blocks: buildWallGeometries(floor, shown, samples),
       lintel: buildLintelGeometry(floor, shown),
+      frame: buildOpeningFrameGeometry(floor, shown),
+      glass: buildOpeningGlassGeometry(floor, shown),
     }
   })
 
@@ -172,11 +183,15 @@
   $effect(() => {
     const geoms = wallModel.blocks
     const lintel = wallModel.lintel
+    const frameGeom = wallModel.frame
+    const glass = wallModel.glass
     return () => {
       for (const g of geoms) {
         g.dispose()
       }
       lintel?.dispose()
+      frameGeom?.dispose()
+      glass?.dispose()
     }
   })
 
@@ -425,6 +440,8 @@
         {frame}
         wallGeometries={wallModel.blocks}
         lintelGeometry={wallModel.lintel}
+        frameGeometry={wallModel.frame}
+        glassGeometry={wallModel.glass}
         {orthoCamera}
         {onOrthoCamera}
       />
