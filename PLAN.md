@@ -47,7 +47,7 @@ Plot ring, metres, CCW, unclosed:
 
 `[0, 0], [18, 1], [22, 14], [8, 20], [-2, 11]`
 
-True-north bearing: 18° clockwise from plan +Y. Geodetic origin for the sun: latitude 51.5, longitude -0.12. The origin is only for solar altitude and azimuth. Coordinates in the ring are already metres. A degree-valued GeoJSON or KML is rejected. Reprojection is out of scope.
+True-north bearing: 18° clockwise from plan north. In the model, plan north is world +Z and plan east is world +X (world Y is up). The older “plan +Y” wording is that same north axis. Geodetic origin for the sun: latitude 51.5, longitude -0.12. The origin is only for solar altitude and azimuth. Coordinates in the ring are already metres. A degree-valued GeoJSON or KML is rejected. Reprojection is out of scope.
 
 Heightfield: origin `(-4, -4)`, 28 by 28 cells, cell size 1 m. Height at cell `(c, r)` is `0.04 * c + 1.6 * smoothstep` across the diagonal, peaking near 2 m, so a wall across the plot has a visible grade change. Exact function lives next to the fixture and is shared.
 
@@ -105,7 +105,9 @@ Ground floor only. Upper floors sit on the datum.
 
 ### Sun
 
-`suncalc` `getPosition(date, lat, lng)` gives altitude and azimuth. The plot bearing rotates the building relative to true north. A directional light sits on that vector far enough to cover the plot, with a shadow map. Summer and winter presets are the solstices at the fixture origin. A scrubber moves the hour. This replaces the Sims colour arc.
+`suncalc` 2 `getPosition` returns altitude and azimuth in **degrees**. Azimuth is clockwise from north (0 = N, 90 = E). The package ships those types. `@types/suncalc` describes the old radians API and is not the source of truth.
+
+`sunDirection` returns a unit vector toward the sun in the building frame. Plan north is world +Z. The bearing rotates that frame clockwise about Y, so the building’s +Z lies east of true north by `northBearingDeg`. A directional light sits on that vector far enough to cover the plot, with a shadow map. Summer and winter presets are noon UTC on 21 June and 21 December at the fixture origin. A scrubber moves the hour.
 
 ### 2D export
 
