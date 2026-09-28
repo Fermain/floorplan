@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Canvas, T } from '@threlte/core'
   import { OrbitControls } from '@threlte/extras'
+  import { DoubleSide } from 'three'
   import { buildDoubleSkinWall, buildGroundGeometry } from './mesh'
 
   const groundGeometry = buildGroundGeometry()
@@ -25,7 +26,7 @@
     </T.Mesh>
     {#each wall.leafGeometries as leafGeometry}
       <T.Mesh geometry={leafGeometry}>
-        <T.MeshStandardMaterial color="#c4b5a0" />
+        <T.MeshStandardMaterial color="#c4b5a0" side={DoubleSide} />
       </T.Mesh>
     {/each}
   </Canvas>
