@@ -1,5 +1,6 @@
 <script lang="ts">
   import { exportFloorSvg } from '../../lib/export/svg'
+  import { loadHeightfield, loadPlot } from '../../lib/plot/load'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationView from '../elevation/index.svelte'
   import PlanView from '../plan/index.svelte'
@@ -11,6 +12,7 @@
   let selectedWallId = $state<string | null>(null)
   let selectedOpeningId = $state<string | null>(null)
   let activeFloorId = $state('')
+  let importError = $state('')
 
   $effect(() => {
     const doc = documentStore.document
@@ -96,6 +98,43 @@
     if (!selectedWallId) return
     mode = 'elevation'
   }
+
+  function explainImport(reason: string): string {
+    if (reason === 'existing walls leave the new plot') {
+      return 'Those walls sit outside the new plot. Remove them, or import a ring that contains them.'
+    }
+    return reason
+  }
+
+  async function readFile(event: Event): Promise<string | undefined> {
+    const input = event.currentTarget
+    if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
+    const text = await input.files[0].text()
+    input.value = ''
+    return text
+  }
+
+  async function onPlotFile(event: Event) {
+    const text = await readFile(event)
+    if (!text) return
+    try {
+      const result = documentStore.replacePlot(loadPlot(text))
+      importError = result.ok ? '' : explainImport(result.reason)
+    } catch (err) {
+      importError = err instanceof Error ? err.message : 'Could not read the plot.'
+    }
+  }
+
+  async function onHeightFile(event: Event) {
+    const text = await readFile(event)
+    if (!text) return
+    try {
+      const result = documentStore.replaceHeightfield(loadHeightfield(text))
+      importError = result.ok ? '' : explainImport(result.reason)
+    } catch (err) {
+      importError = err instanceof Error ? err.message : 'Could not read the heightfield.'
+    }
+  }
 </script>
 
 <div class="shell">
@@ -108,6 +147,17 @@
       <button type="button" class:active={mode === 'review'} onclick={() => (mode = 'review')}>Review</button>
     </nav>
     <button type="button" onclick={downloadSvg}>Download SVG</button>
+    <label class="file">
+      Import plot
+      <input type="file" accept=".geojson,.json,.kml,application/geo+json" onchange={onPlotFile} />
+    </label>
+    <label class="file">
+      Import height
+      <input type="file" accept=".json,application/json" onchange={onHeightFile} />
+    </label>
+    {#if importError}
+      <p class="error">{importError}</p>
+    {/if}
     <a href="?exp=index">Spikes</a>
   </header>
   <div class="stage">
@@ -132,6 +182,7 @@
   header {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 1rem;
     padding: 0.45rem 0.75rem;
     border-bottom: 1px solid #e4e4e7;
@@ -161,6 +212,23 @@
   button:disabled {
     color: #a1a1aa;
     cursor: default;
+  }
+
+  label.file {
+    padding: 0.35rem 0.65rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  label.file input {
+    display: none;
+  }
+
+  .error {
+    margin: 0;
+    color: #b91c1c;
   }
 
   a {

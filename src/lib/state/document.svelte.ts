@@ -80,6 +80,10 @@ export const documentStore = {
     applyMutation((doc) => mutations.removeWall(doc, floorId, wallId)),
   removeOpening: (floorId: string, wallId: string, openingId: string) =>
     applyMutation((doc) => mutations.removeOpening(doc, floorId, wallId, openingId)),
+  replacePlot: (plot: Parameters<typeof mutations.replacePlot>[1]) =>
+    applyMutation((doc) => mutations.replacePlot(doc, plot)),
+  replaceHeightfield: (heightfield: Parameters<typeof mutations.replaceHeightfield>[1]) =>
+    applyMutation((doc) => mutations.replaceHeightfield(doc, heightfield)),
   setRoomFinish: (
     ...args: Parameters<typeof mutations.setRoomFinish> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.setRoomFinish(doc, ...args)),

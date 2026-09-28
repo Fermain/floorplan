@@ -6,6 +6,7 @@ import {
   addWall,
   removeOpening,
   removeWall,
+  replacePlot,
   setOpeningAligned,
   updateOpening,
 } from './mutations'
@@ -194,6 +195,34 @@ describe('delete', () => {
     expect(removed.ok).toBe(true)
     if (!removed.ok) return
     expect(removed.document.building.floors[0].walls[0].openings).toHaveLength(0)
+  })
+})
+
+describe('replace plot', () => {
+  it('keeps the building when every wall stays inside', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const replaced = replacePlot(d, { ...d.plot, northBearingDeg: 20 })
+    expect(replaced.ok).toBe(true)
+    if (!replaced.ok) return
+    expect(replaced.document.plot.northBearingDeg).toBe(20)
+    expect(replaced.document.building.floors[0].walls).toHaveLength(4)
+  })
+
+  it('refuses a ring that leaves existing walls outside', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const replaced = replacePlot(d, {
+      ...d.plot,
+      ring: [
+        [0, 0],
+        [3, 0],
+        [3, 3],
+        [0, 3],
+      ],
+    })
+    expect(replaced.ok).toBe(false)
+    if (replaced.ok) return
+    expect(replaced.reason).toBe('existing walls leave the new plot')
+    expect(replaced.document).toBe(d)
   })
 })
 

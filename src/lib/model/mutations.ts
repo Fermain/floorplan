@@ -8,9 +8,11 @@ import { roomKey } from './rooms'
 import type {
   Document,
   Floor,
+  Heightfield,
   MutationResult,
   Opening,
   OpeningKind,
+  Plot,
   WallSkin,
 } from './types'
 
@@ -286,6 +288,21 @@ export function removeFloor(document: Document, floorId: string): MutationResult
     .filter((f) => f.id !== floorId)
     .map((f, index) => ({ ...f, index, datumHeight: index * FLOOR_TO_FLOOR }))
   return ok({ ...document, building: { floors } })
+}
+
+export function replacePlot(document: Document, plot: Plot): MutationResult {
+  for (const floor of document.building.floors) {
+    for (const wall of floor.walls) {
+      if (!wallSegmentInPlot(plot, floor.corners, wall.startCornerId, wall.endCornerId)) {
+        return fail(document, 'existing walls leave the new plot')
+      }
+    }
+  }
+  return ok({ ...document, plot })
+}
+
+export function replaceHeightfield(document: Document, heightfield: Heightfield): MutationResult {
+  return ok({ ...document, heightfield })
 }
 
 export function setRoomFinish(
