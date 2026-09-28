@@ -1,0 +1,18 @@
+{
+  "wallLengthM": 3.96,
+  "courses": 11,
+  "openingCount": 10,
+  "opening": {
+    "widthM": 0.28,
+    "heightM": 1.2,
+    "sillM": 0.9
+  },
+  "runs": 5,
+  "warmupExcluded": true,
+  "medianMs": {
+    "three-csg-ts": 100.89,
+    "three-bvh-csg": 113.2,
+    "extrude-holes": 0.37,
+    "block-gaps": 0.97
+  }
+}

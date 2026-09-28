@@ -1,6 +1,6 @@
 # Floorplan multi-agent plan
 
-Status: accepted. Wave 0 scaffold is committed. Wave 1 spikes are next.
+Status: accepted. Waves 0 and 1 are committed. The mesh decision is in "Spike results". Wave 2 is next.
 
 Orchestrator: the parent agent in this chat. Workers: Cursor Composer agents (`composer-2.5-fast`), local, `generalPurpose`. They share this working tree. They do not commit. Cloud agents are not part of this plan.
 
@@ -75,13 +75,11 @@ Leave the freeform thickness, the OBJ furniture, the Next.js app, and the single
 
 Leave the UNet, the Python server, and image-space coordinates. Our polygons are already in metres.
 
-### Mesh strategy, pending the spike
+### Mesh strategy
 
-The document stores block runs and openings. An opening is a gap in the courses it crosses, clipped to the block module in height and to the opening rectangle in length. That matches "geometry constrained by the blocks."
+Decided in Spike results. The document stores block runs and openings. An opening is a gap clipped out of the courses it crosses, in height to the course and in length to the opening rectangle. Whole blocks are not dropped. `three-csg-ts` and `three-bvh-csg` stay out of the edit path. Shape holes are a control, not the model.
 
-`three-csg-ts` is on trial for the visual solid. If ten openings on one double-skin wall take longer than a frame, production keeps the block-gap mesh. Shape holes are the middle control: one solid wall, rectangular holes, no BSP. The spike reports all three.
-
-Budgets, median of 5 runs after one warmup, timed around the operation only:
+Budgets used for the spike, median of 5 runs after one warmup, timed around the operation only:
 
 | Median | Consequence |
 | --- | --- |
@@ -89,7 +87,7 @@ Budgets, median of 5 runs after one warmup, timed around the operation only:
 | 16–100 ms | Worker, or defer until pointer-up |
 | over 100 ms | Drop CSG from the edit path |
 
-Live dragging never waits on CSG. Placement shows a marker. The solid updates on pointer-up.
+The measured medians are in Spike results. Live editing does not run CSG.
 
 ### Elevation click mapping
 
@@ -260,3 +258,22 @@ Roofs, stairs, furniture, textures, walkthrough, PDF, GLB, GeoTIFF, CRS reprojec
 ## After acceptance
 
 The orchestrator dispatches wave 0, reviews it, then wave 1 as three agents in one turn. Spike numbers are written back into a short "Spike results" section at the bottom of this file before wave 2. Implementation agents treat that section as the mesh decision.
+
+## Spike results
+
+Measured on this machine, median of 5 runs after one warmup. This section is the mesh decision.
+
+**Ortho.** A click on the locked elevation round-trips through the orthographic camera to within 5 mm, including a point near a corner. The elevation camera sets `manual` and `makeDefault`. Cameras are aimed with `oncreate`, never a `lookAt` prop.
+
+**Terrain.** Draped double-skin quad strips meet bilinear samples of the fixture field within 1 mm. Checked on the diagonal from `(0, 2)` to `(16, 14)`, where the base sits below 1 m, and on the crest from `(8, 8)` to `(22, 20)`, where the base rises through the 2.40 m datum. Leaves are centerlines offset by 0.075 m. The ground mesh is the 28 by 28 grid, one quad per cell.
+
+**CSG.** Wall length 3.96 m (9 blocks), 11 courses, ten openings of 0.28 by 1.20 m at a 0.90 m sill. A 0.90 m default window does not fit ten times on this wall.
+
+| Path | Median |
+| --- | ---: |
+| `three-csg-ts` | 100.89 ms |
+| `three-bvh-csg` | 113.20 ms |
+| extrude with holes | 0.37 ms |
+| block courses with overlapping blocks omitted | 0.97 ms |
+
+`three-csg-ts` is past the 100 ms ceiling, so it is not on the edit path and it does not move to a worker. Sequential subtraction also left `three-bvh-csg` slower than `three-csg-ts` on this mesh. Production walls are block courses with the opening clipped out of each course. The block-gap timing omitted any whole block that touched an opening; that is coarser than the clip wave 3 will build. No Go service.
