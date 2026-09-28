@@ -1,10 +1,22 @@
-import { FLOOR_TO_FLOOR } from '../plot/fixture'
 import { EPS, wallLength } from './geom'
 import { applyExistingWallSplits, findWallCrossings } from './intersect'
 import { newId } from './id'
-import { applyAligned, createOpening, defaultOpeningDimensions } from './openings'
+import {
+  applyAligned,
+  createOpening,
+  defaultOpeningDimensions,
+  doorWidthLimits,
+  maxOpeningWidth,
+  placeOpeningU,
+} from './openings'
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { roomKey } from './rooms'
+import {
+  blankStorey,
+  prepareStorey,
+  syncGroundUnits,
+  topStoreyIndex,
+} from './stories'
 import type {
   Document,
   Floor,
@@ -109,7 +121,9 @@ export function addWall(
     })
   }
 
-  return ok(replaceFloor(document, { ...workingFloor, walls: newWalls }))
+  let next = replaceFloor(document, { ...workingFloor, walls: newWalls })
+  if (floor.index === 0) next = syncGroundUnits(next)
+  return ok(next)
 }
 
 export function moveCorner(
@@ -144,6 +158,80 @@ export function moveCorner(
   return ok(replaceFloor(document, trialFloor))
 }
 
+export function moveCorners(
+  document: Document,
+  floorId: string,
+  cornerIds: string[],
+  dx: number,
+  dz: number,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const moving = new Set(cornerIds)
+  if (moving.size === 0 || [...moving].some((id) => !floor.corners.some((c) => c.id === id))) {
+    return fail(document, 'corner not found')
+  }
+  if (Math.hypot(dx, dz) < EPS) return ok(document)
+  const nextCorners = floor.corners.map((corner) =>
+    moving.has(corner.id) ? { ...corner, x: corner.x + dx, z: corner.z + dz } : corner,
+  )
+  for (const wall of floor.walls) {
+    if (!moving.has(wall.startCornerId) && !moving.has(wall.endCornerId)) continue
+    if (!wallSegmentInPlot(document.plot, nextCorners, wall.startCornerId, wall.endCornerId)) {
+      return fail(document, 'wall outside plot')
+    }
+  }
+  return ok(replaceFloor(document, { ...floor, corners: nextCorners }))
+}
+
+export function rotateOffset(dx: number, dz: number, angle: number): { x: number; z: number } {
+  const deg = (angle * 180) / Math.PI
+  const turns = Math.round(deg / 90)
+  if (Math.abs(deg - turns * 90) < 1e-4) {
+    let x = dx
+    let z = dz
+    const steps = ((turns % 4) + 4) % 4
+    for (let i = 0; i < steps; i++) {
+      const nextX = -z
+      z = x
+      x = nextX
+    }
+    return { x, z }
+  }
+  const c = Math.cos(angle)
+  const s = Math.sin(angle)
+  return { x: dx * c - dz * s, z: dx * s + dz * c }
+}
+
+export function rotateCorners(
+  document: Document,
+  floorId: string,
+  cornerIds: string[],
+  pivotId: string,
+  angle: number,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const moving = new Set(cornerIds)
+  const pivot = floor.corners.find((corner) => corner.id === pivotId)
+  if (!pivot || moving.size === 0 || [...moving].some((id) => !floor.corners.some((c) => c.id === id))) {
+    return fail(document, 'corner not found')
+  }
+  if (Math.abs(angle) < EPS) return ok(document)
+  const nextCorners = floor.corners.map((corner) => {
+    if (!moving.has(corner.id)) return corner
+    const next = rotateOffset(corner.x - pivot.x, corner.z - pivot.z, angle)
+    return { ...corner, x: pivot.x + next.x, z: pivot.z + next.z }
+  })
+  for (const wall of floor.walls) {
+    if (!moving.has(wall.startCornerId) && !moving.has(wall.endCornerId)) continue
+    if (!wallSegmentInPlot(document.plot, nextCorners, wall.startCornerId, wall.endCornerId)) {
+      return fail(document, 'wall outside plot')
+    }
+  }
+  return ok(replaceFloor(document, { ...floor, corners: nextCorners }))
+}
+
 export function addOpening(
   document: Document,
   floorId: string,
@@ -162,6 +250,15 @@ export function addOpening(
     opening.v = v
     opening.aligned = false
   }
+  const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+  if (kind === 'door') {
+    const limits = doorWidthLimits(length)
+    if (limits.max < limits.min - 1e-9) return fail(document, 'wall too short for a door')
+    opening.width = Math.min(limits.max, Math.max(limits.min, opening.width))
+  }
+  const placedU = placeOpeningU(opening.u, opening.width, length, wall.openings)
+  if (placedU === null) return fail(document, 'openings too close')
+  opening.u = placedU
   const walls = floor.walls.map((w) =>
     w.id === wallId ? { ...w, openings: [...w.openings, opening] } : w,
   )
@@ -193,10 +290,31 @@ export function updateOpening(
     }
   }
 
-  const updated: Opening = {
+  let updated: Opening = {
     ...existing,
     ...patch,
     aligned,
+  }
+  const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+  const others = wall.openings.filter((opening) => opening.id !== openingId)
+  if (updated.kind === 'door') {
+    const limits = doorWidthLimits(length)
+    if (limits.max < limits.min - 1e-9) return fail(document, 'wall too short for a door')
+    let nextWidth = Math.min(limits.max, Math.max(limits.min, updated.width))
+    let requestedU = updated.u
+    if (patch.width !== undefined && patch.u === undefined) {
+      const centre = existing.u + existing.width / 2
+      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others))
+      if (nextWidth < limits.min - 1e-9) return fail(document, 'openings too close')
+      requestedU = centre - nextWidth / 2
+    }
+    const placedU = placeOpeningU(requestedU, nextWidth, length, others)
+    if (placedU === null) return fail(document, 'openings too close')
+    updated = { ...updated, width: nextWidth, u: placedU }
+  } else {
+    const placedU = placeOpeningU(updated.u, updated.width, length, others)
+    if (placedU === null) return fail(document, 'openings too close')
+    updated = { ...updated, u: placedU }
   }
 
   const walls = floor.walls.map((w) =>
@@ -240,27 +358,46 @@ export function setOpeningAligned(
   return ok(replaceFloor(document, { ...floor, walls }))
 }
 
-export function addFloor(document: Document): MutationResult {
-  const index = document.building.floors.length
-  const floor: Floor = {
-    id: newId('floor'),
-    index,
-    datumHeight: index * FLOOR_TO_FLOOR,
-    corners: [],
-    walls: [],
-    roomFinishes: {},
-  }
+export function addStorey(document: Document, floorId: string, cornerId?: string): MutationResult {
+  const prepared = prepareStorey(document, floorId, cornerId)
+  if ('reason' in prepared) return fail(document, prepared.reason)
+  const nextIndex = topStoreyIndex(prepared.document, prepared.unitId) + 1
+  const storey = blankStorey(prepared.outline, prepared.unitId, nextIndex)
   return ok({
-    ...document,
-    building: { floors: [...document.building.floors, floor] },
+    ...prepared.document,
+    building: { floors: [...prepared.document.building.floors, storey] },
   })
+}
+
+export function removeTopStorey(document: Document, unitId: string): MutationResult {
+  const uppers = document.building.floors.filter((floor) => floor.unitId === unitId && floor.index > 0)
+  if (uppers.length === 0) return fail(document, 'no storey to remove')
+  const top = Math.max(...uppers.map((floor) => floor.index))
+  let floors = document.building.floors.filter((floor) => !(floor.unitId === unitId && floor.index === top))
+  if (!floors.some((floor) => floor.unitId === unitId && floor.index > 0)) {
+    floors = floors.map((floor) =>
+      floor.index === 0
+        ? {
+            ...floor,
+            corners: floor.corners.map((corner) => {
+              if (corner.unitId !== unitId) return corner
+              const { unitId: _unitId, ...rest } = corner
+              return rest
+            }),
+          }
+        : floor,
+    )
+  }
+  return ok({ ...document, building: { floors } })
 }
 
 export function removeWall(document: Document, floorId: string, wallId: string): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
   if (!floor.walls.some((w) => w.id === wallId)) return fail(document, 'wall not found')
-  return ok(replaceFloor(document, { ...floor, walls: floor.walls.filter((w) => w.id !== wallId) }))
+  let next = replaceFloor(document, { ...floor, walls: floor.walls.filter((w) => w.id !== wallId) })
+  if (floor.index === 0) next = syncGroundUnits(next)
+  return ok(next)
 }
 
 export function removeOpening(
@@ -278,16 +415,6 @@ export function removeOpening(
     w.id === wallId ? { ...w, openings: w.openings.filter((o) => o.id !== openingId) } : w,
   )
   return ok(replaceFloor(document, { ...floor, walls }))
-}
-
-export function removeFloor(document: Document, floorId: string): MutationResult {
-  if (document.building.floors.length <= 1) {
-    return fail(document, 'cannot remove last floor')
-  }
-  const floors = document.building.floors
-    .filter((f) => f.id !== floorId)
-    .map((f, index) => ({ ...f, index, datumHeight: index * FLOOR_TO_FLOOR }))
-  return ok({ ...document, building: { floors } })
 }
 
 export function replacePlot(document: Document, plot: Plot): MutationResult {

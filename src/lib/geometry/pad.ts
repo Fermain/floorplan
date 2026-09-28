@@ -1,6 +1,6 @@
 import { cornerById, signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
-import type { Document, Floor, Heightfield } from '../model/types'
+import type { Document, Floor, Heightfield, Wall } from '../model/types'
 import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import { bilinearHeight } from './terrain'
 
@@ -8,9 +8,14 @@ const WALL_OUTSTAND_M = CAVITY / 2 + BLOCK_THICKNESS
 
 export type Ring = { x: number; z: number }[]
 
-export type GroundPad = {
+export type StructurePad = {
   datum: number
   rings: Ring[]
+  cornerIds: Set<string>
+}
+
+export type GroundPad = {
+  structures: StructurePad[]
 }
 
 export function pointInRing(ring: Ring, x: number, z: number): boolean {
@@ -105,13 +110,107 @@ export function averageGrade(field: Heightfield, rings: Ring[]): number | null {
   return weighted / area
 }
 
+function componentRoots(floor: Floor): Map<string, string> {
+  const parent = new Map<string, string>()
+  const find = (id: string): string => {
+    let root = id
+    while (parent.get(root) !== root) root = parent.get(root) as string
+    let cursor = id
+    while (cursor !== root) {
+      const next = parent.get(cursor) as string
+      parent.set(cursor, root)
+      cursor = next
+    }
+    return root
+  }
+  const unite = (a: string, b: string) => {
+    if (!parent.has(a)) parent.set(a, a)
+    if (!parent.has(b)) parent.set(b, b)
+    const ra = find(a)
+    const rb = find(b)
+    if (ra !== rb) parent.set(ra, rb)
+  }
+  for (const wall of floor.walls) unite(wall.startCornerId, wall.endCornerId)
+  const roots = new Map<string, string>()
+  for (const id of parent.keys()) roots.set(id, find(id))
+  return roots
+}
+
+export function connectedCornerIds(floor: Floor, cornerId: string): string[] {
+  const roots = componentRoots(floor)
+  const root = roots.get(cornerId)
+  if (!root) return [cornerId]
+  const ids: string[] = []
+  for (const [id, found] of roots) {
+    if (found === root) ids.push(id)
+  }
+  return ids
+}
+
 export function groundPad(doc: Document): GroundPad | null {
   const floor = groundFloor(doc)
   if (!floor) return null
-  const rings = structureRings(floor)
-  const datum = averageGrade(doc.heightfield, rings)
-  if (datum === null) return null
-  return { datum, rings }
+  const roots = componentRoots(floor)
+  const ringsByRoot = new Map<string, Ring[]>()
+  const cornersByRoot = new Map<string, Set<string>>()
+  for (const [id, root] of roots) {
+    const corners = cornersByRoot.get(root) ?? new Set<string>()
+    corners.add(id)
+    cornersByRoot.set(root, corners)
+  }
+  for (const room of deriveRooms(floor)) {
+    const root = roots.get(room.cornerIds[0])
+    if (!root) continue
+    const ring: Ring = []
+    for (const id of room.cornerIds) {
+      const corner = cornerById(floor.corners, id)
+      if (!corner) {
+        ring.length = 0
+        break
+      }
+      ring.push({ x: corner.x, z: corner.z })
+    }
+    if (ring.length < 3) continue
+    const rings = ringsByRoot.get(root) ?? []
+    rings.push(ring)
+    ringsByRoot.set(root, rings)
+  }
+  const structures: StructurePad[] = []
+  for (const [root, rings] of ringsByRoot) {
+    const datum = averageGrade(doc.heightfield, rings)
+    if (datum === null) continue
+    structures.push({
+      datum,
+      rings,
+      cornerIds: cornersByRoot.get(root) ?? new Set(),
+    })
+  }
+  if (structures.length === 0) return null
+  return { structures }
+}
+
+function structureAt(pad: GroundPad, x: number, z: number): StructurePad | undefined {
+  for (const structure of pad.structures) {
+    if (structure.rings.some((ring) => ringDistance(ring, x, z) === 0)) return structure
+  }
+  return undefined
+}
+
+export function wallDatum(floor: Floor, wall: Wall, pad: GroundPad | null): number | null {
+  if (!pad) return null
+  if (floor.index === 0) {
+    return pad.structures.find((structure) => structure.cornerIds.has(wall.startCornerId))?.datum ?? null
+  }
+  const start = cornerById(floor.corners, wall.startCornerId)
+  const end = cornerById(floor.corners, wall.endCornerId)
+  if (!start || !end) return null
+  const mid = { x: (start.x + end.x) / 2, z: (start.z + end.z) / 2 }
+  return (
+    structureAt(pad, mid.x, mid.z)?.datum ??
+    structureAt(pad, start.x, start.z)?.datum ??
+    structureAt(pad, end.x, end.z)?.datum ??
+    null
+  )
 }
 
 function distanceToSegment(
@@ -146,21 +245,30 @@ export function padBleed(field: Heightfield): number {
   return field.cellSize * Math.SQRT2 + WALL_OUTSTAND_M
 }
 
-export function levelField(field: Heightfield, rings: Ring[], datum: number): Heightfield {
+export function levelField(field: Heightfield, structures: StructurePad[]): Heightfield {
   const heights = field.heights.slice()
   const bleed = padBleed(field)
   for (let r = 0; r < field.rows; r++) {
     for (let c = 0; c < field.cols; c++) {
       const x = field.originX + c * field.cellSize
       const z = field.originZ + r * field.cellSize
-      if (rings.some((ring) => ringDistance(ring, x, z) <= bleed)) {
-        heights[r * field.cols + c] = datum
+      let best = Infinity
+      let datum: number | null = null
+      for (const structure of structures) {
+        for (const ring of structure.rings) {
+          const distance = ringDistance(ring, x, z)
+          if (distance < best) {
+            best = distance
+            datum = structure.datum
+          }
+        }
       }
+      if (datum !== null && best <= bleed) heights[r * field.cols + c] = datum
     }
   }
   return { ...field, heights }
 }
 
-export function floorWorldDatum(floorDatumHeight: number, pad: GroundPad | null): number {
-  return floorDatumHeight + (pad?.datum ?? 0)
+export function floorWorldDatum(floorDatumHeight: number, datum: number): number {
+  return floorDatumHeight + datum
 }

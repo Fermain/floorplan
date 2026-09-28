@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fixturePlot } from '../../lib/plot/fixture'
-import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn, snapEndToOrthogonal } from './snap'
+import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn, snapEndToOrthogonal, alignToNodes, alignTranslation, nearestPlotEdge, nearestRingEdge, nearestNode } from './snap'
 import type { Corner } from '../../lib/model/types'
 
 const plot = fixturePlot()
@@ -121,6 +121,78 @@ describe('snapEndToOrthogonal', () => {
     expect(hit.applied).toBe(true)
     expect(hit.square).toBe(false)
     expect(headingFromNorthDeg(hit.x - 4, hit.z - 4)).toBeCloseTo(90, 5)
+  })
+})
+
+describe('alignToNodes', () => {
+  it('snaps onto a nearby corner axis and reports the trace', () => {
+    const hit = alignToNodes(5.2, 8, [{ x: 5, z: 2 }])
+    expect(hit.x).toBe(5)
+    expect(hit.z).toBe(8)
+    expect(hit.traces).toHaveLength(1)
+    expect(hit.traces[0]).toMatchObject({ x1: 5, z1: 2 })
+  })
+
+  it('leaves a clear miss alone', () => {
+    const hit = alignToNodes(6, 8, [{ x: 5, z: 2 }])
+    expect(hit).toMatchObject({ x: 6, z: 8, traces: [] })
+  })
+
+  it('slides a moving corner onto a fixed corner', () => {
+    const hit = alignTranslation(1.8, 0.2, [{ x: 4, z: 4 }], [{ x: 6, z: 9 }])
+    expect(hit.dx).toBeCloseTo(2, 5)
+    expect(hit.dz).toBe(0.2)
+    expect(hit.traces).toHaveLength(1)
+  })
+})
+
+describe('nearestNode', () => {
+  const nodes = [
+    { x: 4, z: 4 },
+    { x: 10, z: 4 },
+  ]
+
+  it('lands on the nearest node below and skips the one under the start', () => {
+    expect(nearestNode(nodes, 4.1, 4.05)).toEqual({ x: 4, z: 4 })
+    expect(nearestNode(nodes, 4.1, 4.05, CORNER_SNAP_M, { x: 4, z: 4 })).toBeUndefined()
+    expect(nearestNode(nodes, 6, 6)).toBeUndefined()
+  })
+})
+
+describe('nearestPlotEdge', () => {
+  const ring: [number, number][] = [
+    [0, 0],
+    [10, 0],
+    [10, 8],
+    [0, 8],
+  ]
+
+  it('picks the closest boundary and ignores a far click', () => {
+    expect(nearestPlotEdge(ring, 4, 0.2)).toBe(0)
+    expect(nearestPlotEdge(ring, 5, 4)).toBeUndefined()
+  })
+})
+
+describe('nearestRingEdge', () => {
+  const outer = [
+    { x: 0, z: 0 },
+    { x: 10, z: 0 },
+    { x: 10, z: 8 },
+    { x: 0, z: 8 },
+  ]
+  const inner = [
+    { x: 4, z: 4 },
+    { x: 7, z: 4 },
+    { x: 7, z: 6 },
+    { x: 4, z: 6 },
+  ]
+
+  it('picks the dashed edge under the pointer', () => {
+    const hit = nearestRingEdge([outer, inner], 5.5, 4.1)
+    expect(hit?.ring).toBe(1)
+    expect(hit?.edge).toBe(0)
+    expect(hit?.distance).toBeCloseTo(0.1, 5)
+    expect(nearestRingEdge([outer, inner], 5, 2)).toBeUndefined()
   })
 })
 

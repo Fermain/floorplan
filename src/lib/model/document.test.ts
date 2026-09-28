@@ -3,15 +3,19 @@ import { fixtureDocument } from '../plot/fixture'
 import {
   addCorner,
   addOpening,
+  addStorey,
   addWall,
+  moveCorners,
+  rotateCorners,
   removeOpening,
+  removeTopStorey,
   removeWall,
   replacePlot,
   setOpeningAligned,
   updateOpening,
 } from './mutations'
 import { deriveRooms } from './rooms'
-import { DEFAULT_SILL, DEFAULT_WINDOW_HEIGHT } from '../plot/fixture'
+import { DEFAULT_SILL, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
 import { loadDocument, undo, documentStore, getDocument } from '../state/document.svelte'
 
 function floorId(doc: ReturnType<typeof fixtureDocument>) {
@@ -256,6 +260,261 @@ describe('replace plot', () => {
     if (replaced.ok) return
     expect(replaced.reason).toBe('existing walls leave the new plot')
     expect(replaced.document).toBe(d)
+  })
+})
+
+describe('moveCorners', () => {
+  it('slides a closed building and keeps its shape', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const moved = moveCorners(d, floor.id, floor.corners.map((c) => c.id), 2, -1)
+    expect(moved.ok).toBe(true)
+    if (!moved.ok) return
+    const next = moved.document.building.floors[0]
+    expect(next.corners.map((c) => [c.x, c.z])).toEqual([
+      [6, 3],
+      [12, 3],
+      [12, 9],
+      [6, 9],
+    ])
+    expect(next.walls).toHaveLength(4)
+  })
+
+  it('refuses a move that leaves the plot', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const moved = moveCorners(d, floor.id, ['c0'], 30, 0)
+    expect(moved.ok).toBe(false)
+    if (moved.ok) return
+    expect(moved.document).toBe(d)
+  })
+})
+
+describe('rotateCorners', () => {
+  it('turns a building a quarter turn around the chosen corner', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const turned = rotateCorners(d, floor.id, floor.corners.map((c) => c.id), 'c2', Math.PI / 2)
+    expect(turned.ok).toBe(true)
+    if (!turned.ok) return
+    expect(turned.document.building.floors[0].corners.map((c) => [c.x, c.z])).toEqual([
+      [16, 4],
+      [16, 10],
+      [10, 10],
+      [10, 4],
+    ])
+  })
+
+  it('turns a building by an angle that is not a right angle', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const turned = rotateCorners(d, floor.id, floor.corners.map((c) => c.id), 'c2', (15 * Math.PI) / 180)
+    expect(turned.ok).toBe(true)
+    if (!turned.ok) return
+    const c1 = turned.document.building.floors[0].corners.find((c) => c.id === 'c1')
+    expect(c1?.x).toBeCloseTo(11.552914, 4)
+    expect(c1?.z).toBeCloseTo(4.204445, 4)
+  })
+
+  it('refuses a turn that leaves the plot', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const turned = rotateCorners(d, floor.id, floor.corners.map((c) => c.id), 'c0', Math.PI / 2)
+    expect(turned.ok).toBe(false)
+    if (turned.ok) return
+    expect(turned.reason).toBe('wall outside plot')
+    expect(turned.document).toBe(d)
+  })
+})
+
+describe('door width', () => {
+  it('clamps a door between a narrow leaf and the wall minus padding', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const wide = addOpening(d, floor.id, wall.id, 'door', 0, 10)
+    expect(wide.ok).toBe(true)
+    if (!wide.ok) return
+    const opening = wide.document.building.floors[0].walls[0].openings[0]
+    expect(opening.width).toBeCloseTo(5.8, 5)
+    expect(opening.u).toBeCloseTo(0.1, 5)
+
+    const narrow = addOpening(d, floor.id, wall.id, 'door', 2, 0.2)
+    expect(narrow.ok).toBe(true)
+    if (!narrow.ok) return
+    const slim = narrow.document.building.floors[0].walls[0].openings[0]
+    expect(slim.width).toBeCloseTo(0.6, 5)
+    expect(slim.u).toBeCloseTo(2, 5)
+  })
+
+  it('keeps the centre when a door is widened', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const added = addOpening(d, floor.id, wall.id, 'door', 2, 0.9)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const opening = added.document.building.floors[0].walls[0].openings[0]
+    const widened = updateOpening(added.document, floor.id, wall.id, opening.id, { width: 2 })
+    expect(widened.ok).toBe(true)
+    if (!widened.ok) return
+    const next = widened.document.building.floors[0].walls[0].openings[0]
+    expect(next.width).toBeCloseTo(2, 5)
+    expect(next.u).toBeCloseTo(1.45, 5)
+  })
+
+  it('keeps a block between a door and a window', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const door = addOpening(d, floor.id, wall.id, 'door', 1, 0.9)
+    expect(door.ok).toBe(true)
+    if (!door.ok) return
+    const first = door.document.building.floors[0].walls[0].openings[0]
+    const beside = addOpening(door.document, floor.id, wall.id, 'window', first.u + first.width + 0.1)
+    expect(beside.ok).toBe(true)
+    if (!beside.ok) return
+    const second = beside.document.building.floors[0].walls[0].openings[1]
+    expect(second.u).toBeCloseTo(first.u + first.width + 0.44, 5)
+    const crowded = updateOpening(beside.document, floor.id, wall.id, second.id, {
+      u: first.u + first.width + 0.05,
+    })
+    expect(crowded.ok).toBe(true)
+    if (!crowded.ok) return
+    const shifted = crowded.document.building.floors[0].walls[0].openings[1]
+    expect(shifted.u).toBeCloseTo(first.u + first.width + 0.44, 5)
+    const widened = updateOpening(beside.document, floor.id, wall.id, first.id, { width: 2 })
+    expect(widened.ok).toBe(true)
+    if (!widened.ok) return
+    const held = widened.document.building.floors[0].walls[0].openings[0]
+    expect(held.width).toBeCloseTo(0.9, 5)
+    expect(held.u).toBeCloseTo(1, 5)
+  })
+
+  it('refuses a door on a wall that cannot hold the minimum', () => {
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    const first = addCorner(d, fid, 5, 8)
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    d = first.document
+    const second = addCorner(d, fid, 5.5, 8)
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    d = second.document
+    const corners = d.building.floors[0].corners
+    const walled = addWall(d, fid, corners[0].id, corners[1].id, 'double')
+    expect(walled.ok).toBe(true)
+    if (!walled.ok) return
+    d = walled.document
+    const wall = d.building.floors[0].walls[0]
+    const door = addOpening(d, fid, wall.id, 'door', 0.1, 0.9)
+    expect(door.ok).toBe(false)
+    if (door.ok) return
+    expect(door.reason).toBe('wall too short for a door')
+    expect(door.document).toBe(d)
+  })
+})
+
+describe('storeys', () => {
+  it('lays an empty floor on the building outline', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const opened = addOpening(d, fid, d.building.floors[0].walls[0].id, 'door', 1, 0.9)
+    expect(opened.ok).toBe(true)
+    if (!opened.ok) return
+    d = opened.document
+    const added = addStorey(d, fid, 'c0')
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    d = added.document
+    expect(d.building.floors).toHaveLength(2)
+    const upper = d.building.floors[1]
+    expect(upper.index).toBe(1)
+    expect(upper.datumHeight).toBe(FLOOR_TO_FLOOR)
+    expect(upper.walls).toHaveLength(0)
+    expect(upper.corners).toHaveLength(0)
+    expect(upper.outline?.[0]).toHaveLength(4)
+    expect(d.building.floors[0].walls[0].openings).toHaveLength(1)
+    const outside = addCorner(d, upper.id, 2, 2)
+    expect(outside.ok).toBe(true)
+    if (!outside.ok) return
+    const inside = addCorner(outside.document, upper.id, 7, 7)
+    expect(inside.ok).toBe(true)
+    if (!inside.ok) return
+    const edgeA = addCorner(inside.document, upper.id, 4, 4)
+    expect(edgeA.ok).toBe(true)
+    if (!edgeA.ok) return
+    const edgeB = addCorner(edgeA.document, upper.id, 10, 4)
+    expect(edgeB.ok).toBe(true)
+    if (!edgeB.ok) return
+    const corners = edgeB.document.building.floors[1].corners
+    const along = addWall(edgeB.document, upper.id, corners[1].id, corners[2].id, 'double')
+    expect(along.ok).toBe(true)
+    if (!along.ok) return
+    const past = addWall(along.document, upper.id, corners[0].id, corners[2].id, 'double')
+    expect(past.ok).toBe(true)
+    if (!past.ok) return
+    expect(past.document.building.floors[1].walls).toHaveLength(2)
+  })
+
+  it('stops at four storeys and removes only the top', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    for (let i = 1; i < MAX_STOREYS; i++) {
+      const corner = d.building.floors[0].corners[0].id
+      const added = addStorey(d, fid, corner)
+      expect(added.ok).toBe(true)
+      if (!added.ok) return
+      d = added.document
+    }
+    const blocked = addStorey(d, fid, 'c0')
+    expect(blocked.ok).toBe(false)
+    if (blocked.ok) return
+    expect(blocked.reason).toBe('storey limit')
+    const unitId = d.building.floors[1].unitId
+    expect(unitId).toBeTruthy()
+    if (!unitId) return
+    const removed = removeTopStorey(d, unitId)
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) return
+    expect(removed.document.building.floors.map((floor) => floor.index).sort()).toEqual([0, 1, 2])
+  })
+
+  it('leaves a second building on the ground', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const extra: [string, number, number][] = [
+      ['d0', 12, 4],
+      ['d1', 16, 4],
+      ['d2', 16, 8],
+      ['d3', 12, 8],
+    ]
+    for (const [id, x, z] of extra) {
+      d = {
+        ...d,
+        building: {
+          floors: d.building.floors.map((floor) =>
+            floor.id === fid ? { ...floor, corners: [...floor.corners, { id, x, z }] } : floor,
+          ),
+        },
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const walled = addWall(d, fid, extra[i][0], extra[(i + 1) % 4][0], 'double')
+      expect(walled.ok).toBe(true)
+      if (!walled.ok) return
+      d = walled.document
+    }
+    const added = addStorey(d, fid, 'c0')
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const upper = added.document.building.floors[1]
+    expect(upper.corners).toHaveLength(0)
+    expect(upper.outline?.[0].some((point) => point.x === 12)).toBe(false)
+    expect(upper.outline?.[0].some((point) => point.x === 4)).toBe(true)
+    expect(added.document.building.floors[0].corners.some((corner) => corner.unitId)).toBe(true)
+    expect(added.document.building.floors[0].corners.find((corner) => corner.id === 'd0')?.unitId).toBeUndefined()
   })
 })
 

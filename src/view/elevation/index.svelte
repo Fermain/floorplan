@@ -2,9 +2,11 @@
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
   import { buildWallGeometries } from '../../lib/geometry/walls'
-  import { groundPad } from '../../lib/geometry/pad'
+  import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { doorWidthLimits, maxOpeningWidth, placeOpeningU } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
+  import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
   import { pointerToWallUv } from './elevation'
@@ -12,14 +14,18 @@
 
   interface Props {
     wallId?: string
+    selectedOpeningId?: string | null
     onSelectOpening?: (id: string) => void
   }
 
-  let { wallId, onSelectOpening }: Props = $props()
+  let { wallId, selectedOpeningId = null, onSelectOpening }: Props = $props()
 
-  let locked = $state(false)
-  let unalignedMode = $state(false)
-  let doorMode = $state(false)
+  let locked = $state(true)
+  let insertTool = $state<'door' | 'window'>('window')
+  let menuOpen = $state(false)
+  let menuEl = $state<HTMLDivElement | undefined>(undefined)
+  let doorWidth = $state(DEFAULT_DOOR_WIDTH)
+  let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
   let readout = $state<{ u: number; v: number } | null>(null)
 
@@ -56,17 +62,10 @@
   const floor = $derived(located?.floor)
   const wall = $derived(located?.wall)
 
-  const displayWall = $derived.by((): Wall | undefined => {
-    const current = drag
-    if (!wall || !current) return wall
-    return {
-      ...wall,
-      openings: wall.openings.map((opening) =>
-        opening.id === current.id
-          ? { ...opening, u: current.u, v: current.aligned ? opening.v : current.v }
-          : opening,
-      ),
-    }
+  const editingDoor = $derived.by(() => {
+    if (!wall || !selectedOpeningId) return undefined
+    const opening = wall.openings.find((item) => item.id === selectedOpeningId)
+    return opening?.kind === 'door' ? opening : undefined
   })
 
   const frame = $derived.by(() => {
@@ -76,13 +75,54 @@
     return computeWallElevationFrame(floor, wall)
   })
 
+  const doorLimits = $derived.by(() => {
+    if (!frame) return null
+    const base = doorWidthLimits(frame.length)
+    if (!editingDoor || !wall) return base
+    const others = wall.openings.filter((opening) => opening.id !== editingDoor.id)
+    const centre = editingDoor.u + editingDoor.width / 2
+    const room = maxOpeningWidth(centre, frame.length, others)
+    return { min: base.min, max: Math.min(base.max, room) }
+  })
+  const doorAllowed = $derived(doorLimits !== null && doorLimits.max >= doorLimits.min - 1e-9)
+
+  const shownDoorWidth = $derived.by(() => {
+    const raw = widthDraft ?? editingDoor?.width ?? doorWidth
+    if (!doorLimits || !doorAllowed) return raw
+    return Math.min(doorLimits.max, Math.max(doorLimits.min, raw))
+  })
+
+  const displayWall = $derived.by((): Wall | undefined => {
+    if (!wall) return wall
+    let openings = wall.openings
+    const current = drag
+    if (current) {
+      openings = openings.map((opening) =>
+        opening.id === current.id
+          ? { ...opening, u: current.u, v: current.aligned ? opening.v : current.v }
+          : opening,
+      )
+    } else if (widthDraft !== null && editingDoor && frame) {
+      const centre = editingDoor.u + editingDoor.width / 2
+      const others = wall.openings.filter((opening) => opening.id !== editingDoor.id)
+      const u = placeOpeningU(centre - shownDoorWidth / 2, shownDoorWidth, frame.length, others)
+      if (u !== null) {
+        openings = openings.map((opening) =>
+          opening.id === editingDoor.id ? { ...opening, u, width: shownDoorWidth } : opening,
+        )
+      }
+    }
+    if (openings === wall.openings) return wall
+    return { ...wall, openings }
+  })
+
   const wallGeometries = $derived.by((): BufferGeometry[] => {
     const shown = displayWall
     if (!floor || !shown) {
       return []
     }
     let samples: { u: number; y: number }[] | undefined
-    if (floor.index === 0 && !groundPad(doc)) {
+    if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
       const start = floor.corners.find((c) => c.id === shown.startCornerId)
       const end = floor.corners.find((c) => c.id === shown.endCornerId)
       if (start && end) {
@@ -97,6 +137,23 @@
       }
     }
     return buildWallGeometries(floor, shown, samples)
+  })
+
+  $effect(() => {
+    selectedOpeningId
+    widthDraft = null
+  })
+
+  $effect(() => {
+    if (!menuOpen) return
+    const menu = menuEl
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target
+      if (menu && target instanceof Node && menu.contains(target)) return
+      menuOpen = false
+    }
+    window.addEventListener('pointerdown', onPointer, true)
+    return () => window.removeEventListener('pointerdown', onPointer, true)
   })
 
   $effect(() => {
@@ -170,17 +227,36 @@
       return
     }
 
-    if (doorMode) {
-      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', uv.u))
+    if (insertTool === 'door') {
+      if (!doorAllowed) return
+      const u = placeOpeningU(uv.u - shownDoorWidth / 2, shownDoorWidth, frame.length, wall.openings)
+      if (u === null) return
+      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', u, shownDoorWidth))
       return
     }
 
-    if (unalignedMode) {
-      selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', uv.u, undefined, uv.v))
+    const windowU = placeOpeningU(uv.u - DEFAULT_WINDOW_WIDTH / 2, DEFAULT_WINDOW_WIDTH, frame.length, wall.openings)
+    if (windowU === null) return
+    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', windowU))
+  }
+
+  function onDoorWidthInput(value: number) {
+    if (editingDoor) widthDraft = value
+    else doorWidth = value
+  }
+
+  function commitDoorWidth(value: number) {
+    widthDraft = null
+    if (!editingDoor || !floor || !wall) {
+      doorWidth = value
       return
     }
+    documentStore.updateOpening(floor.id, wall.id, editingDoor.id, { width: value })
+  }
 
-    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', uv.u))
+  function chooseInsert(tool: 'door' | 'window') {
+    insertTool = tool
+    menuOpen = false
   }
 
   function selectAdded(result: { ok: boolean; document: typeof doc }): void {
@@ -198,10 +274,15 @@
     if (!uv) return
     readout = uv
 
-    if (!drag) return
-    const u = uv.u - drag.grabU
-    const v = drag.aligned ? drag.v : uv.v - drag.grabV
-    drag = { ...drag, u, v }
+    const current = drag
+    if (!current || !frame) return
+    const moving = wall.openings.find((opening) => opening.id === current.id)
+    if (!moving) return
+    const others = wall.openings.filter((opening) => opening.id !== current.id)
+    const u = placeOpeningU(uv.u - current.grabU, moving.width, frame.length, others)
+    if (u === null) return
+    const v = current.aligned ? current.v : uv.v - current.grabV
+    drag = { ...current, u, v }
   }
 
   function onViewportPointerUp(event: PointerEvent) {
@@ -231,16 +312,80 @@
   {:else}
     <div class="bar">
       <button type="button" onclick={() => (locked = !locked)}>
-        {locked ? 'Perspective view' : 'Lock elevation'}
+        {locked ? 'Perspective' : 'Fixed view'}
       </button>
-      <label class="toggle">
-        <input type="checkbox" bind:checked={unalignedMode} disabled={doorMode} />
-        Unaligned
-      </label>
-      <label class="toggle">
-        <input type="checkbox" bind:checked={doorMode} />
-        Door
-      </label>
+      <div class="menu" bind:this={menuEl}>
+        <button
+          type="button"
+          class:active={menuOpen}
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          onclick={() => (menuOpen = !menuOpen)}
+        >
+          Openings
+        </button>
+        {#if menuOpen}
+          <div class="menu-panel" role="menu">
+            <p class="section">Openings</p>
+            <button
+              type="button"
+              role="menuitem"
+              class:active={insertTool === 'door'}
+              onclick={() => chooseInsert('door')}
+            >
+              Door
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class:active={insertTool === 'window'}
+              onclick={() => chooseInsert('window')}
+            >
+              Window
+            </button>
+          </div>
+        {/if}
+      </div>
+      {#if insertTool === 'door' || editingDoor}
+        {#if doorLimits && doorAllowed}
+          <label class="width">
+            Width
+            <input
+              type="range"
+              min={doorLimits.min}
+              max={doorLimits.max}
+              step="0.01"
+              value={shownDoorWidth}
+              oninput={(event) => onDoorWidthInput(Number(event.currentTarget.value))}
+              onchange={(event) => commitDoorWidth(Number(event.currentTarget.value))}
+            />
+            <input
+              type="number"
+              min={doorLimits.min}
+              max={doorLimits.max}
+              step="0.01"
+              value={shownDoorWidth}
+              onchange={(event) => {
+                const next = Number(event.currentTarget.value)
+                onDoorWidthInput(next)
+                commitDoorWidth(next)
+              }}
+            />
+            <span>m</span>
+          </label>
+        {:else}
+          <span class="note">This wall is too short for a door.</span>
+        {/if}
+      {/if}
+      <span class="hint">
+        {#if !locked}
+          Perspective. The fixed view is where this wall is edited.
+        {:else if insertTool === 'door'}
+          Click the wall to place a door. Drag a door to move it.
+        {:else}
+          Click the wall to place a window. Drag an opening to move it.
+        {/if}
+      </span>
       {#if readout}
         <span class="readout">
           u: {readout.u.toFixed(3)} m, v: {readout.v.toFixed(3)} m
@@ -283,7 +428,8 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
     padding: 0.75rem 1rem;
     font: 0.9375rem system-ui, sans-serif;
     border-bottom: 1px solid #ddd;
@@ -296,11 +442,70 @@
     cursor: pointer;
   }
 
-  .toggle {
+  .menu {
+    position: relative;
+  }
+
+  .menu > button.active,
+  .menu-panel button.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+  }
+
+  .menu-panel {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    min-width: 11rem;
+    padding: 0.25rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  }
+
+  .menu-panel button {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    text-align: left;
+  }
+
+  .menu-panel button:hover {
+    background: #f4f4f5;
+  }
+
+  .section {
+    margin: 0.35rem 0.65rem 0.15rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #71717a;
+  }
+
+  .width {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    cursor: pointer;
+    gap: 0.45rem;
+  }
+
+  .width input[type='range'] {
+    width: 8rem;
+  }
+
+  .width input[type='number'] {
+    width: 4.5rem;
+    font: inherit;
+  }
+
+  .note,
+  .hint {
+    color: #3f3f46;
   }
 
   .readout {

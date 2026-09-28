@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Document, Floor, Heightfield, Wall } from '../model/types'
-import { averageGrade, groundPad, levelField, pointInRing } from './pad'
+import { averageGrade, connectedCornerIds, groundPad, levelField, pointInRing, wallDatum } from './pad'
 
 function linearField(): Heightfield {
   const cols = 9
@@ -32,6 +32,29 @@ function rectFloor(x0: number, z0: number, x1: number, z1: number, id = 'f0'): F
     openings: [],
   }))
   return { id, index: 0, datumHeight: 0, corners, walls, roomFinishes: {} }
+}
+
+function joinedRects(connected: boolean): Floor {
+  const low = rectFloor(0, 0, 2, 2, 'a')
+  const high = rectFloor(4, 0, 6, 2, 'b')
+  const walls = [...low.walls, ...high.walls]
+  if (connected) {
+    walls.push({
+      id: 'link',
+      startCornerId: 'a-b',
+      endCornerId: 'b-a',
+      skin: 'single',
+      openings: [],
+    })
+  }
+  return {
+    id: 'f0',
+    index: 0,
+    datumHeight: 0,
+    corners: [...low.corners, ...high.corners],
+    walls,
+    roomFinishes: {},
+  }
 }
 
 function docWith(floors: Floor[], field = linearField()): Document {
@@ -80,12 +103,74 @@ describe('ground pad', () => {
     const pad = groundPad(docWith([rectFloor(2, 1, 6, 3)]))
     expect(pad).not.toBeNull()
     if (!pad) return
-    expect(pad.datum).toBeCloseTo(4, 5)
-    const leveled = levelField(linearField(), pad.rings, pad.datum)
+    expect(pad.structures).toHaveLength(1)
+    expect(pad.structures[0].datum).toBeCloseTo(4, 5)
+    const leveled = levelField(linearField(), pad.structures)
     expect(leveled.heights[2 * 9 + 4]).toBeCloseTo(4, 5)
     expect(leveled.heights[2 * 9 + 1]).toBeCloseTo(4, 5)
     expect(leveled.heights[1]).toBeCloseTo(4, 5)
     expect(leveled.heights[0]).toBe(0)
+  })
+
+  it('levels each unconnected structure on its own grade', () => {
+    const floor = joinedRects(false)
+    const pad = groundPad(docWith([floor]))
+    expect(pad).not.toBeNull()
+    if (!pad) return
+    expect(pad.structures).toHaveLength(2)
+    const datums = pad.structures.map((structure) => structure.datum).sort((a, b) => a - b)
+    expect(datums[0]).toBeCloseTo(1, 5)
+    expect(datums[1]).toBeCloseTo(5, 5)
+    const leveled = levelField(linearField(), pad.structures)
+    expect(leveled.heights[1 * 9 + 1]).toBeCloseTo(1, 5)
+    expect(leveled.heights[1 * 9 + 5]).toBeCloseTo(5, 5)
+    const low = floor.walls.find((wall) => wall.id === 'a-ab')
+    const high = floor.walls.find((wall) => wall.id === 'b-ab')
+    expect(low && wallDatum(floor, low, pad)).toBeCloseTo(1, 5)
+    expect(high && wallDatum(floor, high, pad)).toBeCloseTo(5, 5)
+  })
+
+  it('keeps an unconnected building out of the other building’s nodes', () => {
+    const floor = joinedRects(false)
+    const low = connectedCornerIds(floor, 'a-a')
+    expect(low).toEqual(expect.arrayContaining(['a-a', 'a-b', 'a-c', 'a-d']))
+    expect(low).toHaveLength(4)
+    const joined = connectedCornerIds(joinedRects(true), 'a-a')
+    expect(joined).toHaveLength(8)
+  })
+
+  it('keeps rooms joined by a wall on one grade', () => {
+    const floor = joinedRects(true)
+    const pad = groundPad(docWith([floor]))
+    expect(pad?.structures).toHaveLength(1)
+    expect(pad?.structures[0].datum).toBeCloseTo(3, 5)
+    const link = floor.walls.find((wall) => wall.id === 'link')
+    expect(link && wallDatum(floor, link, pad)).toBeCloseTo(3, 5)
+  })
+
+  it('lifts an upper floor to the structure it stands on', () => {
+    const ground = rectFloor(0, 0, 2, 2, 'a')
+    const pad = groundPad(docWith([ground]))
+    const upper: Floor = {
+      id: 'f1',
+      index: 1,
+      datumHeight: 2.8,
+      corners: [
+        { id: 'u0', x: 0.2, z: 0.2 },
+        { id: 'u1', x: 1.8, z: 0.2 },
+      ],
+      walls: [
+        {
+          id: 'uw',
+          startCornerId: 'u0',
+          endCornerId: 'u1',
+          skin: 'single',
+          openings: [],
+        },
+      ],
+      roomFinishes: {},
+    }
+    expect(wallDatum(upper, upper.walls[0], pad)).toBeCloseTo(1, 5)
   })
 
   it('has no pad until the walls enclose a room', () => {

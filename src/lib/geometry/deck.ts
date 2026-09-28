@@ -1,0 +1,174 @@
+import { union } from '@turf/union'
+import { signedPolygonArea } from '../model/geom'
+import { deriveRooms } from '../model/rooms'
+import type { Floor, Wall } from '../model/types'
+import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import { wallMeshURange } from './walls'
+import type { Ring } from './pad'
+
+const OUTER_FACE_M = CAVITY / 2 + BLOCK_THICKNESS
+
+export type DeckPolygon = { outer: Ring; holes: Ring[] }
+
+export function deckPolygons(floor: Floor): DeckPolygon[] {
+  const pieces = floor.walls.length > 0 ? wallPieces(floor) : (floor.outline ?? []).map((ring) => offsetOutward(ring, OUTER_FACE_M))
+  return unionRings(pieces.filter((ring) => ring.length >= 3))
+}
+
+function wallPieces(floor: Floor): Ring[] {
+  const pieces: Ring[] = []
+  for (const room of deriveRooms(floor)) {
+    const ring: Ring = []
+    for (const id of room.cornerIds) {
+      const corner = floor.corners.find((item) => item.id === id)
+      if (!corner) {
+        ring.length = 0
+        break
+      }
+      ring.push({ x: corner.x, z: corner.z })
+    }
+    if (ring.length >= 3) pieces.push(offsetOutward(ring, OUTER_FACE_M))
+  }
+  for (const wall of floor.walls) {
+    const strip = wallStrip(floor, wall)
+    if (strip) pieces.push(strip)
+  }
+  return pieces
+}
+
+function wallStrip(floor: Floor, wall: Wall): Ring | null {
+  const half = halfWidth(wall.skin)
+  if (half <= 0) return null
+  const start = floor.corners.find((corner) => corner.id === wall.startCornerId)
+  const end = floor.corners.find((corner) => corner.id === wall.endCornerId)
+  if (!start || !end) return null
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const length = Math.hypot(dx, dz)
+  if (length < 1e-9) return null
+  const dir = { x: dx / length, z: dz / length }
+  const normal = { x: -dir.z, z: dir.x }
+  let u0 = 0
+  let u1 = length
+  for (const sign of leafSigns(wall.skin)) {
+    const range = wallMeshURange(floor, wall, sign)
+    u0 = Math.min(u0, range.uMin)
+    u1 = Math.max(u1, range.uMax)
+  }
+  const at = (u: number, side: number) => ({
+    x: start.x + dir.x * u + normal.x * side,
+    z: start.z + dir.z * u + normal.z * side,
+  })
+  return [at(u0, -half), at(u1, -half), at(u1, half), at(u0, half)]
+}
+
+function halfWidth(skin: Wall['skin']): number {
+  if (skin === 'single') return BLOCK_THICKNESS / 2
+  if (skin === 'double') return OUTER_FACE_M
+  return 0
+}
+
+function leafSigns(skin: Wall['skin']): number[] {
+  if (skin === 'single') return [0]
+  if (skin === 'double') return [-1, 1]
+  return []
+}
+
+function offsetOutward(ring: Ring, distance: number): Ring {
+  const points = cleanRing(ring)
+  if (points.length < 3) return points
+  const ccw = signedPolygonArea(points) < 0 ? [...points].reverse() : points
+  const count = ccw.length
+  const offset: Ring = []
+  for (let i = 0; i < count; i++) {
+    const prev = ccw[(i + count - 1) % count]
+    const current = ccw[i]
+    const next = ccw[(i + 1) % count]
+    const inward = direction(prev, current)
+    const outward = direction(current, next)
+    if (!inward || !outward) continue
+    const left = { x: inward.z, z: -inward.x }
+    const right = { x: outward.z, z: -outward.x }
+    const a = { x: current.x + left.x * distance, z: current.z + left.z * distance }
+    const b = { x: current.x + right.x * distance, z: current.z + right.z * distance }
+    const hit = lineIntersection(a, inward, b, outward)
+    const span = hit ? Math.hypot(hit.x - current.x, hit.z - current.z) : Infinity
+    if (!hit || span > distance * 4) {
+      offset.push(a, b)
+    } else {
+      offset.push(hit)
+    }
+  }
+  return cleanRing(offset)
+}
+
+function direction(a: { x: number; z: number }, b: { x: number; z: number }): { x: number; z: number } | null {
+  const dx = b.x - a.x
+  const dz = b.z - a.z
+  const length = Math.hypot(dx, dz)
+  if (length < 1e-9) return null
+  return { x: dx / length, z: dz / length }
+}
+
+function lineIntersection(
+  origin: { x: number; z: number },
+  directionA: { x: number; z: number },
+  other: { x: number; z: number },
+  directionB: { x: number; z: number },
+): { x: number; z: number } | null {
+  const det = directionA.x * directionB.z - directionA.z * directionB.x
+  if (Math.abs(det) < 1e-12) return null
+  const t = ((other.x - origin.x) * directionB.z - (other.z - origin.z) * directionB.x) / det
+  return { x: origin.x + directionA.x * t, z: origin.z + directionA.z * t }
+}
+
+function cleanRing(ring: Ring): Ring {
+  const points: Ring = []
+  for (const point of ring) {
+    const previous = points[points.length - 1]
+    if (previous && Math.hypot(point.x - previous.x, point.z - previous.z) < 1e-6) continue
+    points.push({ x: point.x, z: point.z })
+  }
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (first && last && points.length > 1 && Math.hypot(first.x - last.x, first.z - last.z) < 1e-6) points.pop()
+  return points
+}
+
+function unionRings(rings: Ring[]): DeckPolygon[] {
+  const features = rings.filter((ring) => ring.length >= 3).map(toPolygon)
+  if (features.length === 0) return []
+  if (features.length === 1) return featurePolygons(features[0])
+  const combined = union({ type: 'FeatureCollection', features } as Parameters<typeof union>[0])
+  if (!combined) return features.flatMap(featurePolygons)
+  return featurePolygons(combined)
+}
+
+function toPolygon(ring: Ring) {
+  return {
+    type: 'Feature' as const,
+    properties: {},
+    geometry: { type: 'Polygon' as const, coordinates: [close(ring)] },
+  }
+}
+
+function close(ring: Ring): number[][] {
+  const coordinates = ring.map((point) => [point.x, point.z])
+  const first = coordinates[0]
+  const last = coordinates[coordinates.length - 1]
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) coordinates.push([first[0], first[1]])
+  return coordinates
+}
+
+function featurePolygons(feature: { geometry: { type: string; coordinates: number[][][] | number[][][][] } }): DeckPolygon[] {
+  const geometry = feature.geometry
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates as number[][][]] : (geometry.coordinates as number[][][][])
+  return polygons.map((polygon) => ({
+    outer: fromPositions(polygon[0] ?? []),
+    holes: polygon.slice(1).map((ring) => fromPositions(ring)).filter((ring) => ring.length >= 3),
+  }))
+}
+
+function fromPositions(coordinates: number[][]): Ring {
+  return cleanRing(coordinates.map(([x, z]) => ({ x, z })))
+}

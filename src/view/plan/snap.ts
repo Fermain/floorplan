@@ -6,6 +6,8 @@ export const CORNER_SNAP_M = 0.15
 export const MODULE_SNAP_TOLERANCE_M = 0.05
 export const MIN_TURN_DEG = 15
 export const ORTHOGONAL_SNAP_DEG = 5
+export const ALIGN_SNAP_M = 0.3
+export const PLOT_EDGE_HIT_M = 0.45
 
 export function nearestCorner(
   corners: Corner[],
@@ -22,6 +24,26 @@ export function nearestCorner(
     if (d <= bestD) {
       bestD = d
       best = c
+    }
+  }
+  return best
+}
+
+export function nearestNode(
+  nodes: { x: number; z: number }[],
+  x: number,
+  z: number,
+  radius = CORNER_SNAP_M,
+  except?: { x: number; z: number },
+): { x: number; z: number } | undefined {
+  let best: { x: number; z: number } | undefined
+  let bestD = radius
+  for (const node of nodes) {
+    if (except && Math.hypot(node.x - except.x, node.z - except.z) <= 1e-4) continue
+    const d = Math.hypot(node.x - x, node.z - z)
+    if (d <= bestD) {
+      bestD = d
+      best = node
     }
   }
   return best
@@ -192,4 +214,150 @@ export function snapEndToMinTurn(
     return { x: endX, z: endZ, applied: false }
   }
   return { ...snapped, applied: true }
+}
+
+export type SnapTrace = { x1: number; z1: number; x2: number; z2: number }
+
+type Point = { x: number; z: number }
+
+function traceTo(node: Point, x: number, z: number): SnapTrace {
+  const dx = x - node.x
+  const dz = z - node.z
+  const len = Math.hypot(dx, dz)
+  return {
+    x1: node.x,
+    z1: node.z,
+    x2: x + (dx / len) * 0.8,
+    z2: z + (dz / len) * 0.8,
+  }
+}
+
+function guide(from: Point, x: number, z: number): SnapTrace[] {
+  if (Math.hypot(x - from.x, z - from.z) < 1e-6) {
+    const arm = 0.7
+    return [
+      { x1: from.x - arm, z1: from.z, x2: from.x + arm, z2: from.z },
+      { x1: from.x, z1: from.z - arm, x2: from.x, z2: from.z + arm },
+    ]
+  }
+  return [traceTo(from, x, z)]
+}
+
+export function alignToNodes(
+  x: number,
+  z: number,
+  nodes: Point[],
+  tolerance = ALIGN_SNAP_M,
+): { x: number; z: number; traces: SnapTrace[] } {
+  let bestX: { node: Point; dist: number } | undefined
+  let bestZ: { node: Point; dist: number } | undefined
+  for (const node of nodes) {
+    const dx = Math.abs(x - node.x)
+    const dz = Math.abs(z - node.z)
+    if (dx <= 1e-6 && dz <= 1e-6) continue
+    if (dx <= tolerance && (!bestX || dx < bestX.dist)) bestX = { node, dist: dx }
+    if (dz <= tolerance && (!bestZ || dz < bestZ.dist)) bestZ = { node, dist: dz }
+  }
+  const sx = bestX ? bestX.node.x : x
+  const sz = bestZ ? bestZ.node.z : z
+  const traces: SnapTrace[] = []
+  if (bestX) traces.push(...guide(bestX.node, sx, sz))
+  if (bestZ && bestZ.node !== bestX?.node) traces.push(...guide(bestZ.node, sx, sz))
+  return { x: sx, z: sz, traces }
+}
+
+export function alignTranslation(
+  dx: number,
+  dz: number,
+  moving: Point[],
+  fixed: Point[],
+  tolerance = ALIGN_SNAP_M,
+): { dx: number; dz: number; traces: SnapTrace[] } {
+  let bestX: { shift: number; dist: number; from: Point; to: Point } | undefined
+  let bestZ: { shift: number; dist: number; from: Point; to: Point } | undefined
+  for (const node of moving) {
+    for (const other of fixed) {
+      const distX = Math.abs(node.x + dx - other.x)
+      const distZ = Math.abs(node.z + dz - other.z)
+      if (distX <= tolerance && (!bestX || distX < bestX.dist)) {
+        bestX = { shift: other.x - node.x, dist: distX, from: other, to: { x: other.x, z: node.z + dz } }
+      }
+      if (distZ <= tolerance && (!bestZ || distZ < bestZ.dist)) {
+        bestZ = { shift: other.z - node.z, dist: distZ, from: other, to: { x: node.x + dx, z: other.z } }
+      }
+    }
+  }
+  const nextDx = bestX ? bestX.shift : dx
+  const nextDz = bestZ ? bestZ.shift : dz
+  const traces: SnapTrace[] = []
+  const xLineZ = bestX ? bestX.to.z + (nextDz - dz) : 0
+  if (bestX) traces.push(...guide(bestX.from, bestX.from.x, xLineZ))
+  if (bestZ) {
+    const zLineX = bestZ.to.x + (nextDx - dx)
+    const sameNode =
+      bestX !== undefined &&
+      bestX.from === bestZ.from &&
+      Math.hypot(zLineX - bestX.from.x, bestZ.from.z - xLineZ) < 1e-6
+    if (!sameNode) traces.push(...guide(bestZ.from, zLineX, bestZ.from.z))
+  }
+  return { dx: nextDx, dz: nextDz, traces }
+}
+
+export function segmentDistance(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  x: number,
+  z: number,
+): number {
+  const dx = bx - ax
+  const dz = bz - az
+  const len2 = dx * dx + dz * dz
+  if (len2 === 0) return Math.hypot(x - ax, z - az)
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2))
+  return Math.hypot(x - (ax + t * dx), z - (az + t * dz))
+}
+
+export function nearestPlotEdge(
+  ring: [number, number][],
+  x: number,
+  z: number,
+  radius = PLOT_EDGE_HIT_M,
+): number | undefined {
+  let best: number | undefined
+  let bestD = radius
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    const d = segmentDistance(a[0], a[1], b[0], b[1], x, z)
+    if (d <= bestD) {
+      bestD = d
+      best = i
+    }
+  }
+  return best
+}
+
+export function nearestRingEdge(
+  rings: { x: number; z: number }[][],
+  x: number,
+  z: number,
+  radius = PLOT_EDGE_HIT_M,
+): { ring: number; edge: number; distance: number } | undefined {
+  let best: { ring: number; edge: number; distance: number } | undefined
+  let bestD = radius
+  for (let ring = 0; ring < rings.length; ring++) {
+    const loop = rings[ring]
+    for (let edge = 0; edge < loop.length; edge++) {
+      const a = loop[edge]
+      const b = loop[(edge + 1) % loop.length]
+      const distance = segmentDistance(a.x, a.z, b.x, b.z, x, z)
+      if (distance <= bestD) {
+        bestD = distance
+        best = { ring, edge, distance }
+      }
+    }
+  }
+  return best
 }

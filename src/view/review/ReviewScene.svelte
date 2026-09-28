@@ -1,15 +1,18 @@
 <script lang="ts">
   import { Canvas, T } from '@threlte/core'
   import { OrbitControls } from '@threlte/extras'
-  import { BufferGeometry, Float32BufferAttribute } from 'three'
+  import { BufferGeometry, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, Path, Shape, ShapeGeometry } from 'three'
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
-  import { floorWorldDatum, groundPad, levelField } from '../../lib/geometry/pad'
-  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { deckPolygons, type DeckPolygon } from '../../lib/geometry/deck'
+  import { floorWorldDatum, groundPad, levelField, pointInRing, wallDatum } from '../../lib/geometry/pad'
   import { buildWallGeometries } from '../../lib/geometry/walls'
+  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { BLOCK_HEIGHT, DEFAULT_STOREY_HEIGHT, FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
   import type { Floor, Wall } from '../../lib/model/types'
   import type { OrbitControls as OrbitControlsInstance } from 'three/examples/jsm/controls/OrbitControls.js'
+  import type { Ring } from '../../lib/geometry/pad'
   import { liftAboveGround } from './ground-limit'
 
   interface Props {
@@ -18,12 +21,17 @@
 
   let { sunDate }: Props = $props()
 
-  type FloorMeshes = { id: string; datumY: number; geoms: BufferGeometry[] }
+  type WallMeshes = { key: string; wallId: string; datumY: number; geoms: BufferGeometry[] }
+  type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
+
+  const WALL_HEAD = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT) * BLOCK_HEIGHT
+  const DECK_THICKNESS = FLOOR_TO_FLOOR - WALL_HEAD
 
   let groundGeometry = $state<BufferGeometry | null>(null)
   let contourMinor = $state<BufferGeometry | null>(null)
   let contourMajor = $state<BufferGeometry | null>(null)
-  let floorMeshes = $state<FloorMeshes[]>([])
+  let wallMeshes = $state<WallMeshes[]>([])
+  let floorSlabs = $state<FloorSlab[]>([])
 
   const doc = $derived(documentStore.document)
 
@@ -55,7 +63,7 @@
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
-    if (floor.index !== 0 || groundPad(doc)) {
+    if (floor.index !== 0 || wallDatum(floor, wall, groundPad(doc)) !== null) {
       return undefined
     }
     const start = floor.corners.find((c) => c.id === wall.startCornerId)
@@ -72,37 +80,126 @@
     const heightfield = doc.heightfield
     const floors = doc.building.floors
     const pad = groundPad(doc)
-    const displayField = pad ? levelField(heightfield, pad.rings, pad.datum) : heightfield
+    const displayField = pad ? levelField(heightfield, pad.structures) : heightfield
     const ground = buildGroundGeometry(displayField)
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
-    const built: FloorMeshes[] = floors.map((floor) => {
-      const geoms: BufferGeometry[] = []
+    const built: WallMeshes[] = []
+    for (const floor of floors) {
       for (const wall of floor.walls) {
-        if (wall.skin === 'logical') {
-          continue
-        }
+        if (wall.skin === 'logical') continue
         const samples = bottomSamplesForWall(floor, wall)
-        geoms.push(...buildWallGeometries(floor, wall, samples))
+        const geoms = buildWallGeometries(floor, wall, samples)
+        if (geoms.length === 0) continue
+        built.push({
+          key: `${floor.id}:${wall.id}`,
+          wallId: wall.id,
+          datumY: floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0),
+          geoms,
+        })
       }
-      return { id: floor.id, datumY: floorWorldDatum(floor.datumHeight, pad), geoms }
-    })
+    }
+    const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
-    floorMeshes = built
+    wallMeshes = built
+    floorSlabs = slabs
     return () => {
       ground.dispose()
       minor?.dispose()
       major?.dispose()
-      for (const f of built) {
-        for (const g of f.geoms) {
-          g.dispose()
-        }
+      for (const wall of built) {
+        for (const g of wall.geoms) g.dispose()
       }
+      for (const slab of slabs) slab.geometry.dispose()
     }
   })
+
+  function slabsFor(structures: { datum: number; rings: Ring[] }[]): FloorSlab[] {
+    const slabs: FloorSlab[] = []
+    structures.forEach((structure, structureIndex) => {
+      structure.rings.forEach((ring, ringIndex) => {
+        if (ring.length < 3) return
+        const shape = new Shape()
+        shape.moveTo(ring[0].x, -ring[0].z)
+        for (let i = 1; i < ring.length; i++) shape.lineTo(ring[i].x, -ring[i].z)
+        shape.closePath()
+        const geometry = new ShapeGeometry(shape)
+        geometry.rotateX(-Math.PI / 2)
+        slabs.push({
+          key: `${structureIndex}-${ringIndex}`,
+          geometry,
+          y: structure.datum + 0.02,
+          color: '#a3a3a3',
+        })
+      })
+    })
+    return slabs
+  }
+
+  function decksFor(
+    floors: Floor[],
+    pad: NonNullable<ReturnType<typeof groundPad>>,
+  ): FloorSlab[] {
+    const decks: FloorSlab[] = []
+    for (const floor of floors) {
+      if (floor.index === 0) continue
+      const polygons = deckPolygons(floor)
+      const grade = deckGrade(floor, pad, polygons)
+      polygons.forEach((polygon, index) => {
+        if (polygon.outer.length < 3) return
+        const shape = ringShape(polygon.outer)
+        for (const hole of polygon.holes) {
+          if (hole.length < 3) continue
+          shape.holes.push(ringPath(hole))
+        }
+        const geometry = new ExtrudeGeometry(shape, { depth: DECK_THICKNESS, bevelEnabled: false })
+        geometry.rotateX(-Math.PI / 2)
+        decks.push({
+          key: `deck-${floor.id}-${index}`,
+          geometry,
+          y: floorWorldDatum(floor.datumHeight, grade) - DECK_THICKNESS,
+          color: '#d6d3d1',
+          polygonOffset: true,
+        })
+      })
+    }
+    return decks
+  }
+
+  function deckGrade(
+    floor: Floor,
+    pad: NonNullable<ReturnType<typeof groundPad>>,
+    polygons: DeckPolygon[],
+  ): number {
+    for (const wall of floor.walls) {
+      const datum = wallDatum(floor, wall, pad)
+      if (datum !== null) return datum
+    }
+    const ring = polygons[0]?.outer ?? []
+    if (ring.length === 0) return 0
+    const x = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
+    const z = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
+    return pad.structures.find((structure) => structure.rings.some((item) => pointInRing(item, x, z)))?.datum ?? 0
+  }
+
+  function ringShape(ring: Ring): Shape {
+    const shape = new Shape()
+    shape.moveTo(ring[0].x, -ring[0].z)
+    for (let i = 1; i < ring.length; i++) shape.lineTo(ring[i].x, -ring[i].z)
+    shape.closePath()
+    return shape
+  }
+
+  function ringPath(ring: Ring): Path {
+    const path = new Path()
+    path.moveTo(ring[0].x, -ring[0].z)
+    for (let i = 1; i < ring.length; i++) path.lineTo(ring[i].x, -ring[i].z)
+    path.closePath()
+    return path
+  }
 
   function lineGeometry(positions: Float32Array): BufferGeometry | null {
     if (positions.length < 6) return null
@@ -127,7 +224,7 @@
   function keepCameraAboveGround(controls: OrbitControlsInstance) {
     const field = doc.heightfield
     const pad = groundPad(doc)
-    const displayField = pad ? levelField(field, pad.rings, pad.datum) : field
+    const displayField = pad ? levelField(field, pad.structures) : field
     const camera = controls.object
     const lifted = liftAboveGround(
       camera.position.y,
@@ -180,9 +277,22 @@
     </T.LineSegments>
   {/if}
 
-  {#each floorMeshes as floor (floor.id)}
-    <T.Group position.y={floor.datumY}>
-      {#each floor.geoms as geom, i (`${floor.datumY}-${i}`)}
+  {#each floorSlabs as slab (slab.key)}
+    <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>
+      <T.MeshStandardMaterial
+        color={slab.color}
+        roughness={0.95}
+        side={DoubleSide}
+        polygonOffset={slab.polygonOffset ?? false}
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
+      />
+    </T.Mesh>
+  {/each}
+
+  {#each wallMeshes as wall (wall.key)}
+    <T.Group position.y={wall.datumY}>
+      {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
         <T.Mesh geometry={geom} castShadow receiveShadow>
           <T.MeshStandardMaterial color="#c4b5a0" />
         </T.Mesh>

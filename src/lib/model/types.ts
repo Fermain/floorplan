@@ -18,6 +18,7 @@ export type Corner = {
   id: string
   x: number
   z: number
+  unitId?: string
 }
 
 export type OpeningKind = 'window' | 'door'
@@ -46,9 +47,11 @@ export type Floor = {
   id: string
   index: number
   datumHeight: number
+  unitId?: string
   corners: Corner[]
   walls: Wall[]
   roomFinishes: Record<string, string>
+  outline?: { x: number; z: number }[][]
 }
 
 export type Building = {

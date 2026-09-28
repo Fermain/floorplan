@@ -224,7 +224,11 @@
     {#if mode === 'plan'}
       <PlanView bind:selectedWallId bind:activeFloorId />
     {:else if mode === 'elevation' && selectedWallId}
-      <ElevationView wallId={selectedWallId} onSelectOpening={(id) => (selectedOpeningId = id)} />
+      <ElevationView
+        wallId={selectedWallId}
+        {selectedOpeningId}
+        onSelectOpening={(id) => (selectedOpeningId = id)}
+      />
     {:else if mode === 'review'}
       <ReviewView />
     {/if}

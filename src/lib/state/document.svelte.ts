@@ -65,6 +65,12 @@ export const documentStore = {
   moveCorner: (
     ...args: Parameters<typeof mutations.moveCorner> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.moveCorner(doc, ...args)),
+  moveCorners: (
+    ...args: Parameters<typeof mutations.moveCorners> extends [Document, ...infer R] ? R : never
+  ) => applyMutation((doc) => mutations.moveCorners(doc, ...args)),
+  rotateCorners: (
+    ...args: Parameters<typeof mutations.rotateCorners> extends [Document, ...infer R] ? R : never
+  ) => applyMutation((doc) => mutations.rotateCorners(doc, ...args)),
   addOpening: (
     ...args: Parameters<typeof mutations.addOpening> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.addOpening(doc, ...args)),
@@ -74,8 +80,9 @@ export const documentStore = {
   setOpeningAligned: (
     ...args: Parameters<typeof mutations.setOpeningAligned> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.setOpeningAligned(doc, ...args)),
-  addFloor: () => applyMutation((doc) => mutations.addFloor(doc)),
-  removeFloor: (floorId: string) => applyMutation((doc) => mutations.removeFloor(doc, floorId)),
+  addStorey: (floorId: string, cornerId?: string) =>
+    applyMutation((doc) => mutations.addStorey(doc, floorId, cornerId)),
+  removeTopStorey: (unitId: string) => applyMutation((doc) => mutations.removeTopStorey(doc, unitId)),
   removeWall: (floorId: string, wallId: string) =>
     applyMutation((doc) => mutations.removeWall(doc, floorId, wallId)),
   removeOpening: (floorId: string, wallId: string, openingId: string) =>

@@ -37,6 +37,7 @@
     "@turf/boolean-intersects": "^7.4.0",
     "@turf/boolean-point-in-polygon": "^7.4.0",
     "@turf/line-intersect": "^7.4.0",
+    "@turf/union": "7.4.0",
     "suncalc": "^2.0.2",
     "three": "^0.186.1",
     "three-bvh-csg": "^0.0.18",
