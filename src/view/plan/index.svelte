@@ -4,6 +4,7 @@
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms } from '../../lib/model/rooms'
   import type { Floor, WallSkin } from '../../lib/model/types'
+  import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { documentStore } from '../../lib/state/document.svelte'
   import { nearestCorner, snapEndToModule } from './snap'
 
@@ -168,12 +169,18 @@
     return floor.corners.find((c) => Math.hypot(c.x - x, c.z - z) <= CORNER_MATCH_M)?.id
   }
 
+  function explain(reason: string): string {
+    if (reason === 'wall outside plot') return 'That wall leaves the plot. Click an end inside the outline.'
+    if (reason === 'degenerate wall') return 'The end is too close to the start.'
+    return reason
+  }
+
   function applyResult(result: { ok: boolean; reason?: string }) {
     if (result.ok) {
       errorMessage = null
       return true
     }
-    errorMessage = result.reason ?? 'action failed'
+    errorMessage = explain(result.reason ?? 'action failed')
     return false
   }
 
@@ -277,9 +284,13 @@
       const skin: WallSkin = tool === 'draw-logical' ? 'logical' : 'double'
       if (!pendingDraw) {
         const hit = nearestCorner(activeFloor.corners, plan.x, plan.z)
+        if (!hit && !pointInPlot(document.plot, plan.x, plan.z)) {
+          errorMessage = 'Click inside the plot to start a wall.'
+          return
+        }
         pendingDraw = hit ? { startCornerId: hit.id } : { startPoint: { x: plan.x, z: plan.z } }
         pointerPlan = plan
-        applyResult({ ok: true })
+        errorMessage = null
         return
       }
       finishDraw(plan.x, plan.z, skin)
@@ -291,6 +302,18 @@
     if (!svg) return
     pointerPlan = clientToPlan(svg, event.clientX, event.clientY)
   }
+
+  $effect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !pendingDraw) return
+      event.preventDefault()
+      pendingDraw = null
+      pointerPlan = null
+      errorMessage = null
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   function setTool(next: Tool) {
     tool = next
@@ -323,7 +346,19 @@
     if (!pendingDraw || !pointerPlan || !activeFloor) return null
     const start = startCoords(activeFloor, pendingDraw)
     if (!start) return null
-    return { x1: start.x, z1: start.z, x2: pointerPlan.x, z2: pointerPlan.z }
+    const length = Math.hypot(pointerPlan.x - start.x, pointerPlan.z - start.z)
+    const allowed =
+      length <= 0.05 ||
+      segmentAllowedInPlot(document.plot, start.x, start.z, pointerPlan.x, pointerPlan.z)
+    return { x1: start.x, z1: start.z, x2: pointerPlan.x, z2: pointerPlan.z, length, allowed }
+  })
+
+  const drawHint = $derived.by(() => {
+    if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
+    if (!previewLine) return 'Click inside the plot to start a wall, then click the end.'
+    if (previewLine.length <= 0.05) return 'Click to place the end. Escape cancels.'
+    if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m`
+    return `Click to place the end, ${previewLine.length.toFixed(2)} m. Escape cancels.`
   })
 
   function roomFill(finishId: string): string {
@@ -361,6 +396,8 @@
     </div>
     {#if errorMessage}
       <p class="error">{errorMessage}</p>
+    {:else if drawHint}
+      <p class="hint">{drawHint}</p>
     {/if}
   </div>
   <svg
@@ -371,11 +408,19 @@
     onpointerdown={onSvgPointerDown}
     onpointermove={onSvgPointerMove}
   >
-    <polyline
-      points={pointsAttr([...plotRing.map(([x, z]) => [x, z] as SvgPoint), [plotRing[0][0], plotRing[0][1]]])}
-      fill="none"
-      stroke="#000"
-      stroke-width="0.05"
+    <rect
+      x={bounds.minX}
+      y={bounds.minZ}
+      width={bounds.maxX - bounds.minX}
+      height={bounds.maxZ - bounds.minZ}
+      fill="transparent"
+      pointer-events="all"
+    />
+    <polygon
+      points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
+      fill="#e7e5e4"
+      stroke="#18181b"
+      stroke-width="0.06"
     />
     {#if activeFloor}
       {#each rooms as room (room.cornerIds.join(','))}
@@ -436,13 +481,20 @@
         {/if}
       {/each}
       {#if previewLine}
+        <circle
+          cx={previewLine.x1}
+          cy={previewLine.z1}
+          r="0.18"
+          fill="#2563eb"
+          pointer-events="none"
+        />
         <line
           x1={previewLine.x1}
           y1={previewLine.z1}
           x2={previewLine.x2}
           y2={previewLine.z2}
-          stroke="#2563eb"
-          stroke-width="0.03"
+          stroke={previewLine.allowed ? '#2563eb' : '#b91c1c'}
+          stroke-width="0.04"
           stroke-dasharray="0.15 0.1"
           pointer-events="none"
         />
@@ -493,10 +545,18 @@
     background: #eff6ff;
   }
 
-  .error {
+  .error,
+  .hint {
     margin: 0;
-    color: #b91c1c;
     flex: 1 1 100%;
+  }
+
+  .error {
+    color: #b91c1c;
+  }
+
+  .hint {
+    color: #3f3f46;
   }
 
   .canvas {

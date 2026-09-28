@@ -9,12 +9,12 @@ let history: Document[] = []
 let redoStack: Document[] = []
 
 function snapshot(doc: Document): Document {
-  return structuredClone(doc)
+  return structuredClone($state.snapshot(doc))
 }
 
 function applyMutation(run: (doc: Document) => MutationResult): MutationResult {
   const before = snapshot(document)
-  const result = run(before)
+  const result = run(structuredClone(before))
   if (result.ok) {
     history = [...history, before].slice(-HISTORY_CAP)
     redoStack = []

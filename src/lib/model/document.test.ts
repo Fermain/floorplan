@@ -196,3 +196,15 @@ describe('delete', () => {
     expect(removed.document.building.floors[0].walls[0].openings).toHaveLength(0)
   })
 })
+
+describe('document store', () => {
+  it('adds a corner through the reactive document and undo restores it', () => {
+    loadDocument(fixtureDocument())
+    const fid = getDocument().building.floors[0].id
+    const added = documentStore.addCorner(fid, 5, 5)
+    expect(added.ok).toBe(true)
+    expect(getDocument().building.floors[0].corners).toEqual([{ id: expect.any(String), x: 5, z: 5 }])
+    expect(undo()).toBe(true)
+    expect(getDocument().building.floors[0].corners).toHaveLength(0)
+  })
+})
