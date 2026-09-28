@@ -1,6 +1,7 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
   import { contourPlanPaths } from '../../lib/geometry/contours'
+  import { isUnlandedWall } from '../../lib/geometry/support'
   import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
@@ -167,6 +168,19 @@
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
   const rooms = $derived(displayFloor ? deriveRooms(displayFloor) : [])
   const logicalWalls = $derived(displayFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
+  const unlandedWallIds = $derived.by(() => {
+    if (activeStoreyIndex <= 0) return new Set<string>()
+    const ids = new Set<string>()
+    for (const floor of levelFloors) {
+      for (const wall of floor.walls) {
+        if (isUnlandedWall(document, floor, wall)) ids.add(wall.id)
+      }
+    }
+    return ids
+  })
+  const showUnlandedWarning = $derived(
+    tool === 'select' || tool === 'draw-double' || tool === 'draw-logical',
+  )
   const contours = $derived.by(() => {
     const pad = groundPad(document)
     const field = pad ? levelField(document.heightfield, pad.structures) : document.heightfield
@@ -1237,7 +1251,7 @@
     return lines
   }
 
-  const drawHint = $derived.by(() => {
+  const drawHintBody = $derived.by(() => {
     if (tool === 'select') {
       if (rotateDrag) {
         const deg = turnLabel(rotateDrag.angle)
@@ -1268,6 +1282,18 @@
             ? ` Minimum angle is ${MIN_TURN_DEG}°.`
             : ''
     return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Right-click or Escape stops.`
+  })
+
+  const planHint = $derived.by(() => {
+    const extra: string[] = []
+    if (activeStoreyIndex >= 2) extra.push('Empirical masonry rules stop at two storeys.')
+    if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
+      extra.push('A wall on this storey does not land on a wall below.')
+    }
+    const main = drawHintBody
+    if (extra.length === 0) return main
+    const tail = extra.join(' ')
+    return main ? `${main} ${tail}` : tail
   })
 
   function roomFill(finishId: string): string {
@@ -1301,8 +1327,8 @@
     </div>
     {#if errorMessage}
       <p class="error">{errorMessage}</p>
-    {:else if drawHint}
-      <p class="hint">{drawHint}</p>
+    {:else if planHint}
+      <p class="hint">{planHint}</p>
     {/if}
   </div>
   <svg
@@ -1503,6 +1529,26 @@
           />
         {/if}
       {/each}
+      {#if showUnlandedWarning}
+        {#each displayFloor.walls as wall (wall.id)}
+          {#if unlandedWallIds.has(wall.id)}
+            {@const a = cornerById(displayFloor.corners, wall.startCornerId)}
+            {@const b = cornerById(displayFloor.corners, wall.endCornerId)}
+            {#if a && b}
+              <line
+                x1={a.x}
+                y1={a.z}
+                x2={b.x}
+                y2={b.z}
+                stroke="#b91c1c"
+                stroke-width="0.06"
+                stroke-linecap="round"
+                pointer-events="none"
+              />
+            {/if}
+          {/if}
+        {/each}
+      {/if}
       {#each displayFloor.walls as wall (wall.id)}
         {@const a = cornerById(displayFloor.corners, wall.startCornerId)}
         {@const b = cornerById(displayFloor.corners, wall.endCornerId)}

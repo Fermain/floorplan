@@ -1,11 +1,13 @@
 import { getPosition } from 'suncalc'
 
-export function summerSolstice(year: number): Date {
-  return new Date(Date.UTC(year, 5, 21, 12, 0, 0))
+export function summerSolstice(year: number, latitude: number): Date {
+  const month = latitude >= 0 ? 5 : 11
+  return new Date(Date.UTC(year, month, 21, 12, 0, 0))
 }
 
-export function winterSolstice(year: number): Date {
-  return new Date(Date.UTC(year, 11, 21, 12, 0, 0))
+export function winterSolstice(year: number, latitude: number): Date {
+  const month = latitude >= 0 ? 11 : 5
+  return new Date(Date.UTC(year, month, 21, 12, 0, 0))
 }
 
 export function sunDirection(

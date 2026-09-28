@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fixturePlot } from '../../lib/plot/fixture'
+import { BLOCK_LENGTH, fixturePlot } from '../../lib/plot/fixture'
 import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn, snapEndToOrthogonal, alignToNodes, alignTranslation, nearestPlotEdge, nearestRingEdge, nearestNode } from './snap'
 import type { Corner } from '../../lib/model/types'
 
@@ -24,10 +24,10 @@ describe('snapEndToModule', () => {
   it('snaps length to block module inside plot', () => {
     const startX = 2
     const startZ = 2
-    const endX = 2 + 0.44 * 3 + 0.03
+    const endX = 2 + BLOCK_LENGTH * 3 + 0.03
     const endZ = 2
     const out = snapEndToModule(plot, startX, startZ, endX, endZ, false)
-    expect(out.x).toBeCloseTo(startX + 0.44 * 3, 5)
+    expect(out.x).toBeCloseTo(startX + BLOCK_LENGTH * 3, 5)
     expect(out.z).toBeCloseTo(startZ, 5)
   })
 
@@ -40,7 +40,7 @@ describe('snapEndToModule', () => {
     const startX = 1
     const startZ = 19
     const endX = startX
-    const endZ = startZ + 0.44 * 14 + 0.03
+    const endZ = startZ + BLOCK_LENGTH * 14 + 0.03
     const out = snapEndToModule(plot, startX, startZ, endX, endZ, false)
     expect(out.z).toBeCloseTo(endZ, 5)
   })

@@ -1,17 +1,17 @@
 import type { Document, Heightfield, Plot } from '../model/types'
 
-export const BLOCK_LENGTH = 0.44
-export const BLOCK_HEIGHT = 0.215
-export const BLOCK_THICKNESS = 0.1
+export const BLOCK_LENGTH = 0.232
+export const BLOCK_HEIGHT = 0.083
+export const BLOCK_THICKNESS = 0.106
 export const CAVITY = 0.05
-export const DEFAULT_STOREY_HEIGHT = 2.4
+export const DEFAULT_STOREY_HEIGHT = 2.574
 export const FLOOR_TO_FLOOR = 2.8
 export const MAX_STOREYS = 4
 export const DEFAULT_SILL = 0.9
 export const DEFAULT_WINDOW_HEIGHT = 1.2
 export const DEFAULT_WINDOW_WIDTH = 0.9
-export const DEFAULT_DOOR_WIDTH = 0.9
-export const DEFAULT_DOOR_HEIGHT = 2.1
+export const DEFAULT_DOOR_WIDTH = 0.813
+export const DEFAULT_DOOR_HEIGHT = 2.032
 export const DOOR_MIN_WIDTH = 0.6
 export const OPENING_EDGE_PAD = 0.1
 export const OPENING_MIN_GAP = BLOCK_LENGTH
@@ -27,8 +27,8 @@ export const PLOT_RING: [number, number][] = [
 ]
 
 export const NORTH_BEARING_DEG = 18
-export const FIXTURE_LATITUDE = 51.5
-export const FIXTURE_LONGITUDE = -0.12
+export const FIXTURE_LATITUDE = -33.93
+export const FIXTURE_LONGITUDE = 18.42
 
 export const HEIGHTFIELD_ORIGIN_X = -4
 export const HEIGHTFIELD_ORIGIN_Z = -4

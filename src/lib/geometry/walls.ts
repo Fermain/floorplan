@@ -2,6 +2,7 @@ import {
   BLOCK_HEIGHT,
   BLOCK_LENGTH,
   BLOCK_THICKNESS,
+  CAVITY,
   DEFAULT_STOREY_HEIGHT,
   LINTEL_BEARING,
 } from '../plot/fixture'
@@ -9,7 +10,8 @@ import type { Floor, Opening, Wall } from '../model/types'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const LEAF_OFFSET = 0.075
+const LEAF_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
+const LINTEL_THICKNESS = CAVITY + 2 * BLOCK_THICKNESS
 const MITER_MAX_CORNER_DIST = 1
 const COURSE_COUNT = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)
 
@@ -29,7 +31,6 @@ export type LintelSpan = {
   u1: number
   y0: number
   y1: number
-  leaf: number
 }
 
 type Vec2 = { x: number; z: number }
@@ -150,12 +151,16 @@ function subtractInterval(
   return out.filter((i) => i.u1 - i.u0 > 1e-9)
 }
 
-function splitBlockRuns(u0: number, u1: number): { u0: number; u1: number }[] {
+function splitBlockRuns(
+  u0: number,
+  u1: number,
+  uShift = 0,
+): { u0: number; u1: number }[] {
   const spans: { u0: number; u1: number }[] = []
-  const kStart = Math.floor(u0 / BLOCK_LENGTH)
-  const kEnd = Math.floor((u1 - 1e-9) / BLOCK_LENGTH)
+  const kStart = Math.floor((u0 - uShift) / BLOCK_LENGTH)
+  const kEnd = Math.floor((u1 - 1e-9 - uShift) / BLOCK_LENGTH)
   for (let k = kStart; k <= kEnd; k++) {
-    const b0 = k * BLOCK_LENGTH
+    const b0 = uShift + k * BLOCK_LENGTH
     const b1 = b0 + BLOCK_LENGTH
     const s0 = Math.max(u0, b0)
     const s1 = Math.min(u1, b1)
@@ -220,17 +225,14 @@ function lintelBox(
 
 export function collectLintelSpans(floor: Floor, wall: Wall): LintelSpan[] {
   if (wall.skin === 'logical') return []
-  const signs = leafSigns(wall.skin)
+  const { uMin, uMax } = wallMeshURange(floor, wall, 0)
+  if (uMax - uMin <= 1e-9) return []
   const spans: LintelSpan[] = []
-  for (let leaf = 0; leaf < signs.length; leaf++) {
-    const { uMin, uMax } = wallMeshURange(floor, wall, signs[leaf])
-    if (uMax - uMin <= 1e-9) continue
-    for (const opening of wall.openings) {
-      const others = wall.openings.filter((item) => item.id !== opening.id)
-      const box = lintelBox(opening, others, uMin, uMax)
-      if (!box) continue
-      spans.push({ ...box, leaf })
-    }
+  for (const opening of wall.openings) {
+    const others = wall.openings.filter((item) => item.id !== opening.id)
+    const box = lintelBox(opening, others, uMin, uMax)
+    if (!box) continue
+    spans.push(box)
   }
   return spans
 }
@@ -381,7 +383,8 @@ export function collectWallBlockSpans(
         solids = next
       }
       for (const solid of solids) {
-        for (const block of splitBlockRuns(solid.u0, solid.u1)) {
+        const uShift = course % 2 === 1 ? BLOCK_LENGTH / 2 : 0
+        for (const block of splitBlockRuns(solid.u0, solid.u1, uShift)) {
           const range = courseVerticalRange(course, block.u0, block.u1, bottomSamples)
           if (!range) continue
           const { y0, y1 } = range
@@ -400,8 +403,7 @@ export function collectWallBlockSpans(
   for (const lintel of collectLintelSpans(floor, wall)) {
     const next: BlockSpan[] = []
     for (const span of spans) {
-      if (span.leaf !== lintel.leaf) next.push(span)
-      else next.push(...carveSpan(span, lintel))
+      next.push(...carveSpan(span, lintel))
     }
     spans.length = 0
     spans.push(...next)
@@ -435,6 +437,7 @@ function placeBox(
   unitBox: BoxGeometry,
   matrix: Matrix4,
   parts: BufferGeometry[],
+  thickness = BLOCK_THICKNESS,
 ): void {
   const uCenter = (u0 + u1) / 2
   const yCenter = (y0 + y1) / 2
@@ -450,7 +453,7 @@ function placeBox(
   const yUnit = new Vector3(0, 1, 0)
   const zUnit = new Vector3(frame.normal.x, 0, frame.normal.z).normalize()
   matrix.makeBasis(xUnit, yUnit, zUnit)
-  matrix.scale(new Vector3(blockLen, blockH, BLOCK_THICKNESS))
+  matrix.scale(new Vector3(blockLen, blockH, thickness))
   matrix.setPosition(cx, yCenter, cz)
   geom.applyMatrix4(matrix)
   parts.push(geom)
@@ -513,14 +516,22 @@ export function buildLintelGeometry(
   const spans = collectLintelSpans(floor, wall)
   if (spans.length === 0) return null
   const frame = buildFrame(floor, wall)
-  const signs = leafSigns(wall.skin)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
   for (const span of spans) {
-    const leafSign = signs[span.leaf]
-    if (leafSign === undefined) continue
-    placeBox(frame, span.u0, span.u1, span.y0, span.y1, leafSign, unitBox, matrix, parts)
+    placeBox(
+      frame,
+      span.u0,
+      span.u1,
+      span.y0,
+      span.y1,
+      0,
+      unitBox,
+      matrix,
+      parts,
+      LINTEL_THICKNESS,
+    )
   }
   unitBox.dispose()
   if (parts.length === 0) return null

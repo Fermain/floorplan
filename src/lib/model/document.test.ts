@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fixtureDocument } from '../plot/fixture'
+import { BLOCK_LENGTH, fixtureDocument } from '../plot/fixture'
 import {
   addCorner,
   addOpening,
@@ -375,14 +375,14 @@ describe('door width', () => {
     expect(beside.ok).toBe(true)
     if (!beside.ok) return
     const second = beside.document.building.floors[0].walls[0].openings[1]
-    expect(second.u).toBeCloseTo(first.u + first.width + 0.44, 5)
+    expect(second.u).toBeCloseTo(first.u + first.width + BLOCK_LENGTH, 5)
     const crowded = updateOpening(beside.document, floor.id, wall.id, second.id, {
       u: first.u + first.width + 0.05,
     })
     expect(crowded.ok).toBe(true)
     if (!crowded.ok) return
     const shifted = crowded.document.building.floors[0].walls[0].openings[1]
-    expect(shifted.u).toBeCloseTo(first.u + first.width + 0.44, 5)
+    expect(shifted.u).toBeCloseTo(first.u + first.width + BLOCK_LENGTH, 5)
     const widened = updateOpening(beside.document, floor.id, wall.id, first.id, { width: 2 })
     expect(widened.ok).toBe(true)
     if (!widened.ok) return

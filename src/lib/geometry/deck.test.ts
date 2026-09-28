@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import { pointInRing } from './pad'
-import { deckPolygons } from './deck'
+import { deckPolygons, deckThickness } from './deck'
 import type { Floor } from '../model/types'
+
+const CAVITY_FACE_M = CAVITY / 2
+const OUTER_FACE_M = CAVITY / 2 + BLOCK_THICKNESS
 
 function floor(partial: Partial<Floor> & Pick<Floor, 'corners' | 'walls'>): Floor {
   return {
@@ -27,15 +31,22 @@ describe('deckPolygons', () => {
     { x: 4, z: 10 },
   ]
 
-  it('spreads an empty plate out to the outer brick', () => {
+  it('caps deck thickness at 0.255 and otherwise fills the floor zone', () => {
+    const thickness = deckThickness()
+    expect(thickness).toBeLessThanOrEqual(0.255)
+    expect(thickness).toBeGreaterThan(0)
+  })
+
+  it('keeps an empty plate inside the cavity face, not over the outer brick', () => {
     const polygons = deckPolygons(floor({ corners: [], walls: [], outline: [plate] }))
     expect(covers(polygons, 7, 7)).toBe(true)
-    expect(covers(polygons, 3.9, 7)).toBe(true)
-    expect(covers(polygons, 3.8, 7)).toBe(false)
+    expect(covers(polygons, 4 + CAVITY_FACE_M + 0.01, 7)).toBe(true)
+    expect(covers(polygons, 4 - 0.01, 7)).toBe(false)
+    expect(covers(polygons, 4 - OUTER_FACE_M + 0.01, 7)).toBe(false)
     expect(covers(polygons, 2, 2)).toBe(false)
   })
 
-  it('follows a wall past the plate and leaves the open plate bare', () => {
+  it('follows a wall past the plate with an inner-leaf strip and leaves the open plate bare', () => {
     const polygons = deckPolygons(
       floor({
         outline: [plate],
@@ -48,12 +59,13 @@ describe('deckPolygons', () => {
     )
     expect(covers(polygons, 7, 7)).toBe(true)
     expect(covers(polygons, 12, 7)).toBe(true)
-    expect(covers(polygons, 7, 7.2)).toBe(false)
+    expect(covers(polygons, 7, 7 + BLOCK_THICKNESS / 2 + 0.02)).toBe(false)
+    expect(covers(polygons, 7, 7 + OUTER_FACE_M - 0.01)).toBe(false)
     expect(covers(polygons, 7, 5)).toBe(false)
-    expect(covers(polygons, 14.2, 7)).toBe(false)
+    expect(covers(polygons, 14 + BLOCK_THICKNESS / 2 + 0.05, 7)).toBe(false)
   })
 
-  it('fills a closed room out to the outer face', () => {
+  it('fills a closed room to the cavity face and leaves the outer face bare', () => {
     const corners = [
       { id: 'a', x: 4, z: 4 },
       { id: 'b', x: 10, z: 4 },
@@ -68,7 +80,8 @@ describe('deckPolygons', () => {
     ]
     const polygons = deckPolygons(floor({ corners, walls, outline: [plate] }))
     expect(covers(polygons, 7, 7)).toBe(true)
-    expect(covers(polygons, 3.9, 7)).toBe(true)
-    expect(covers(polygons, 3.8, 7)).toBe(false)
+    expect(covers(polygons, 4 + CAVITY_FACE_M + 0.01, 7)).toBe(true)
+    expect(covers(polygons, 4 - OUTER_FACE_M + 0.01, 7)).toBe(false)
+    expect(covers(polygons, 4 - 0.01, 7)).toBe(false)
   })
 })

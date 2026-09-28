@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Document, Floor, Heightfield, Wall } from '../model/types'
-import { averageGrade, connectedCornerIds, groundPad, levelField, pointInRing, wallDatum } from './pad'
+import {
+  averageGrade,
+  connectedCornerIds,
+  groundPad,
+  levelField,
+  pointInRing,
+  SURFACE_BED_THICKNESS_M,
+  SURFACE_BED_TOP_ABOVE_DATUM_M,
+  wallDatum,
+} from './pad'
 
 function linearField(): Heightfield {
   const cols = 9
@@ -177,5 +186,16 @@ describe('ground pad', () => {
     const open = rectFloor(2, 1, 6, 3)
     open.walls = open.walls.slice(0, 3)
     expect(groundPad(docWith([open]))).toBeNull()
+  })
+
+  it('places a 75 mm surface bed with its top 150 mm above the structure datum', () => {
+    expect(SURFACE_BED_TOP_ABOVE_DATUM_M).toBeCloseTo(0.15, 5)
+    expect(SURFACE_BED_THICKNESS_M).toBeCloseTo(0.075, 5)
+    const pad = groundPad(docWith([rectFloor(2, 1, 6, 3)]))
+    expect(pad).not.toBeNull()
+    if (!pad) return
+    const datum = pad.structures[0].datum
+    expect(datum + SURFACE_BED_TOP_ABOVE_DATUM_M).toBeCloseTo(datum + 0.15, 5)
+    expect(SURFACE_BED_TOP_ABOVE_DATUM_M - SURFACE_BED_THICKNESS_M).toBeCloseTo(0.075, 5)
   })
 })

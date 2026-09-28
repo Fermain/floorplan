@@ -1,23 +1,40 @@
 import { union } from '@turf/union'
 import { signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
-import type { Floor, Wall } from '../model/types'
-import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import type { DerivedRoom, Floor, Wall } from '../model/types'
+import {
+  BLOCK_HEIGHT,
+  BLOCK_THICKNESS,
+  CAVITY,
+  DEFAULT_STOREY_HEIGHT,
+  FLOOR_TO_FLOOR,
+} from '../plot/fixture'
 import { wallMeshURange } from './walls'
-import type { Ring } from './pad'
+import { pointInRing, type Ring } from './pad'
 
-const OUTER_FACE_M = CAVITY / 2 + BLOCK_THICKNESS
+const CAVITY_FACE_M = CAVITY / 2
+const MAX_DECK_THICKNESS_M = 0.255
 
 export type DeckPolygon = { outer: Ring; holes: Ring[] }
 
+export function deckThickness(): number {
+  const courseCount = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)
+  const zone = FLOOR_TO_FLOOR - courseCount * BLOCK_HEIGHT
+  return Math.min(zone, MAX_DECK_THICKNESS_M)
+}
+
 export function deckPolygons(floor: Floor): DeckPolygon[] {
-  const pieces = floor.walls.length > 0 ? wallPieces(floor) : (floor.outline ?? []).map((ring) => offsetOutward(ring, OUTER_FACE_M))
+  const pieces =
+    floor.walls.length > 0
+      ? wallPieces(floor)
+      : (floor.outline ?? []).map((ring) => offsetOutward(ring, -CAVITY_FACE_M))
   return unionRings(pieces.filter((ring) => ring.length >= 3))
 }
 
 function wallPieces(floor: Floor): Ring[] {
+  const rooms = deriveRooms(floor)
   const pieces: Ring[] = []
-  for (const room of deriveRooms(floor)) {
+  for (const room of rooms) {
     const ring: Ring = []
     for (const id of room.cornerIds) {
       const corner = floor.corners.find((item) => item.id === id)
@@ -27,18 +44,17 @@ function wallPieces(floor: Floor): Ring[] {
       }
       ring.push({ x: corner.x, z: corner.z })
     }
-    if (ring.length >= 3) pieces.push(offsetOutward(ring, OUTER_FACE_M))
+    if (ring.length >= 3) pieces.push(offsetOutward(ring, -CAVITY_FACE_M))
   }
   for (const wall of floor.walls) {
-    const strip = wallStrip(floor, wall)
+    const strip = wallStrip(floor, wall, rooms)
     if (strip) pieces.push(strip)
   }
   return pieces
 }
 
-function wallStrip(floor: Floor, wall: Wall): Ring | null {
-  const half = halfWidth(wall.skin)
-  if (half <= 0) return null
+function wallStrip(floor: Floor, wall: Wall, rooms: DerivedRoom[]): Ring | null {
+  if (wall.skin === 'logical') return null
   const start = floor.corners.find((corner) => corner.id === wall.startCornerId)
   const end = floor.corners.find((corner) => corner.id === wall.endCornerId)
   if (!start || !end) return null
@@ -48,6 +64,7 @@ function wallStrip(floor: Floor, wall: Wall): Ring | null {
   if (length < 1e-9) return null
   const dir = { x: dx / length, z: dz / length }
   const normal = { x: -dir.z, z: dir.x }
+  const roomSide = roomSideAlongNormal(floor, wall, rooms, normal)
   let u0 = 0
   let u1 = length
   for (const sign of leafSigns(wall.skin)) {
@@ -59,13 +76,48 @@ function wallStrip(floor: Floor, wall: Wall): Ring | null {
     x: start.x + dir.x * u + normal.x * side,
     z: start.z + dir.z * u + normal.z * side,
   })
-  return [at(u0, -half), at(u1, -half), at(u1, half), at(u0, half)]
+  if (roomSide === null) {
+    const half = BLOCK_THICKNESS / 2
+    return [at(u0, -half), at(u1, -half), at(u1, half), at(u0, half)]
+  }
+  if (wall.skin === 'single') {
+    const inner = roomSide * (BLOCK_THICKNESS / 2)
+    return [at(u0, 0), at(u1, 0), at(u1, inner), at(u0, inner)]
+  }
+  const cavity = roomSide * CAVITY_FACE_M
+  const roomFace = roomSide * (CAVITY_FACE_M + BLOCK_THICKNESS)
+  return [at(u0, cavity), at(u1, cavity), at(u1, roomFace), at(u0, roomFace)]
 }
 
-function halfWidth(skin: Wall['skin']): number {
-  if (skin === 'single') return BLOCK_THICKNESS / 2
-  if (skin === 'double') return OUTER_FACE_M
-  return 0
+function roomSideAlongNormal(
+  floor: Floor,
+  wall: Wall,
+  rooms: DerivedRoom[],
+  normal: { x: number; z: number },
+): number | null {
+  if (rooms.length === 0) return null
+  const start = floor.corners.find((corner) => corner.id === wall.startCornerId)
+  const end = floor.corners.find((corner) => corner.id === wall.endCornerId)
+  if (!start || !end) return null
+  const midX = (start.x + end.x) / 2
+  const midZ = (start.z + end.z) / 2
+  const probe = 0.02
+  const rings = rooms.map((room) => {
+    const ring: Ring = []
+    for (const id of room.cornerIds) {
+      const corner = floor.corners.find((item) => item.id === id)
+      if (!corner) return null
+      ring.push({ x: corner.x, z: corner.z })
+    }
+    return ring.length >= 3 ? ring : null
+  })
+  const hit = (side: number) =>
+    rings.some((ring) => ring && pointInRing(ring, midX + normal.x * side * probe, midZ + normal.z * side * probe))
+  const pos = hit(1)
+  const neg = hit(-1)
+  if (pos && !neg) return 1
+  if (neg && !pos) return -1
+  return null
 }
 
 function leafSigns(skin: Wall['skin']): number[] {
@@ -80,6 +132,7 @@ function offsetOutward(ring: Ring, distance: number): Ring {
   const ccw = signedPolygonArea(points) < 0 ? [...points].reverse() : points
   const count = ccw.length
   const offset: Ring = []
+  const limit = Math.abs(distance) * 4
   for (let i = 0; i < count; i++) {
     const prev = ccw[(i + count - 1) % count]
     const current = ccw[i]
@@ -93,7 +146,7 @@ function offsetOutward(ring: Ring, distance: number): Ring {
     const b = { x: current.x + right.x * distance, z: current.z + right.z * distance }
     const hit = lineIntersection(a, inward, b, outward)
     const span = hit ? Math.hypot(hit.x - current.x, hit.z - current.z) : Infinity
-    if (!hit || span > distance * 4) {
+    if (!hit || span > limit) {
       offset.push(a, b)
     } else {
       offset.push(hit)

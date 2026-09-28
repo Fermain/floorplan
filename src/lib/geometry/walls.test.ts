@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Floor, Wall } from '../model/types'
 import {
+  BLOCK_HEIGHT,
+  BLOCK_LENGTH,
+} from '../plot/fixture'
+import {
   buildLintelGeometry,
   buildWallGeometries,
   collectLintelSpans,
@@ -85,10 +89,10 @@ describe('buildWallGeometries', () => {
       openings: [
         {
           id: 'o1',
-          u: 0.17,
+          u: 0.08,
           v: 0,
-          width: 0.1,
-          height: 0.215,
+          width: 0.05,
+          height: BLOCK_HEIGHT,
           kind: 'window',
           aligned: false,
         },
@@ -99,14 +103,34 @@ describe('buildWallGeometries', () => {
       { id: 'b', x: 2, z: 0 },
     ])
     const course0 = collectWallBlockSpans(floor, wall).filter(
-      (s) => s.course === 0 && s.leaf === 0 && s.u1 <= 0.44 + 1e-6,
+      (s) => s.course === 0 && s.leaf === 0 && s.u1 <= BLOCK_LENGTH + 1e-6,
     )
     expect(course0).toHaveLength(2)
     const sorted = [...course0].sort((a, b) => a.u0 - b.u0)
     expect(sorted[0].u0).toBeCloseTo(0, 6)
-    expect(sorted[0].u1).toBeCloseTo(0.17, 6)
-    expect(sorted[1].u0).toBeCloseTo(0.27, 6)
-    expect(sorted[1].u1).toBeCloseTo(0.44, 6)
+    expect(sorted[0].u1).toBeCloseTo(0.08, 6)
+    expect(sorted[1].u0).toBeCloseTo(0.13, 6)
+    expect(sorted[1].u1).toBeCloseTo(BLOCK_LENGTH, 6)
+  })
+
+  it('half-laps odd courses by half a block length', () => {
+    const wall = straightWall({ skin: 'single' })
+    const floor = floorWithWall(wall, [
+      { id: 'a', x: 0, z: 0 },
+      { id: 'b', x: 2, z: 0 },
+    ])
+    const course0 = collectWallBlockSpans(floor, wall)
+      .filter((s) => s.course === 0 && s.leaf === 0)
+      .sort((a, b) => a.u0 - b.u0)
+    const course1 = collectWallBlockSpans(floor, wall)
+      .filter((s) => s.course === 1 && s.leaf === 0)
+      .sort((a, b) => a.u0 - b.u0)
+    expect(course0[0].u0).toBeCloseTo(0, 6)
+    expect(course0[0].u1).toBeCloseTo(BLOCK_LENGTH, 6)
+    expect(course1[0].u0).toBeCloseTo(0, 6)
+    expect(course1[0].u1).toBeCloseTo(BLOCK_LENGTH / 2, 6)
+    expect(course1[1].u0).toBeCloseTo(BLOCK_LENGTH / 2, 6)
+    expect(course1[1].u1).toBeCloseTo(BLOCK_LENGTH / 2 + BLOCK_LENGTH, 6)
   })
 
   it('places the lowest course on bottomSamples', () => {
@@ -131,8 +155,8 @@ describe('buildWallGeometries', () => {
     expect(minY).toBeCloseTo(-0.5, 5)
     const course0 = collectWallBlockSpans(floor, wall, samples).filter((s) => s.course === 0)
     const course1 = collectWallBlockSpans(floor, wall, samples).filter((s) => s.course === 1)
-    expect(course0.every((s) => Math.abs(s.y1 - 0.215) < 1e-6)).toBe(true)
-    expect(course1.every((s) => Math.abs(s.y0 - 0.215) < 1e-6)).toBe(true)
+    expect(course0.every((s) => Math.abs(s.y1 - BLOCK_HEIGHT) < 1e-6)).toBe(true)
+    expect(course1.every((s) => Math.abs(s.y0 - BLOCK_HEIGHT) < 1e-6)).toBe(true)
   })
 
   it('miters a right-angle corner so the outer leaf extends and the inner leaf shortens', () => {
@@ -168,8 +192,8 @@ describe('buildWallGeometries', () => {
     const inner = collectWallBlockSpans(floor, along)
       .filter((s) => s.leaf === 1 && s.course === 0)
       .sort((a, b) => a.u0 - b.u0)
-    expect(outer[0].u0).toBeCloseTo(-0.075, 3)
-    expect(inner[0].u0).toBeCloseTo(0.075, 3)
+    expect(outer[0].u0).toBeCloseTo(-0.078, 3)
+    expect(inner[0].u0).toBeCloseTo(0.078, 3)
   })
 
   it('miters an end-to-start corner so the outer leaf extends and the inner leaf shortens', () => {
@@ -205,8 +229,8 @@ describe('buildWallGeometries', () => {
           .filter((s) => s.leaf === leaf && s.course === 0)
           .map((s) => s.u1),
       )
-    expect(endU(0)).toBeCloseTo(4.075, 3)
-    expect(endU(1)).toBeCloseTo(3.925, 3)
+    expect(endU(0)).toBeCloseTo(4.078, 3)
+    expect(endU(1)).toBeCloseTo(3.922, 3)
   })
 })
 
@@ -221,21 +245,20 @@ describe('lintels', () => {
     aligned: true,
   }
 
-  it('bears one course past the opening on each leaf', () => {
+  it('places one cavity lintel bearing past the opening', () => {
     const wall = straightWall({ openings: [windowOpening] })
     const floor = floorWithWall(wall)
     const spans = collectLintelSpans(floor, wall)
-    expect(spans).toHaveLength(2)
-    for (const span of spans) {
-      expect(span.u0).toBeCloseTo(1.35, 5)
-      expect(span.u1).toBeCloseTo(2.55, 5)
-      expect(span.y0).toBeCloseTo(2.1, 5)
-      expect(span.y1).toBeCloseTo(2.315, 5)
-    }
-    expect(wallSolidContains(floor, wall, 1.95, 2.2, 0)).toBe(false)
-    expect(wallSolidContains(floor, wall, 1.4, 2.2, 0)).toBe(false)
+    expect(spans).toHaveLength(1)
+    expect(spans[0].u0).toBeCloseTo(1.35, 5)
+    expect(spans[0].u1).toBeCloseTo(2.55, 5)
+    expect(spans[0].y0).toBeCloseTo(2.1, 5)
+    expect(spans[0].y1).toBeCloseTo(2.1 + BLOCK_HEIGHT, 5)
+    expect(wallSolidContains(floor, wall, 1.95, 2.14, 0)).toBe(false)
+    expect(wallSolidContains(floor, wall, 1.95, 2.14, 1)).toBe(false)
+    expect(wallSolidContains(floor, wall, 1.4, 2.14, 0)).toBe(false)
     expect(wallSolidContains(floor, wall, 1.4, 1.5, 0)).toBe(true)
-    expect(wallSolidContains(floor, wall, 1.95, 2.34, 0)).toBe(true)
+    expect(wallSolidContains(floor, wall, 1.95, 2.2, 0)).toBe(true)
     const lintel = buildLintelGeometry(floor, wall)
     expect(lintel).not.toBeNull()
     expect(geometryTriangleCount(lintel!)).toBeGreaterThan(0)
@@ -250,15 +273,15 @@ describe('lintels', () => {
       ],
     })
     const floor = floorWithWall(wall)
-    const first = collectLintelSpans(floor, wall).find((span) => span.leaf === 0 && span.u0 < 2)
-    const second = collectLintelSpans(floor, wall).find((span) => span.leaf === 0 && span.u0 >= 2)
+    const first = collectLintelSpans(floor, wall).find((span) => span.u0 < 2)
+    const second = collectLintelSpans(floor, wall).find((span) => span.u0 >= 2)
     expect(first?.u1).toBeCloseTo(2.45, 5)
     expect(second?.u0).toBeCloseTo(2.45, 5)
   })
 
   it('omits a lintel when the opening reaches the wall head', () => {
     const wall = straightWall({
-      openings: [{ ...windowOpening, v: 2.2, height: 0.2 }],
+      openings: [{ ...windowOpening, v: 2.4, height: 0.2 }],
     })
     const floor = floorWithWall(wall)
     expect(collectLintelSpans(floor, wall)).toEqual([])

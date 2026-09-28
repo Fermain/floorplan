@@ -1,14 +1,46 @@
 <script lang="ts">
   import ReviewScene from './ReviewScene.svelte'
+  import { documentStore } from '../../lib/state/document.svelte'
   import { summerSolstice, winterSolstice } from '../../lib/solar/sun'
+
+  const YEAR = 2026
+  const UTC_MONTHS = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ]
 
   type SolsticeKind = 'summer' | 'winter'
 
   let hour = $state(12)
   let solsticeKind = $state<SolsticeKind>('summer')
 
+  const latitude = $derived(documentStore.document.plot.latitude)
+
+  function solsticeDate(kind: SolsticeKind): Date {
+    return kind === 'summer'
+      ? summerSolstice(YEAR, latitude)
+      : winterSolstice(YEAR, latitude)
+  }
+
+  function solsticeLabel(kind: SolsticeKind): string {
+    const date = solsticeDate(kind)
+    const day = date.getUTCDate()
+    const month = UTC_MONTHS[date.getUTCMonth()]
+    return `${day} ${month} ${date.getUTCFullYear()} · ${kind}`
+  }
+
   function dateAtHour(kind: SolsticeKind, h: number): Date {
-    const base = kind === 'summer' ? summerSolstice(2026) : winterSolstice(2026)
+    const base = solsticeDate(kind)
     const hourOfDay = Math.min(23, h)
     const minute = h >= 24 ? 59 : 0
     return new Date(
@@ -24,6 +56,8 @@
   }
 
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
+  const summerLabel = $derived(solsticeLabel('summer'))
+  const winterLabel = $derived(solsticeLabel('winter'))
 </script>
 
 <div class="root">
@@ -33,8 +67,8 @@
       <input type="range" min="0" max="24" step="1" bind:value={hour} />
       <span class="hour">{hour}</span>
     </label>
-    <button type="button" onclick={() => (solsticeKind = 'summer')}>Summer solstice 2026</button>
-    <button type="button" onclick={() => (solsticeKind = 'winter')}>Winter solstice 2026</button>
+    <button type="button" onclick={() => (solsticeKind = 'summer')}>{summerLabel}</button>
+    <button type="button" onclick={() => (solsticeKind = 'winter')}>{winterLabel}</button>
   </div>
   <div class="viewport">
     <ReviewScene {sunDate} />

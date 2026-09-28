@@ -68,6 +68,10 @@
     return opening?.kind === 'door' ? opening : undefined
   })
 
+  function mm(m: number): number {
+    return Math.round(m * 1000)
+  }
+
   const frame = $derived.by(() => {
     if (!floor || !wall) {
       return undefined
@@ -114,6 +118,12 @@
     }
     if (openings === wall.openings) return wall
     return { ...wall, openings }
+  })
+
+  const selectedOpening = $derived.by(() => {
+    if (!selectedOpeningId) return undefined
+    const shown = displayWall ?? wall
+    return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
   const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
@@ -393,7 +403,11 @@
       </span>
       {#if readout}
         <span class="readout">
-          u: {readout.u.toFixed(3)} m, v: {readout.v.toFixed(3)} m
+          u: {mm(readout.u)} mm, v: {mm(readout.v)} mm
+          {#if selectedOpening}
+            , width: {mm(selectedOpening.width)} mm, height: {mm(selectedOpening.height)} mm, sill:
+            {mm(selectedOpening.v)} mm, head: {mm(selectedOpening.v + selectedOpening.height)} mm
+          {/if}
         </span>
       {/if}
     </div>
