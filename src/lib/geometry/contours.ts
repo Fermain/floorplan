@@ -136,6 +136,59 @@ function addTriangle(
   )
 }
 
+export type ContourLabel = { x: number; z: number; label: string }
+
+function preferLabel(
+  next: { len: number; dist: number },
+  prev: { len: number; dist: number },
+): boolean {
+  const nextReadable = next.len >= 0.5
+  const prevReadable = prev.len >= 0.5
+  if (nextReadable !== prevReadable) return nextReadable
+  return next.dist < prev.dist
+}
+
+function fmtCoord(n: number): string {
+  return String(Math.round(n * 1000) / 1000)
+}
+
+function pathFromPositions(positions: Float32Array): string {
+  let d = ''
+  for (let i = 0; i < positions.length; i += 6) {
+    d += `M${fmtCoord(positions[i])} ${fmtCoord(positions[i + 2])}L${fmtCoord(positions[i + 3])} ${fmtCoord(positions[i + 5])}`
+  }
+  return d
+}
+
+export function contourPlanOverlay(
+  field: Heightfield,
+  inside: (x: number, z: number) => boolean,
+  focus: { x: number; z: number } = { x: 0, z: 0 },
+): { minor: string; major: string; labels: ContourLabel[] } {
+  const lines = buildContourLines(field, 0)
+  const best = new Map<number, { x: number; z: number; len: number; dist: number }>()
+  const major = lines.major
+  for (let i = 0; i < major.length; i += 6) {
+    const x0 = major[i]
+    const z0 = major[i + 2]
+    const x1 = major[i + 3]
+    const z1 = major[i + 5]
+    const mx = (x0 + x1) / 2
+    const mz = (z0 + z1) / 2
+    if (!inside(mx, mz)) continue
+    const len = Math.hypot(x1 - x0, z1 - z0)
+    const dist = Math.hypot(mx - focus.x, mz - focus.z)
+    const key = Math.round(major[i + 1] * 1000) / 1000
+    const prev = best.get(key)
+    const candidate = { x: mx, z: mz, len, dist }
+    if (!prev || preferLabel(candidate, prev)) best.set(key, candidate)
+  }
+  const labels = [...best.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([level, p]) => ({ x: p.x, z: p.z, label: `${level} m` }))
+  return { minor: pathFromPositions(lines.minor), major: pathFromPositions(lines.major), labels }
+}
+
 export function buildContourLines(field: Heightfield, lift = 0): ContourLines {
   const empty: ContourLines = { interval: null, minor: new Float32Array(), major: new Float32Array() }
   if (field.cols < 2 || field.rows < 2 || field.heights.length !== field.cols * field.rows) return empty

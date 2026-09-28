@@ -1,5 +1,6 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
+  import { contourPlanOverlay } from '../../lib/geometry/contours'
   import { solidWallPolygons, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms } from '../../lib/model/rooms'
@@ -66,6 +67,21 @@
   )
   const rooms = $derived(activeFloor ? deriveRooms(activeFloor) : [])
   const logicalWalls = $derived(activeFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
+  const contours = $derived.by(() => {
+    const ring = document.plot.ring
+    let x = 0
+    let z = 0
+    for (const [px, pz] of ring) {
+      x += px
+      z += pz
+    }
+    const n = ring.length || 1
+    return contourPlanOverlay(
+      document.heightfield,
+      (px, pz) => pointInPlot(document.plot, px, pz),
+      { x: x / n, z: z / n },
+    )
+  })
 
   function plotBounds(ring: [number, number][], margin: number) {
     let minX = Infinity
@@ -592,6 +608,11 @@
     onpointerdown={onSvgPointerDown}
     onpointermove={onSvgPointerMove}
   >
+    <defs>
+      <clipPath id="plan-plot-clip">
+        <polygon points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))} />
+      </clipPath>
+    </defs>
     <rect
       x={bounds.minX}
       y={bounds.minZ}
@@ -606,6 +627,42 @@
       stroke="#18181b"
       stroke-width="0.06"
     />
+    <g clip-path="url(#plan-plot-clip)" pointer-events="none">
+      {#if contours.minor}
+        <path
+          d={contours.minor}
+          fill="none"
+          stroke="#7c6a58"
+          stroke-width="0.016"
+          stroke-linecap="round"
+        />
+      {/if}
+      {#if contours.major}
+        <path
+          d={contours.major}
+          fill="none"
+          stroke="#3f3428"
+          stroke-width="0.032"
+          stroke-linecap="round"
+        />
+      {/if}
+    </g>
+    {#each contours.labels as label (label.label)}
+      <text
+        x={label.x}
+        y={label.z}
+        fill="#3f3428"
+        stroke="#e7e5e4"
+        stroke-width="0.08"
+        paint-order="stroke"
+        font-size="0.55"
+        text-anchor="middle"
+        dominant-baseline="middle"
+        pointer-events="none"
+      >
+        {label.label}
+      </text>
+    {/each}
     {#if activeFloor}
       {#each rooms as room (room.cornerIds.join(','))}
         {@const pts = roomPolygonPoints(room.cornerIds, activeFloor)}
