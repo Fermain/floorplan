@@ -20,7 +20,7 @@
     SURFACE_BED_TOP_ABOVE_DATUM_M,
     wallDatum,
   } from '../../lib/geometry/pad'
-  import { roofsForDocument, wallHeadHeight } from '../../lib/geometry/roof'
+  import { roofEavesAboveDatum, roofsForDocument } from '../../lib/geometry/roof'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -46,7 +46,6 @@
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
 
   const DECK_THICKNESS = deckThickness()
-  const WALL_HEAD = wallHeadHeight()
 
   let groundGeometry = $state<BufferGeometry | null>(null)
   let contourMinor = $state<BufferGeometry | null>(null)
@@ -199,7 +198,7 @@
   function roofsFor(pad: NonNullable<ReturnType<typeof groundPad>>): { key: string; geometry: BufferGeometry }[] {
     const specs = roofsForDocument(doc, (floor, rings) => {
       const grade = roofGrade(floor, pad, rings)
-      return floorWorldDatum(floor.datumHeight, grade) + WALL_HEAD
+      return floorWorldDatum(floor.datumHeight, grade) + roofEavesAboveDatum(floor)
     })
     const meshes: { key: string; geometry: BufferGeometry }[] = []
     specs.forEach((spec, specIndex) => {

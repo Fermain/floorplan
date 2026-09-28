@@ -37,6 +37,10 @@ export function wallHeadHeight(): number {
   return WALL_HEAD
 }
 
+export function roofEavesAboveDatum(floor: Floor): number {
+  return floor.walls.some((wall) => wall.skin !== 'logical') ? WALL_HEAD : 0
+}
+
 export function roofFootprintsForFloor(floor: Floor, cornerIds?: string[]): RoofFootprint[] {
   const rings = planRings(floor, cornerIds)
   return rings
