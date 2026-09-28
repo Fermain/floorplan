@@ -6,7 +6,16 @@
   import type { Floor, WallSkin } from '../../lib/model/types'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { documentStore } from '../../lib/state/document.svelte'
-  import { nearestCorner, snapEndToModule, CORNER_SNAP_M, headingFromNorthDeg, smallerAngleDeg } from './snap'
+  import {
+    nearestCorner,
+    nearestWallPoint,
+    snapEndToModule,
+    snapEndToMinTurn,
+    CORNER_SNAP_M,
+    MIN_TURN_DEG,
+    headingFromNorthDeg,
+    smallerAngleDeg,
+  } from './snap'
 
   type Tool = 'draw-double' | 'draw-logical' | 'select' | 'finish'
 
@@ -210,14 +219,12 @@
       return
     }
 
-    const endCornerHit = nearestCorner(floor.corners, endX, endZ, CORNER_SNAP_M, startId)
+    const resolved = resolveEnd(floor, start, startId, endX, endZ)
+    const endCornerHit = resolved.cornerId
+      ? floor.corners.find((c) => c.id === resolved.cornerId)
+      : undefined
     let endId = endCornerHit?.id
-    let endPoint = endCornerHit
-      ? { x: endCornerHit.x, z: endCornerHit.z }
-      : { x: endX, z: endZ }
-    if (!endCornerHit) {
-      endPoint = snapEndToModule(document.plot, start.x, start.z, endPoint.x, endPoint.z, false)
-    }
+    const endPoint = { x: resolved.x, z: resolved.z }
 
     if (!startId) {
       const r = documentStore.addCorner(activeFloorId, pending.startPoint!.x, pending.startPoint!.z)
@@ -270,7 +277,25 @@
     if (endCorner) pointerPlan = { x: endCorner.x, z: endCorner.z }
   }
 
+  function cancelDraw() {
+    if (!pendingDraw) return
+    pendingDraw = null
+    chainOriginId = null
+    pointerPlan = null
+    errorMessage = null
+  }
+
+  function onPlanContextMenu(event: MouseEvent) {
+    event.preventDefault()
+    cancelDraw()
+  }
+
   function onSvgPointerDown(event: PointerEvent) {
+    if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
+      cancelDraw()
+      return
+    }
+    if (event.button !== 0) return
     const svg = svgEl
     if (!svg || !activeFloor) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
@@ -294,12 +319,17 @@
     if (tool === 'draw-double' || tool === 'draw-logical') {
       const skin: WallSkin = tool === 'draw-logical' ? 'logical' : 'double'
       if (!pendingDraw) {
-        const hit = nearestCorner(activeFloor.corners, plan.x, plan.z)
-        if (!hit && !pointInPlot(document.plot, plan.x, plan.z)) {
+      const hit = nearestCorner(activeFloor.corners, plan.x, plan.z)
+      const wallHit = hit
+        ? undefined
+        : nearestWallPoint(activeFloor.corners, activeFloor.walls, plan.x, plan.z)
+      if (!hit && !wallHit && !pointInPlot(document.plot, plan.x, plan.z)) {
           errorMessage = 'Click inside the plot to start a wall.'
           return
         }
-        pendingDraw = hit ? { startCornerId: hit.id } : { startPoint: { x: plan.x, z: plan.z } }
+        pendingDraw = hit
+          ? { startCornerId: hit.id }
+          : { startPoint: { x: wallHit?.x ?? plan.x, z: wallHit?.z ?? plan.z } }
         pointerPlan = plan
         errorMessage = null
         return
@@ -315,13 +345,11 @@
   }
 
   $effect(() => {
+    const drawing = pendingDraw
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !pendingDraw) return
+      if (event.key !== 'Escape' || !drawing) return
       event.preventDefault()
-      pendingDraw = null
-      chainOriginId = null
-      pointerPlan = null
-      errorMessage = null
+      cancelDraw()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -355,6 +383,53 @@
     }
   }
 
+  function referenceAway(
+    floor: Floor,
+    cornerId: string | undefined,
+    start: { x: number; z: number },
+    dx: number,
+    dz: number,
+  ): { dx: number; dz: number } | null {
+    if (!cornerId) return null
+    let best: { dx: number; dz: number; deg: number } | null = null
+    for (const wall of floor.walls) {
+      const atStart = wall.startCornerId === cornerId
+      const atEnd = wall.endCornerId === cornerId
+      if (!atStart && !atEnd) continue
+      const other = cornerById(floor.corners, atStart ? wall.endCornerId : wall.startCornerId)
+      if (!other) continue
+      const wx = other.x - start.x
+      const wz = other.z - start.z
+      const deg = smallerAngleDeg(wx, wz, dx, dz)
+      if (deg === null) continue
+      if (!best || deg < best.deg) best = { dx: wx, dz: wz, deg }
+    }
+    return best ? { dx: best.dx, dz: best.dz } : null
+  }
+
+  function resolveEnd(
+    floor: Floor,
+    start: { x: number; z: number },
+    startCornerId: string | undefined,
+    x: number,
+    z: number,
+  ): { x: number; z: number; cornerId?: string; wallSnap: boolean; minTurn: boolean } {
+    const hit = nearestCorner(floor.corners, x, z, CORNER_SNAP_M, startCornerId)
+    if (hit) return { x: hit.x, z: hit.z, cornerId: hit.id, wallSnap: false, minTurn: false }
+    const wallHit = nearestWallPoint(floor.corners, floor.walls, x, z, CORNER_SNAP_M, startCornerId)
+    if (wallHit) return { x: wallHit.x, z: wallHit.z, wallSnap: true, minTurn: false }
+    let end = { x, z }
+    let minTurn = false
+    const ref = referenceAway(floor, startCornerId, start, x - start.x, z - start.z)
+    if (ref) {
+      const turned = snapEndToMinTurn(document.plot, start.x, start.z, end.x, end.z, ref.dx, ref.dz)
+      end = turned
+      minTurn = turned.applied
+    }
+    const snapped = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
+    return { x: snapped.x, z: snapped.z, wallSnap: false, minTurn }
+  }
+
   function angleReadout(
     floor: Floor,
     startCornerId: string | undefined,
@@ -364,30 +439,18 @@
     length: number,
   ): { label: string; path: string | null; x: number; z: number } | null {
     if (length <= 0.05) return null
-    let best: { dx: number; dz: number; deg: number } | null = null
-    if (startCornerId) {
-      for (const wall of floor.walls) {
-        const atStart = wall.startCornerId === startCornerId
-        const atEnd = wall.endCornerId === startCornerId
-        if (!atStart && !atEnd) continue
-        const other = cornerById(floor.corners, atStart ? wall.endCornerId : wall.startCornerId)
-        if (!other) continue
-        const wx = other.x - start.x
-        const wz = other.z - start.z
-        const deg = smallerAngleDeg(wx, wz, dx, dz)
-        if (deg === null) continue
-        if (!best || deg < best.deg) best = { dx: wx, dz: wz, deg }
-      }
-    }
-    if (best) {
-      const a0 = Math.atan2(best.dz, best.dx)
+    const ref = referenceAway(floor, startCornerId, start, dx, dz)
+    if (ref) {
+      const deg = smallerAngleDeg(ref.dx, ref.dz, dx, dz)
+      if (deg === null) return null
+      const a0 = Math.atan2(ref.dz, ref.dx)
       const a1 = Math.atan2(dz, dx)
       let delta = a1 - a0
       while (delta > Math.PI) delta -= 2 * Math.PI
       while (delta < -Math.PI) delta += 2 * Math.PI
       const mid = a0 + delta / 2
       return {
-        label: `${Math.round(best.deg)}°`,
+        label: `${Math.round(deg)}°`,
         path: arcPath(start.x, start.z, 0.75, a0, delta),
         x: start.x + Math.cos(mid) * 1.15,
         z: start.z + Math.sin(mid) * 1.15,
@@ -421,31 +484,23 @@
     if (!pendingDraw || !pointerPlan || !activeFloor) return null
     const start = startCoords(activeFloor, pendingDraw)
     if (!start) return null
-    const hit = nearestCorner(
-      activeFloor.corners,
-      pointerPlan.x,
-      pointerPlan.z,
-      CORNER_SNAP_M,
-      pendingDraw.startCornerId,
-    )
-    let end = hit ? { x: hit.x, z: hit.z } : { x: pointerPlan.x, z: pointerPlan.z }
-    if (!hit) {
-      end = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
-    }
-    const dx = end.x - start.x
-    const dz = end.z - start.z
+    const resolved = resolveEnd(activeFloor, start, pendingDraw.startCornerId, pointerPlan.x, pointerPlan.z)
+    const dx = resolved.x - start.x
+    const dz = resolved.z - start.z
     const length = Math.hypot(dx, dz)
     const allowed =
       length <= 0.05 ||
-      segmentAllowedInPlot(document.plot, start.x, start.z, end.x, end.z)
+      segmentAllowedInPlot(document.plot, start.x, start.z, resolved.x, resolved.z)
     return {
       x1: start.x,
       z1: start.z,
-      x2: end.x,
-      z2: end.z,
+      x2: resolved.x,
+      z2: resolved.z,
       length,
       allowed,
-      cornerId: hit?.id,
+      cornerId: resolved.cornerId,
+      wallSnap: resolved.wallSnap,
+      minTurn: resolved.minTurn,
       angle: angleReadout(activeFloor, pendingDraw.startCornerId, start, dx, dz, length),
     }
   })
@@ -461,14 +516,33 @@
     )
   })
 
+  const hoveredWall = $derived.by(() => {
+    if (!pointerPlan || !activeFloor || hoveredCorner) return undefined
+    if (tool !== 'draw-double' && tool !== 'draw-logical') return undefined
+    return nearestWallPoint(
+      activeFloor.corners,
+      activeFloor.walls,
+      pointerPlan.x,
+      pointerPlan.z,
+      CORNER_SNAP_M,
+      pendingDraw?.startCornerId,
+    )
+  })
+
   const drawHint = $derived.by(() => {
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
-    if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Escape stops.'
-    if (previewLine.length <= 0.05) return 'Click the next corner. Escape stops.'
+    if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Right-click or Escape stops.'
+    if (previewLine.length <= 0.05) return 'Click the next corner. Right-click or Escape stops.'
     const angle = previewLine.angle ? `, ${previewLine.angle.label}` : ''
     if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m${angle}`
-    const snap = previewLine.cornerId ? ' Snaps to the corner.' : ''
-    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Escape stops.`
+    const snap = previewLine.cornerId
+      ? ' Snaps to the corner.'
+      : previewLine.wallSnap
+        ? ' Snaps to the wall.'
+        : previewLine.minTurn
+          ? ` Minimum angle is ${MIN_TURN_DEG}°.`
+          : ''
+    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Right-click or Escape stops.`
   })
 
   function roomFill(finishId: string): string {
@@ -477,7 +551,7 @@
   }
 </script>
 
-<div class="root">
+<div class="root" oncontextmenu={onPlanContextMenu}>
   <div class="bar">
     <div class="tools">
       <button type="button" class:active={tool === 'draw-double'} onclick={() => setTool('draw-double')}>
@@ -640,6 +714,27 @@
           pointer-events="none"
         />
       {/each}
+      {#if previewLine?.wallSnap}
+        <circle
+          cx={previewLine.x2}
+          cy={previewLine.z2}
+          r="0.22"
+          fill="none"
+          stroke="#2563eb"
+          stroke-width="0.045"
+          pointer-events="none"
+        />
+      {:else if hoveredWall}
+        <circle
+          cx={hoveredWall.x}
+          cy={hoveredWall.z}
+          r="0.22"
+          fill="none"
+          stroke="#2563eb"
+          stroke-width="0.045"
+          pointer-events="none"
+        />
+      {/if}
       {#if (tool === 'draw-double' || tool === 'draw-logical') && pointerPlan}
         <circle
           cx={pointerPlan.x}

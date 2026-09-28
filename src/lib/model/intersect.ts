@@ -25,6 +25,26 @@ export type SegmentHit = {
   tOnExisting: number
 }
 
+function interiorProjection(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  px: number,
+  pz: number,
+): { t: number } | null {
+  const dx = bx - ax
+  const dz = bz - az
+  const len2 = dx * dx + dz * dz
+  if (len2 === 0) return null
+  const t = ((px - ax) * dx + (pz - az) * dz) / len2
+  if (t <= EPS || t >= 1 - EPS) return null
+  const qx = ax + t * dx
+  const qz = az + t * dz
+  if (Math.hypot(qx - px, qz - pz) > EPS) return null
+  return { t }
+}
+
 function paramAlong(
   ax: number,
   az: number,
@@ -64,16 +84,31 @@ export function findWallCrossings(
     const result = lineIntersect(newLine, existing)
     for (const f of result.features) {
       const [ix, iz] = f.geometry.coordinates
-      const atNewStart = pointsNearlyEqual({ x: nx0, z: nz0 }, { x: ix, z: iz })
-      const atNewEnd = pointsNearlyEqual({ x: nx1, z: nz1 }, { x: ix, z: iz })
       const atExistStart = pointsNearlyEqual({ x: a.x, z: a.z }, { x: ix, z: iz })
       const atExistEnd = pointsNearlyEqual({ x: b.x, z: b.z }, { x: ix, z: iz })
-      if (atNewStart || atNewEnd || atExistStart || atExistEnd) continue
+      if (atExistStart || atExistEnd) continue
       const tOnNew = paramAlong(nx0, nz0, nx1, nz1, ix, iz)
       const tOnExisting = paramAlong(a.x, a.z, b.x, b.z, ix, iz)
-      if (tOnNew <= EPS || tOnNew >= 1 - EPS) continue
+      if (tOnNew < -EPS || tOnNew > 1 + EPS) continue
       if (tOnExisting <= EPS || tOnExisting >= 1 - EPS) continue
-      hits.push({ x: ix, z: iz, tOnNew, wall, tOnExisting })
+      const nearStart = Math.hypot(ix - nx0, iz - nz0) <= EPS
+      const nearEnd = Math.hypot(ix - nx1, iz - nz1) <= EPS
+      hits.push({
+        x: nearStart ? nx0 : nearEnd ? nx1 : ix,
+        z: nearStart ? nz0 : nearEnd ? nz1 : iz,
+        tOnNew: nearStart ? 0 : nearEnd ? 1 : tOnNew,
+        wall,
+        tOnExisting,
+      })
+    }
+    for (const [tOnNew, x, z] of [
+      [0, nx0, nz0],
+      [1, nx1, nz1],
+    ] as const) {
+      const proj = interiorProjection(a.x, a.z, b.x, b.z, x, z)
+      if (!proj) continue
+      if (hits.some((h) => h.wall.id === wall.id && Math.hypot(h.x - x, h.z - z) <= EPS)) continue
+      hits.push({ x, z, tOnNew, wall, tOnExisting: proj.t })
     }
   }
   hits.sort((a, b) => a.tOnNew - b.tOnNew)
@@ -124,8 +159,11 @@ export function applyExistingWallSplits(floor: Floor, hits: SegmentHit[]): Floor
     let lastT = 0
     for (const h of wallHits) {
       const splitDist = (h.tOnExisting - lastT) * origLen
-      const corner: Corner = { id: newId('corner'), x: h.x, z: h.z }
-      corners.push(corner)
+      let corner = corners.find((c) => Math.hypot(c.x - h.x, c.z - h.z) <= EPS)
+      if (!corner) {
+        corner = { id: newId('corner'), x: h.x, z: h.z }
+        corners.push(corner)
+      }
       const split = splitWallAt(current, splitDist, corner.id)
       walls.push(split.first)
       current = split.second

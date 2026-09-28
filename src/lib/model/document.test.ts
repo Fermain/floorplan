@@ -77,6 +77,39 @@ describe('wall intersection split', () => {
     expect(floor.corners.length).toBe(5)
     expect(floor.walls.length).toBe(4)
   })
+
+  it('splits an existing wall when a new wall ends on it', () => {
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    const corners: string[] = []
+    for (const [x, z] of [
+      [2, 6],
+      [14, 6],
+      [8, 2],
+      [8, 6],
+    ] as const) {
+      const r = addCorner(d, fid, x, z)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      d = r.document
+      corners.push(r.document.building.floors[0].corners.at(-1)!.id)
+    }
+    const along = addWall(d, fid, corners[0], corners[1], 'double')
+    expect(along.ok).toBe(true)
+    if (!along.ok) return
+    d = along.document
+    const tee = addWall(d, fid, corners[2], corners[3], 'double')
+    expect(tee.ok).toBe(true)
+    if (!tee.ok) return
+    const floor = tee.document.building.floors[0]
+    expect(floor.corners).toHaveLength(4)
+    const junction = floor.corners.find((c) => c.id === corners[3])
+    expect(junction).toBeTruthy()
+    const joined = floor.walls.filter(
+      (w) => w.startCornerId === corners[3] || w.endCornerId === corners[3],
+    )
+    expect(joined).toHaveLength(3)
+  })
 })
 
 describe('rooms', () => {

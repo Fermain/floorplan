@@ -4,6 +4,7 @@ import { BLOCK_LENGTH } from '../../lib/plot/fixture'
 
 export const CORNER_SNAP_M = 0.15
 export const MODULE_SNAP_TOLERANCE_M = 0.05
+export const MIN_TURN_DEG = 15
 
 export function nearestCorner(
   corners: Corner[],
@@ -70,4 +71,71 @@ export function headingFromNorthDeg(dx: number, dz: number): number | null {
   if (Math.hypot(dx, dz) < 1e-9) return null
   const deg = (Math.atan2(dx, dz) * 180) / Math.PI
   return (deg + 360) % 360
+}
+
+export type WallSnap = { x: number; z: number; wallId: string }
+
+export function nearestWallPoint(
+  corners: Corner[],
+  walls: { id: string; startCornerId: string; endCornerId: string }[],
+  x: number,
+  z: number,
+  radius = CORNER_SNAP_M,
+  exceptCornerId?: string,
+): WallSnap | undefined {
+  let best: WallSnap | undefined
+  let bestD = radius
+  for (const wall of walls) {
+    if (
+      exceptCornerId &&
+      (wall.startCornerId === exceptCornerId || wall.endCornerId === exceptCornerId)
+    ) {
+      continue
+    }
+    const a = corners.find((c) => c.id === wall.startCornerId)
+    const b = corners.find((c) => c.id === wall.endCornerId)
+    if (!a || !b) continue
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const len2 = dx * dx + dz * dz
+    if (len2 === 0) continue
+    const len = Math.sqrt(len2)
+    const t = ((x - a.x) * dx + (z - a.z) * dz) / len2
+    if (t * len <= CORNER_SNAP_M || (1 - t) * len <= CORNER_SNAP_M) continue
+    const px = a.x + t * dx
+    const pz = a.z + t * dz
+    const d = Math.hypot(px - x, pz - z)
+    if (d <= bestD) {
+      bestD = d
+      best = { x: px, z: pz, wallId: wall.id }
+    }
+  }
+  return best
+}
+
+export function snapEndToMinTurn(
+  plot: Plot,
+  startX: number,
+  startZ: number,
+  endX: number,
+  endZ: number,
+  refDx: number,
+  refDz: number,
+  minDeg = MIN_TURN_DEG,
+): { x: number; z: number; applied: boolean } {
+  const dx = endX - startX
+  const dz = endZ - startZ
+  const len = Math.hypot(dx, dz)
+  if (len < 1e-9) return { x: endX, z: endZ, applied: false }
+  const angle = smallerAngleDeg(refDx, refDz, dx, dz)
+  if (angle === null || angle >= minDeg) return { x: endX, z: endZ, applied: false }
+  const cross = refDx * dz - refDz * dx
+  const side = cross >= 0 ? 1 : -1
+  const a = Math.atan2(refDz, refDx) + side * ((minDeg * Math.PI) / 180)
+  const snapped = { x: startX + Math.cos(a) * len, z: startZ + Math.sin(a) * len }
+  if (!pointInPlot(plot, snapped.x, snapped.z)) return { x: endX, z: endZ, applied: false }
+  if (!segmentAllowedInPlot(plot, startX, startZ, snapped.x, snapped.z)) {
+    return { x: endX, z: endZ, applied: false }
+  }
+  return { ...snapped, applied: true }
 }

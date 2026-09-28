@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fixturePlot } from '../../lib/plot/fixture'
-import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg } from './snap'
+import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn } from './snap'
 import type { Corner } from '../../lib/model/types'
 
 const plot = fixturePlot()
@@ -63,5 +63,35 @@ describe('angles', () => {
   it('measures heading clockwise from north', () => {
     expect(headingFromNorthDeg(0, 1)).toBeCloseTo(0, 5)
     expect(headingFromNorthDeg(1, 0)).toBeCloseTo(90, 5)
+  })
+})
+
+describe('nearestWallPoint', () => {
+  const corners: Corner[] = [
+    { id: 'a', x: 2, z: 6 },
+    { id: 'b', x: 14, z: 6 },
+  ]
+  const walls = [{ id: 'w', startCornerId: 'a', endCornerId: 'b' }]
+
+  it('snaps to the middle of a wall', () => {
+    const hit = nearestWallPoint(corners, walls, 8, 6.1)
+    expect(hit?.x).toBeCloseTo(8, 5)
+    expect(hit?.z).toBeCloseTo(6, 5)
+    expect(hit?.wallId).toBe('w')
+  })
+
+  it('does not snap onto the wall that leaves the excluded corner', () => {
+    expect(nearestWallPoint(corners, walls, 8, 6.1, undefined, 'a')).toBeUndefined()
+  })
+})
+
+describe('snapEndToMinTurn', () => {
+  it('lifts a shallow turn up to the minimum and leaves a square turn alone', () => {
+    const shallow = snapEndToMinTurn(plot, 4, 4, 4 + Math.cos((8 * Math.PI) / 180), 4 + Math.sin((8 * Math.PI) / 180), 1, 0)
+    expect(shallow.applied).toBe(true)
+    expect(smallerAngleDeg(1, 0, shallow.x - 4, shallow.z - 4)).toBeCloseTo(15, 5)
+    const square = snapEndToMinTurn(plot, 4, 4, 4, 8, 1, 0)
+    expect(square.applied).toBe(false)
+    expect(square).toMatchObject({ x: 4, z: 8 })
   })
 })
