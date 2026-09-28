@@ -1,6 +1,7 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
   import { contourPlanPaths } from '../../lib/geometry/contours'
+  import { groundPad, levelField } from '../../lib/geometry/pad'
   import { solidWallPolygons, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms } from '../../lib/model/rooms'
@@ -67,7 +68,11 @@
   )
   const rooms = $derived(activeFloor ? deriveRooms(activeFloor) : [])
   const logicalWalls = $derived(activeFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
-  const contours = $derived(contourPlanPaths(document.heightfield))
+  const contours = $derived.by(() => {
+    const pad = groundPad(document)
+    const field = pad ? levelField(document.heightfield, pad.rings, pad.datum) : document.heightfield
+    return contourPlanPaths(field)
+  })
 
   function plotBounds(ring: [number, number][], margin: number) {
     let minX = Infinity

@@ -3,6 +3,7 @@
   import { OrbitControls } from '@threlte/extras'
   import { BufferGeometry, Float32BufferAttribute } from 'three'
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
+  import { floorWorldDatum, groundPad, levelField } from '../../lib/geometry/pad'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { buildWallGeometries } from '../../lib/geometry/walls'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -54,7 +55,7 @@
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
-    if (floor.index !== 0) {
+    if (floor.index !== 0 || groundPad(doc)) {
       return undefined
     }
     const start = floor.corners.find((c) => c.id === wall.startCornerId)
@@ -70,8 +71,10 @@
   $effect(() => {
     const heightfield = doc.heightfield
     const floors = doc.building.floors
-    const ground = buildGroundGeometry(heightfield)
-    const contours = buildContourLines(heightfield, CONTOUR_LIFT_M)
+    const pad = groundPad(doc)
+    const displayField = pad ? levelField(heightfield, pad.rings, pad.datum) : heightfield
+    const ground = buildGroundGeometry(displayField)
+    const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: FloorMeshes[] = floors.map((floor) => {
@@ -83,7 +86,7 @@
         const samples = bottomSamplesForWall(floor, wall)
         geoms.push(...buildWallGeometries(floor, wall, samples))
       }
-      return { id: floor.id, datumY: floor.index === 0 ? 0 : floor.datumHeight, geoms }
+      return { id: floor.id, datumY: floorWorldDatum(floor.datumHeight, pad), geoms }
     })
     groundGeometry = ground
     contourMinor = minor
@@ -123,12 +126,14 @@
 
   function keepCameraAboveGround(controls: OrbitControlsInstance) {
     const field = doc.heightfield
+    const pad = groundPad(doc)
+    const displayField = pad ? levelField(field, pad.rings, pad.datum) : field
     const camera = controls.object
     const lifted = liftAboveGround(
       camera.position.y,
       controls.target.y,
-      bilinearHeight(field, camera.position.x, camera.position.z),
-      bilinearHeight(field, controls.target.x, controls.target.z),
+      bilinearHeight(displayField, camera.position.x, camera.position.z),
+      bilinearHeight(displayField, controls.target.x, controls.target.z),
     )
     camera.position.y = lifted.cameraY
     controls.target.y = lifted.targetY

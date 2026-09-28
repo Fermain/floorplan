@@ -2,6 +2,7 @@
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
   import { buildWallGeometries } from '../../lib/geometry/walls'
+  import { groundPad } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -81,7 +82,7 @@
       return []
     }
     let samples: { u: number; y: number }[] | undefined
-    if (floor.index === 0) {
+    if (floor.index === 0 && !groundPad(doc)) {
       const start = floor.corners.find((c) => c.id === shown.startCornerId)
       const end = floor.corners.find((c) => c.id === shown.endCornerId)
       if (start && end) {
