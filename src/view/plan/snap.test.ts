@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fixturePlot } from '../../lib/plot/fixture'
-import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn } from './snap'
+import { nearestCorner, snapEndToModule, CORNER_SNAP_M, smallerAngleDeg, headingFromNorthDeg, nearestWallPoint, snapEndToMinTurn, snapEndToOrthogonal } from './snap'
 import type { Corner } from '../../lib/model/types'
 
 const plot = fixturePlot()
@@ -82,6 +82,45 @@ describe('nearestWallPoint', () => {
 
   it('does not snap onto the wall that leaves the excluded corner', () => {
     expect(nearestWallPoint(corners, walls, 8, 6.1, undefined, 'a')).toBeUndefined()
+  })
+})
+
+describe('snapEndToOrthogonal', () => {
+  it('pulls a near miss onto 90 and marks it square', () => {
+    const deg = (87 * Math.PI) / 180
+    const hit = snapEndToOrthogonal(plot, 4, 4, 4 + Math.cos(deg), 4 + Math.sin(deg), 1, 0)
+    expect(hit.applied).toBe(true)
+    expect(hit.square).toBe(true)
+    expect(smallerAngleDeg(1, 0, hit.x - 4, hit.z - 4)).toBeCloseTo(90, 5)
+  })
+
+  it('pulls a near miss onto a straight continuation without a square', () => {
+    const deg = (177 * Math.PI) / 180
+    const hit = snapEndToOrthogonal(plot, 4, 4, 4 + Math.cos(deg), 4 + Math.sin(deg), 1, 0)
+    expect(hit.applied).toBe(true)
+    expect(hit.square).toBe(false)
+    expect(smallerAngleDeg(1, 0, hit.x - 4, hit.z - 4)).toBeCloseTo(180, 4)
+  })
+
+  it('leaves a clear miss of 90 alone', () => {
+    const deg = (80 * Math.PI) / 180
+    const hit = snapEndToOrthogonal(plot, 4, 4, 4 + Math.cos(deg), 4 + Math.sin(deg), 1, 0)
+    expect(hit.applied).toBe(false)
+  })
+
+  it('catches a five-degree miss', () => {
+    const deg = (85 * Math.PI) / 180
+    const hit = snapEndToOrthogonal(plot, 4, 4, 4 + Math.cos(deg), 4 + Math.sin(deg), 1, 0)
+    expect(hit.applied).toBe(true)
+    expect(hit.square).toBe(true)
+  })
+
+  it('snaps a free wall to the nearest multiple of 90 from north', () => {
+    const heading = (87 * Math.PI) / 180
+    const hit = snapEndToOrthogonal(plot, 4, 4, 4 + Math.sin(heading), 4 + Math.cos(heading), null, null)
+    expect(hit.applied).toBe(true)
+    expect(hit.square).toBe(false)
+    expect(headingFromNorthDeg(hit.x - 4, hit.z - 4)).toBeCloseTo(90, 5)
   })
 })
 

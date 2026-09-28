@@ -13,6 +13,7 @@
     nearestWallPoint,
     snapEndToModule,
     snapEndToMinTurn,
+    snapEndToOrthogonal,
     CORNER_SNAP_M,
     MIN_TURN_DEG,
     headingFromNorthDeg,
@@ -420,21 +421,34 @@
     startCornerId: string | undefined,
     x: number,
     z: number,
-  ): { x: number; z: number; cornerId?: string; wallSnap: boolean; minTurn: boolean } {
+  ): { x: number; z: number; cornerId?: string; wallSnap: boolean; minTurn: boolean; angleSnap: boolean } {
     const hit = nearestCorner(floor.corners, x, z, CORNER_SNAP_M, startCornerId)
-    if (hit) return { x: hit.x, z: hit.z, cornerId: hit.id, wallSnap: false, minTurn: false }
+    if (hit) return { x: hit.x, z: hit.z, cornerId: hit.id, wallSnap: false, minTurn: false, angleSnap: false }
     const wallHit = nearestWallPoint(floor.corners, floor.walls, x, z, CORNER_SNAP_M, startCornerId)
-    if (wallHit) return { x: wallHit.x, z: wallHit.z, wallSnap: true, minTurn: false }
+    if (wallHit) return { x: wallHit.x, z: wallHit.z, wallSnap: true, minTurn: false, angleSnap: false }
     let end = { x, z }
     let minTurn = false
+    let angleSnap = false
     const ref = referenceAway(floor, startCornerId, start, x - start.x, z - start.z)
-    if (ref) {
+    const ortho = snapEndToOrthogonal(
+      document.plot,
+      start.x,
+      start.z,
+      end.x,
+      end.z,
+      ref?.dx ?? null,
+      ref?.dz ?? null,
+    )
+    if (ortho.applied) {
+      end = ortho
+      angleSnap = true
+    } else if (ref) {
       const turned = snapEndToMinTurn(document.plot, start.x, start.z, end.x, end.z, ref.dx, ref.dz)
       end = turned
       minTurn = turned.applied
     }
     const snapped = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
-    return { x: snapped.x, z: snapped.z, wallSnap: false, minTurn }
+    return { x: snapped.x, z: snapped.z, wallSnap: false, minTurn, angleSnap }
   }
 
   function angleReadout(
@@ -456,9 +470,12 @@
       while (delta > Math.PI) delta -= 2 * Math.PI
       while (delta < -Math.PI) delta += 2 * Math.PI
       const mid = a0 + delta / 2
+      const square = Math.abs(deg - 90) < 0.05
       return {
         label: `${Math.round(deg)}°`,
-        path: arcPath(start.x, start.z, 0.75, a0, delta),
+        path: square
+          ? squarePath(start.x, start.z, ref.dx, ref.dz, dx, dz, 0.5)
+          : arcPath(start.x, start.z, 0.75, a0, delta),
         x: start.x + Math.cos(mid) * 1.15,
         z: start.z + Math.sin(mid) * 1.15,
       }
@@ -472,6 +489,30 @@
       x: start.x + (dx / len) * 0.9 + (-dz / len) * 0.55,
       z: start.z + (dz / len) * 0.9 + (dx / len) * 0.55,
     }
+  }
+
+  function squarePath(
+    cx: number,
+    cz: number,
+    refDx: number,
+    refDz: number,
+    dx: number,
+    dz: number,
+    size: number,
+  ): string {
+    const rl = Math.hypot(refDx, refDz)
+    const nl = Math.hypot(dx, dz)
+    const rx = refDx / rl
+    const rz = refDz / rl
+    const nx = dx / nl
+    const nz = dz / nl
+    const ax = cx + rx * size
+    const az = cz + rz * size
+    const bx = ax + nx * size
+    const bz = az + nz * size
+    const cx2 = cx + nx * size
+    const cz2 = cz + nz * size
+    return `M${fmt(ax)} ${fmt(az)} L${fmt(bx)} ${fmt(bz)} L${fmt(cx2)} ${fmt(cz2)}`
   }
 
   function arcPath(cx: number, cz: number, radius: number, a0: number, delta: number): string | null {
@@ -508,6 +549,7 @@
       cornerId: resolved.cornerId,
       wallSnap: resolved.wallSnap,
       minTurn: resolved.minTurn,
+      angleSnap: resolved.angleSnap,
       angle: angleReadout(activeFloor, pendingDraw.startCornerId, start, dx, dz, length),
     }
   })
@@ -546,9 +588,11 @@
       ? ' Snaps to the corner.'
       : previewLine.wallSnap
         ? ' Snaps to the wall.'
-        : previewLine.minTurn
-          ? ` Minimum angle is ${MIN_TURN_DEG}°.`
-          : ''
+        : previewLine.angleSnap
+          ? ' Snaps to the angle.'
+          : previewLine.minTurn
+            ? ` Minimum angle is ${MIN_TURN_DEG}°.`
+            : ''
     return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Right-click or Escape stops.`
   })
 

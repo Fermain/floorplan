@@ -5,6 +5,7 @@ import { BLOCK_LENGTH } from '../../lib/plot/fixture'
 export const CORNER_SNAP_M = 0.15
 export const MODULE_SNAP_TOLERANCE_M = 0.05
 export const MIN_TURN_DEG = 15
+export const ORTHOGONAL_SNAP_DEG = 5
 
 export function nearestCorner(
   corners: Corner[],
@@ -111,6 +112,59 @@ export function nearestWallPoint(
     }
   }
   return best
+}
+
+function segmentStaysInPlot(
+  plot: Plot,
+  startX: number,
+  startZ: number,
+  x: number,
+  z: number,
+): boolean {
+  return pointInPlot(plot, x, z) && segmentAllowedInPlot(plot, startX, startZ, x, z)
+}
+
+export function snapEndToOrthogonal(
+  plot: Plot,
+  startX: number,
+  startZ: number,
+  endX: number,
+  endZ: number,
+  refDx: number | null,
+  refDz: number | null,
+  tolerance = ORTHOGONAL_SNAP_DEG,
+): { x: number; z: number; applied: boolean; square: boolean } {
+  const dx = endX - startX
+  const dz = endZ - startZ
+  const len = Math.hypot(dx, dz)
+  const keep = { x: endX, z: endZ, applied: false, square: false }
+  if (len < 1e-9) return keep
+
+  if (refDx === null || refDz === null || Math.hypot(refDx, refDz) < 1e-9) {
+    const heading = headingFromNorthDeg(dx, dz)
+    if (heading === null) return keep
+    const target = (((Math.round(heading / 90) * 90) % 360) + 360) % 360
+    let distance = Math.abs(heading - target)
+    if (distance > 180) distance = 360 - distance
+    if (distance > tolerance) return keep
+    const rad = (target * Math.PI) / 180
+    const snapped = { x: startX + Math.sin(rad) * len, z: startZ + Math.cos(rad) * len }
+    if (!segmentStaysInPlot(plot, startX, startZ, snapped.x, snapped.z)) return keep
+    return { ...snapped, applied: true, square: false }
+  }
+
+  const a0 = Math.atan2(refDz, refDx)
+  const a1 = Math.atan2(dz, dx)
+  let delta = a1 - a0
+  while (delta > Math.PI) delta -= 2 * Math.PI
+  while (delta < -Math.PI) delta += 2 * Math.PI
+  const deg = (delta * 180) / Math.PI
+  const target = Math.round(deg / 90) * 90
+  if (Math.abs(target) < 1 || Math.abs(deg - target) > tolerance) return keep
+  const a = a0 + (target * Math.PI) / 180
+  const snapped = { x: startX + Math.cos(a) * len, z: startZ + Math.sin(a) * len }
+  if (!segmentStaysInPlot(plot, startX, startZ, snapped.x, snapped.z)) return keep
+  return { ...snapped, applied: true, square: Math.abs(Math.abs(target) - 90) < 1 }
 }
 
 export function snapEndToMinTurn(
