@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
+  import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
@@ -126,12 +127,9 @@
     return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
-  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
+  const bottomSamples = $derived.by((): { u: number; y: number }[] | undefined => {
     const shown = displayWall
-    if (!floor || !shown) {
-      return { blocks: [], lintel: null }
-    }
-    let samples: { u: number; y: number }[] | undefined
+    if (!floor || !shown) return undefined
     if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
       const start = floor.corners.find((c) => c.id === shown.startCornerId)
       const end = floor.corners.find((c) => c.id === shown.endCornerId)
@@ -143,13 +141,27 @@
           end.x,
           end.z,
         )
-        samples = raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
+        return raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
       }
     }
+    return undefined
+  })
+
+  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
+    const shown = displayWall
+    if (!floor || !shown) {
+      return { blocks: [], lintel: null }
+    }
     return {
-      blocks: buildWallGeometries(floor, shown, samples),
+      blocks: buildWallGeometries(floor, shown, bottomSamples),
       lintel: buildLintelGeometry(floor, shown),
     }
+  })
+
+  const scheduleLine = $derived.by(() => {
+    const shown = displayWall
+    if (!floor || !shown) return ''
+    return formatSchedule(scheduleWall(floor, shown, bottomSamples))
   })
 
   $effect(() => {
@@ -401,6 +413,9 @@
           Click the wall to place a window. Drag an opening to move it.
         {/if}
       </span>
+      {#if scheduleLine}
+        <span class="schedule">{scheduleLine}</span>
+      {/if}
       {#if readout}
         <span class="readout">
           u: {mm(readout.u)} mm, v: {mm(readout.v)} mm
@@ -524,10 +539,12 @@
   }
 
   .note,
-  .hint {
+  .hint,
+  .schedule {
     color: #3f3f46;
   }
 
+  .schedule,
   .readout {
     font-variant-numeric: tabular-nums;
   }
