@@ -149,12 +149,17 @@ export function addOpening(
   kind: OpeningKind,
   u: number,
   width?: number,
+  v?: number,
 ): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
   const wall = floor.walls.find((w) => w.id === wallId)
   if (!wall) return fail(document, 'wall not found')
   const opening = createOpening(newId('opening'), kind, u, width)
+  if (v !== undefined) {
+    opening.v = v
+    opening.aligned = false
+  }
   const walls = floor.walls.map((w) =>
     w.id === wallId ? { ...w, openings: [...w.openings, opening] } : w,
   )
