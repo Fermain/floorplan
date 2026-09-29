@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
-  import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { groundPad, wallDatum } from '../../lib/geometry/pad'
-  import { bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
+  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU, windowWidthLimits } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
   import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
@@ -129,30 +128,26 @@
     return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
-  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
+  const wallModel = $derived.by((): {
+    blocks: BufferGeometry[]
+    courses: BufferGeometry[]
+    lintel: BufferGeometry | null
+  } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return { blocks: [], lintel: null }
-    }
-    let samples: { u: number; y: number }[] | undefined
-    if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
-      const start = floor.corners.find((c) => c.id === shown.startCornerId)
-      const end = floor.corners.find((c) => c.id === shown.endCornerId)
-      if (start && end) {
-        const raw = bottomSamplesAlong(
-          doc.heightfield,
-          start.x,
-          start.z,
-          end.x,
-          end.z,
-        )
-        samples = raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
-      }
+      return { blocks: [], courses: [], lintel: null }
     }
     return {
-      blocks: buildWallGeometries(floor, shown, samples),
+      blocks: buildWallGeometries(floor, shown),
+      courses: buildCourseFaceGeometries(floor, shown),
       lintel: buildLintelGeometry(floor, shown),
     }
+  })
+
+  const scheduleLine = $derived.by(() => {
+    const shown = displayWall
+    if (!floor || !shown) return ''
+    return formatSchedule(scheduleWall(floor, shown))
   })
 
   $effect(() => {
@@ -174,11 +169,11 @@
 
   $effect(() => {
     const geoms = wallModel.blocks
+    const courses = wallModel.courses
     const lintel = wallModel.lintel
     return () => {
-      for (const g of geoms) {
-        g.dispose()
-      }
+      for (const g of geoms) g.dispose()
+      for (const g of courses) g.dispose()
       lintel?.dispose()
     }
   })
@@ -413,6 +408,9 @@
           Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.
         {/if}
       </span>
+      {#if scheduleLine}
+        <span class="schedule">{scheduleLine}</span>
+      {/if}
       {#if readout}
         <span class="readout">
           u: {mm(readout.u)} mm, v: {mm(readout.v)} mm
@@ -436,6 +434,7 @@
         {locked}
         {frame}
         wallGeometries={wallModel.blocks}
+        courseGeometries={wallModel.courses}
         lintelGeometry={wallModel.lintel}
         {orthoCamera}
         {onOrthoCamera}
@@ -536,10 +535,12 @@
   }
 
   .note,
-  .hint {
+  .hint,
+  .schedule {
     color: #3f3f46;
   }
 
+  .schedule,
   .readout {
     font-variant-numeric: tabular-nums;
   }

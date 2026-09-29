@@ -438,15 +438,15 @@ function placeBox(
   matrix: Matrix4,
   parts: BufferGeometry[],
   thickness = BLOCK_THICKNESS,
+  normalCenter?: number,
 ): void {
   const uCenter = (u0 + u1) / 2
   const yCenter = (y0 + y1) / 2
   const blockLen = u1 - u0
   const blockH = y1 - y0
-  const cx =
-    frame.start.x + uCenter * frame.dir.x + leafSign * LEAF_OFFSET * frame.normal.x
-  const cz =
-    frame.start.z + uCenter * frame.dir.z + leafSign * LEAF_OFFSET * frame.normal.z
+  const along = normalCenter ?? leafSign * LEAF_OFFSET
+  const cx = frame.start.x + uCenter * frame.dir.x + along * frame.normal.x
+  const cz = frame.start.z + uCenter * frame.dir.z + along * frame.normal.z
   const geom = unitBox.clone()
   matrix.identity()
   const xUnit = new Vector3(frame.dir.x, 0, frame.dir.z).normalize()
@@ -502,6 +502,70 @@ export function buildWallGeometries(
     }
     if (merged) {
       out.push(merged)
+    }
+  }
+  unitBox.dispose()
+  return out
+}
+
+const MORTAR_JOINT = 0.01
+const COURSE_FACE_DEPTH = 0.003
+
+function insetBrick(span: BlockSpan): { u0: number; u1: number; y0: number; y1: number } | null {
+  const half = MORTAR_JOINT / 2
+  const u0 = span.u0 + half
+  const u1 = span.u1 - half
+  const y0 = span.y0 + half
+  const y1 = span.y1 - half
+  if (u1 - u0 > 1e-4 && y1 - y0 > 1e-4) return { u0, u1, y0, y1 }
+  if (span.u1 - span.u0 <= 1e-4 || span.y1 - span.y0 <= 1e-4) return null
+  return { u0: span.u0, u1: span.u1, y0: span.y0, y1: span.y1 }
+}
+
+function outerFaceCenters(leafSign: number): number[] {
+  const reach = BLOCK_THICKNESS / 2 + COURSE_FACE_DEPTH / 2
+  if (leafSign === 0) return [reach, -reach]
+  return [Math.sign(leafSign) * (LEAF_OFFSET + reach)]
+}
+
+export function buildCourseFaceGeometries(
+  floor: Floor,
+  wall: Wall,
+  bottomSamples?: BottomSample[],
+): BufferGeometry[] {
+  if (wall.skin === 'logical') return []
+  const frame = buildFrame(floor, wall)
+  const signs = leafSigns(wall.skin)
+  const spans = collectWallBlockSpans(floor, wall, bottomSamples)
+  const unitBox = new BoxGeometry(1, 1, 1)
+  const matrix = new Matrix4()
+  const out: BufferGeometry[] = []
+  for (let leaf = 0; leaf < signs.length; leaf++) {
+    const leafSign = signs[leaf]
+    for (const center of outerFaceCenters(leafSign)) {
+      const parts: BufferGeometry[] = []
+      for (const span of spans) {
+        if (span.leaf !== leaf) continue
+        const face = insetBrick(span)
+        if (!face) continue
+        placeBox(
+          frame,
+          face.u0,
+          face.u1,
+          face.y0,
+          face.y1,
+          leafSign,
+          unitBox,
+          matrix,
+          parts,
+          COURSE_FACE_DEPTH,
+          center,
+        )
+      }
+      if (parts.length === 0) continue
+      const merged = mergeGeometries(parts, false)
+      for (const g of parts) g.dispose()
+      if (merged) out.push(merged)
     }
   }
   unitBox.dispose()

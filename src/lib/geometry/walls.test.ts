@@ -5,6 +5,7 @@ import {
   BLOCK_LENGTH,
 } from '../plot/fixture'
 import {
+  buildCourseFaceGeometries,
   buildLintelGeometry,
   buildWallGeometries,
   collectLintelSpans,
@@ -43,6 +44,25 @@ function straightWall(overrides: Partial<Wall> = {}): Wall {
     ...overrides,
   }
 }
+
+describe('buildCourseFaceGeometries', () => {
+  it('leaves a mortar joint between courses on each outer face', () => {
+    const wall = straightWall()
+    const floor = floorWithWall(wall)
+    const faces = buildCourseFaceGeometries(floor, wall)
+    expect(faces).toHaveLength(2)
+    const positions = faces[0].getAttribute('position')
+    const ys: number[] = []
+    for (let i = 0; i < positions.count; i++) ys.push(positions.getY(i))
+    expect(ys.some((y) => Math.abs(y - BLOCK_HEIGHT) < 0.004)).toBe(false)
+    expect(ys.some((y) => y > 0.004 && y < BLOCK_HEIGHT - 0.004)).toBe(true)
+  })
+
+  it('returns nothing for a logical wall', () => {
+    const wall = straightWall({ skin: 'logical' })
+    expect(buildCourseFaceGeometries(floorWithWall(wall), wall)).toEqual([])
+  })
+})
 
 describe('buildWallGeometries', () => {
   it('returns no geometry for a logical wall', () => {
