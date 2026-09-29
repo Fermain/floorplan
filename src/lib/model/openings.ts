@@ -2,6 +2,7 @@ import {
   DEFAULT_DOOR_HEIGHT,
   DEFAULT_DOOR_WIDTH,
   DOOR_MIN_WIDTH,
+  WINDOW_MIN_WIDTH,
   OPENING_EDGE_PAD,
   OPENING_MIN_GAP,
   DEFAULT_SILL,
@@ -23,6 +24,10 @@ export function defaultOpeningDimensions(kind: OpeningKind): {
 
 export function doorWidthLimits(length: number): { min: number; max: number } {
   return { min: DOOR_MIN_WIDTH, max: length - 2 * OPENING_EDGE_PAD }
+}
+
+export function windowWidthLimits(length: number): { min: number; max: number } {
+  return { min: WINDOW_MIN_WIDTH, max: length - 2 * OPENING_EDGE_PAD }
 }
 
 export function fitOpeningU(centre: number, width: number, length: number, pad = OPENING_EDGE_PAD): number | null {

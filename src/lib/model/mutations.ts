@@ -8,6 +8,7 @@ import {
   doorWidthLimits,
   maxOpeningWidth,
   placeOpeningU,
+  windowWidthLimits,
 } from './openings'
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { roomKey } from './rooms'
@@ -312,9 +313,19 @@ export function updateOpening(
     if (placedU === null) return fail(document, 'openings too close')
     updated = { ...updated, width: nextWidth, u: placedU }
   } else {
-    const placedU = placeOpeningU(updated.u, updated.width, length, others)
+    let nextWidth = updated.width
+    let requestedU = updated.u
+    if (patch.width !== undefined && patch.u === undefined) {
+      const centre = existing.u + existing.width / 2
+      const limits = windowWidthLimits(length)
+      nextWidth = Math.min(limits.max, Math.max(limits.min, nextWidth))
+      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others))
+      if (nextWidth < limits.min - 1e-9) return fail(document, 'openings too close')
+      requestedU = centre - nextWidth / 2
+    }
+    const placedU = placeOpeningU(requestedU, nextWidth, length, others)
     if (placedU === null) return fail(document, 'openings too close')
-    updated = { ...updated, u: placedU }
+    updated = { ...updated, width: nextWidth, u: placedU }
   }
 
   const walls = floor.walls.map((w) =>

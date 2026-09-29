@@ -4,7 +4,7 @@
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
-  import { doorWidthLimits, maxOpeningWidth, placeOpeningU } from '../../lib/model/openings'
+  import { doorWidthLimits, maxOpeningWidth, placeOpeningU, windowWidthLimits } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
   import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -15,7 +15,7 @@
   interface Props {
     wallId?: string
     selectedOpeningId?: string | null
-    onSelectOpening?: (id: string) => void
+    onSelectOpening?: (id: string | null) => void
   }
 
   let { wallId, selectedOpeningId = null, onSelectOpening }: Props = $props()
@@ -25,6 +25,7 @@
   let menuOpen = $state(false)
   let menuEl = $state<HTMLDivElement | undefined>(undefined)
   let doorWidth = $state(DEFAULT_DOOR_WIDTH)
+  let windowWidth = $state(DEFAULT_WINDOW_WIDTH)
   let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
   let readout = $state<{ u: number; v: number } | null>(null)
@@ -62,10 +63,9 @@
   const floor = $derived(located?.floor)
   const wall = $derived(located?.wall)
 
-  const editingDoor = $derived.by(() => {
+  const editingOpening = $derived.by(() => {
     if (!wall || !selectedOpeningId) return undefined
-    const opening = wall.openings.find((item) => item.id === selectedOpeningId)
-    return opening?.kind === 'door' ? opening : undefined
+    return wall.openings.find((item) => item.id === selectedOpeningId)
   })
 
   function mm(m: number): number {
@@ -79,21 +79,24 @@
     return computeWallElevationFrame(floor, wall)
   })
 
-  const doorLimits = $derived.by(() => {
+  const widthKind = $derived(editingOpening?.kind ?? insertTool)
+
+  const widthLimits = $derived.by(() => {
     if (!frame) return null
-    const base = doorWidthLimits(frame.length)
-    if (!editingDoor || !wall) return base
-    const others = wall.openings.filter((opening) => opening.id !== editingDoor.id)
-    const centre = editingDoor.u + editingDoor.width / 2
+    const base = widthKind === 'door' ? doorWidthLimits(frame.length) : windowWidthLimits(frame.length)
+    if (!editingOpening || !wall) return base
+    const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
+    const centre = editingOpening.u + editingOpening.width / 2
     const room = maxOpeningWidth(centre, frame.length, others)
     return { min: base.min, max: Math.min(base.max, room) }
   })
-  const doorAllowed = $derived(doorLimits !== null && doorLimits.max >= doorLimits.min - 1e-9)
+  const widthAllowed = $derived(widthLimits !== null && widthLimits.max >= widthLimits.min - 1e-9)
 
-  const shownDoorWidth = $derived.by(() => {
-    const raw = widthDraft ?? editingDoor?.width ?? doorWidth
-    if (!doorLimits || !doorAllowed) return raw
-    return Math.min(doorLimits.max, Math.max(doorLimits.min, raw))
+  const shownWidth = $derived.by(() => {
+    const fallback = widthKind === 'door' ? doorWidth : windowWidth
+    const raw = widthDraft ?? editingOpening?.width ?? fallback
+    if (!widthLimits || !widthAllowed) return raw
+    return Math.min(widthLimits.max, Math.max(widthLimits.min, raw))
   })
 
   const displayWall = $derived.by((): Wall | undefined => {
@@ -106,13 +109,13 @@
           ? { ...opening, u: current.u, v: current.aligned ? opening.v : current.v }
           : opening,
       )
-    } else if (widthDraft !== null && editingDoor && frame) {
-      const centre = editingDoor.u + editingDoor.width / 2
-      const others = wall.openings.filter((opening) => opening.id !== editingDoor.id)
-      const u = placeOpeningU(centre - shownDoorWidth / 2, shownDoorWidth, frame.length, others)
+    } else if (widthDraft !== null && editingOpening && frame) {
+      const centre = editingOpening.u + editingOpening.width / 2
+      const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
+      const u = placeOpeningU(centre - shownWidth / 2, shownWidth, frame.length, others)
       if (u !== null) {
         openings = openings.map((opening) =>
-          opening.id === editingDoor.id ? { ...opening, u, width: shownDoorWidth } : opening,
+          opening.id === editingOpening.id ? { ...opening, u, width: shownWidth } : opening,
         )
       }
     }
@@ -243,30 +246,38 @@
     }
 
     if (insertTool === 'door') {
-      if (!doorAllowed) return
-      const u = placeOpeningU(uv.u - shownDoorWidth / 2, shownDoorWidth, frame.length, wall.openings)
+      if (!widthAllowed) return
+      const u = placeOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings)
       if (u === null) return
-      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', u, shownDoorWidth))
+      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', u, shownWidth))
       return
     }
 
-    const windowU = placeOpeningU(uv.u - DEFAULT_WINDOW_WIDTH / 2, DEFAULT_WINDOW_WIDTH, frame.length, wall.openings)
+    const windowU = placeOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings)
     if (windowU === null) return
-    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', windowU))
+    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', windowU, shownWidth))
   }
 
-  function onDoorWidthInput(value: number) {
-    if (editingDoor) widthDraft = value
-    else doorWidth = value
+  function onWidthInput(value: number) {
+    if (editingOpening) widthDraft = value
+    else if (insertTool === 'door') doorWidth = value
+    else windowWidth = value
   }
 
-  function commitDoorWidth(value: number) {
+  function commitWidth(value: number) {
     widthDraft = null
-    if (!editingDoor || !floor || !wall) {
-      doorWidth = value
+    if (!editingOpening || !floor || !wall) {
+      if (insertTool === 'door') doorWidth = value
+      else windowWidth = value
       return
     }
-    documentStore.updateOpening(floor.id, wall.id, editingDoor.id, { width: value })
+    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { width: value })
+  }
+
+  function removeSelected() {
+    if (!floor || !wall || !selectedOpeningId) return
+    documentStore.removeOpening(floor.id, wall.id, selectedOpeningId)
+    onSelectOpening?.(null)
   }
 
   function chooseInsert(tool: 'door' | 'window') {
@@ -361,44 +372,45 @@
           </div>
         {/if}
       </div>
-      {#if insertTool === 'door' || editingDoor}
-        {#if doorLimits && doorAllowed}
-          <label class="width">
-            Width
-            <input
-              type="range"
-              min={doorLimits.min}
-              max={doorLimits.max}
-              step="0.01"
-              value={shownDoorWidth}
-              oninput={(event) => onDoorWidthInput(Number(event.currentTarget.value))}
-              onchange={(event) => commitDoorWidth(Number(event.currentTarget.value))}
-            />
-            <input
-              type="number"
-              min={doorLimits.min}
-              max={doorLimits.max}
-              step="0.01"
-              value={shownDoorWidth}
-              onchange={(event) => {
-                const next = Number(event.currentTarget.value)
-                onDoorWidthInput(next)
-                commitDoorWidth(next)
-              }}
-            />
-            <span>m</span>
-          </label>
-        {:else}
-          <span class="note">This wall is too short for a door.</span>
-        {/if}
+      {#if widthLimits && widthAllowed}
+        <label class="width">
+          Width
+          <input
+            type="range"
+            min={widthLimits.min}
+            max={widthLimits.max}
+            step="0.01"
+            value={shownWidth}
+            oninput={(event) => onWidthInput(Number(event.currentTarget.value))}
+            onchange={(event) => commitWidth(Number(event.currentTarget.value))}
+          />
+          <input
+            type="number"
+            min={mm(widthLimits.min)}
+            max={mm(widthLimits.max)}
+            step="10"
+            value={mm(shownWidth)}
+            onchange={(event) => {
+              const next = Number(event.currentTarget.value) / 1000
+              onWidthInput(next)
+              commitWidth(next)
+            }}
+          />
+          <span>mm</span>
+        </label>
+      {:else if widthKind === 'door'}
+        <span class="note">This wall is too short for a door.</span>
+      {/if}
+      {#if editingOpening}
+        <button type="button" onclick={removeSelected}>Remove</button>
       {/if}
       <span class="hint">
         {#if !locked}
           Perspective. The fixed view is where this wall is edited.
         {:else if insertTool === 'door'}
-          Click the wall to place a door. Drag a door to move it.
+          Click the wall to place a door. Drag a door to move it. Remove deletes the selected one.
         {:else}
-          Click the wall to place a window. Drag an opening to move it.
+          Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.
         {/if}
       </span>
       {#if readout}

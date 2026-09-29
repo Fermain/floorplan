@@ -363,6 +363,23 @@ describe('door width', () => {
     expect(next.u).toBeCloseTo(1.45, 5)
   })
 
+  it('keeps the centre when a window is widened', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const added = addOpening(d, floor.id, wall.id, 'window', 2)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const opening = added.document.building.floors[0].walls[0].openings[0]
+    const centre = opening.u + opening.width / 2
+    const widened = updateOpening(added.document, floor.id, wall.id, opening.id, { width: 1.4 })
+    expect(widened.ok).toBe(true)
+    if (!widened.ok) return
+    const next = widened.document.building.floors[0].walls[0].openings[0]
+    expect(next.width).toBeCloseTo(1.4, 5)
+    expect(next.u + next.width / 2).toBeCloseTo(centre, 5)
+  })
+
   it('keeps a block between a door and a window', () => {
     const d = rectInsidePlot(fixtureDocument())
     const floor = d.building.floors[0]

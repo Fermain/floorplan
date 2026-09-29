@@ -20,7 +20,6 @@
     SURFACE_BED_TOP_ABOVE_DATUM_M,
     wallDatum,
   } from '../../lib/geometry/pad'
-  import { roofEavesAboveDatum, roofsForDocument } from '../../lib/geometry/roof'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -52,8 +51,6 @@
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
   let floorSlabs = $state<FloorSlab[]>([])
-  let roofMeshes = $state<{ key: string; geometry: BufferGeometry }[]>([])
-
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -123,13 +120,11 @@
       }
     }
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
-    const roofs = pad ? roofsFor(pad) : []
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
     floorSlabs = slabs
-    roofMeshes = roofs
     return () => {
       ground.dispose()
       minor?.dispose()
@@ -139,7 +134,6 @@
         wall.lintel?.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
-      for (const roof of roofs) roof.geometry.dispose()
     }
   })
 
@@ -195,37 +189,6 @@
     return decks
   }
 
-  function roofsFor(pad: NonNullable<ReturnType<typeof groundPad>>): { key: string; geometry: BufferGeometry }[] {
-    const specs = roofsForDocument(doc, (floor, rings) => {
-      const grade = roofGrade(floor, pad, rings)
-      return floorWorldDatum(floor.datumHeight, grade) + roofEavesAboveDatum(floor)
-    })
-    const meshes: { key: string; geometry: BufferGeometry }[] = []
-    specs.forEach((spec, specIndex) => {
-      spec.planes.forEach((plane, planeIndex) => {
-        const geometry = planeGeometry(plane.corners)
-        if (!geometry) return
-        meshes.push({ key: `roof-${specIndex}-${planeIndex}`, geometry })
-      })
-    })
-    return meshes
-  }
-
-  function planeGeometry(corners: { x: number; y: number; z: number }[]): BufferGeometry | null {
-    if (corners.length < 3) return null
-    const positions: number[] = []
-    const a = corners[0]
-    for (let i = 1; i < corners.length - 1; i++) {
-      const b = corners[i]
-      const c = corners[i + 1]
-      positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
-    }
-    const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-    geometry.computeVertexNormals()
-    return geometry
-  }
-
   function deckGrade(
     floor: Floor,
     pad: NonNullable<ReturnType<typeof groundPad>>,
@@ -237,22 +200,6 @@
     }
     const ring = polygons[0]?.outer ?? []
     if (ring.length === 0) return 0
-    const x = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
-    const z = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
-    return pad.structures.find((structure) => structure.rings.some((item) => pointInRing(item, x, z)))?.datum ?? 0
-  }
-
-  function roofGrade(
-    floor: Floor,
-    pad: NonNullable<ReturnType<typeof groundPad>>,
-    rings: Ring[],
-  ): number {
-    for (const wall of floor.walls) {
-      const datum = wallDatum(floor, wall, pad)
-      if (datum !== null) return datum
-    }
-    const ring = rings[0] ?? []
-    if (ring.length === 0) return pad.structures[0]?.datum ?? 0
     const x = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
     const z = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
     return pad.structures.find((structure) => structure.rings.some((item) => pointInRing(item, x, z)))?.datum ?? 0
@@ -360,12 +307,6 @@
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
       />
-    </T.Mesh>
-  {/each}
-
-  {#each roofMeshes as roof (roof.key)}
-    <T.Mesh geometry={roof.geometry} castShadow receiveShadow>
-      <T.MeshStandardMaterial color="#8b5a3c" roughness={0.9} side={DoubleSide} />
     </T.Mesh>
   {/each}
 
