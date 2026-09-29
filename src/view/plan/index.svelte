@@ -40,7 +40,7 @@
     type SnapTrace,
   } from './snap'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'select' | 'finish'
+  type Tool = 'draw-double' | 'draw-logical' | 'select'
 
   const PLOT_MARGIN_M = 1
   const WALL_HIT_M = 0.12
@@ -470,19 +470,17 @@
         return
       }
       if (pickOutline(plan.x, plan.z)) return
+      const room = roomAtPoint(activeFloor, plan.x, plan.z)
+      if (room) {
+        const next = room.finishId === 'timber' ? 'unfinished' : 'timber'
+        applyResult(documentStore.setRoomFinish(floorIdFor(room.cornerIds[0]) ?? activeFloorId, room.cornerIds, next))
+        return
+      }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
       selectedWallId = null
       selectedCornerId = null
       selectedOutline = null
       selectedEdge = edge ?? null
-      return
-    }
-
-    if (tool === 'finish') {
-      const room = roomAtPoint(activeFloor, plan.x, plan.z)
-      if (!room) return
-      const next = room.finishId === 'timber' ? 'unfinished' : 'timber'
-      applyResult(documentStore.setRoomFinish(floorIdFor(room.cornerIds[0]) ?? activeFloorId, room.cornerIds, next))
       return
     }
 
@@ -960,7 +958,7 @@
       minTurn = turned.applied
     }
     const snapped = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
-    const aligned = alignToNodes(snapped.x, snapped.z, [...floor.corners, ...belowNodes()])
+    const aligned = alignToNodes(snapped.x, snapped.z, [...floor.corners, ...belowNodes()], start)
     const onStart = Math.hypot(aligned.x - start.x, aligned.z - start.z) <= 1e-4
     const useAlign =
       aligned.traces.length > 0 &&
@@ -1262,7 +1260,7 @@
       }
       return moveDrag
         ? 'Release to place the building.'
-        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building.'
+        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building.'
     }
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
     if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Right-click or Escape stops.'
@@ -1316,7 +1314,6 @@
         Logical wall
       </button>
       <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
-      <button type="button" class:active={tool === 'finish'} onclick={() => setTool('finish')}>Finish</button>
     </div>
     <div class="floors">
       {#each storeyIndexes as index (index)}
@@ -1505,13 +1502,7 @@
             points={pointsAttr(pts)}
             fill={roomFill(room.finishId)}
             stroke="none"
-            pointer-events={tool === 'finish' ? 'fill' : 'none'}
-            onpointerdown={(e) => {
-              if (tool !== 'finish') return
-              e.stopPropagation()
-              const next = room.finishId === 'timber' ? 'unfinished' : 'timber'
-              applyResult(documentStore.setRoomFinish(floorIdFor(room.cornerIds[0]) ?? activeFloorId, room.cornerIds, next))
-            }}
+            pointer-events="none"
           />
         {/if}
       {/each}

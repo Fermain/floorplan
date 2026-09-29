@@ -9,10 +9,16 @@
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU, windowWidthLimits } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
-  import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
+  import {
+    DEFAULT_DOOR_WIDTH,
+    DEFAULT_WINDOW_WIDTH,
+    DOOR_MIN_WIDTH,
+    WINDOW_MIN_WIDTH,
+  } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
   import { pointerToWallUv } from './elevation'
+  import { placeSnappedOpeningU, snapOpeningU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame } from './wallFrame'
 
   interface Props {
@@ -254,15 +260,27 @@
 
     if (insertTool === 'door') {
       if (!widthAllowed) return
-      const u = placeOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings)
-      if (u === null) return
-      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', u, shownWidth))
+      const placed = placeSnappedOpeningU(
+        uv.u - shownWidth / 2,
+        shownWidth,
+        frame.length,
+        wall.openings,
+        DOOR_MIN_WIDTH,
+      )
+      if (placed === null) return
+      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', placed.u, placed.width))
       return
     }
 
-    const windowU = placeOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings)
-    if (windowU === null) return
-    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', windowU, shownWidth))
+    const placed = placeSnappedOpeningU(
+      uv.u - shownWidth / 2,
+      shownWidth,
+      frame.length,
+      wall.openings,
+      WINDOW_MIN_WIDTH,
+    )
+    if (placed === null) return
+    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', placed.u, placed.width))
   }
 
   function onWidthInput(value: number) {
@@ -273,12 +291,14 @@
 
   function commitWidth(value: number) {
     widthDraft = null
+    const min = widthKind === 'door' ? DOOR_MIN_WIDTH : WINDOW_MIN_WIDTH
+    const snapped = snapOpeningWidth(value, min)
     if (!editingOpening || !floor || !wall) {
-      if (insertTool === 'door') doorWidth = value
-      else windowWidth = value
+      if (insertTool === 'door') doorWidth = snapped
+      else windowWidth = snapped
       return
     }
-    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { width: value })
+    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { width: snapped })
   }
 
   function removeSelected() {
@@ -319,16 +339,33 @@
   }
 
   function onViewportPointerUp(event: PointerEvent) {
-    if (drag && floor && wall) {
-      const moved =
-        drag.u !== drag.originU || (!drag.aligned && drag.v !== drag.originV)
-      if (moved) {
-        documentStore.updateOpening(
-          floor.id,
-          wall.id,
-          drag.id,
-          drag.aligned ? { u: drag.u } : { u: drag.u, v: drag.v },
+    const current = drag
+    if (current && floor && wall && frame) {
+      const moving = wall.openings.find((opening) => opening.id === current.id)
+      if (moving) {
+        const others = wall.openings.filter((opening) => opening.id !== current.id)
+        const u = placeOpeningU(
+          snapOpeningU(current.u),
+          moving.width,
+          frame.length,
+          others,
         )
+        if (u !== null) {
+          const moved =
+            u !== current.originU || (!current.aligned && current.v !== current.originV)
+          if (moved) {
+            if (current.aligned) {
+              documentStore.updateOpening(floor.id, wall.id, current.id, { u })
+            } else {
+              const vertical = snapOpeningVertical(current.v, moving.height, frame.height)
+              documentStore.updateOpening(floor.id, wall.id, current.id, {
+                u,
+                v: vertical.v,
+                height: vertical.height,
+              })
+            }
+          }
+        }
       }
     }
     drag = null

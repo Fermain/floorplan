@@ -1,4 +1,4 @@
-import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import { BLOCK_HEIGHT, BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import type { Floor, Wall } from '../model/types'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -42,25 +42,33 @@ type WallFrame = {
   length: number
 }
 
+function sillBearingY(openingV: number): number {
+  const joint = Math.floor((openingV + 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
+  if (joint < openingV) return joint
+  return openingV
+}
+
 export function openingFrameLayout(opening: OpeningRect): OpeningFrameLayout | null {
   if (opening.width < 2 * FRAME_SECTION + 2 * GLASS_INSET + 1e-6) return null
   if (opening.height < 2 * FRAME_SECTION + 2 * GLASS_INSET + 1e-6) return null
   const u0 = opening.u
   const u1 = opening.u + opening.width
-  const y0 = opening.v
+  const openingY0 = opening.v
+  const y0 = sillBearingY(opening.v)
   const y1 = opening.v + opening.height
+  const innerY0 = openingY0 + FRAME_SECTION
   const outer = { u0, u1, y0, y1 }
   const inner = {
     u0: u0 + FRAME_SECTION,
     u1: u1 - FRAME_SECTION,
-    y0: y0 + FRAME_SECTION,
+    y0: innerY0,
     y1: y1 - FRAME_SECTION,
   }
   const members: FrameMemberSpan[] = [
-    { u0, u1, y0, y1: y0 + FRAME_SECTION },
+    { u0, u1, y0, y1: innerY0 },
     { u0, u1, y0: y1 - FRAME_SECTION, y1 },
-    { u0, u1: u0 + FRAME_SECTION, y0: y0 + FRAME_SECTION, y1: y1 - FRAME_SECTION },
-    { u0: u1 - FRAME_SECTION, u1, y0: y0 + FRAME_SECTION, y1: y1 - FRAME_SECTION },
+    { u0, u1: u0 + FRAME_SECTION, y0, y1: y1 - FRAME_SECTION },
+    { u0: u1 - FRAME_SECTION, u1, y0, y1: y1 - FRAME_SECTION },
   ]
   const glass = {
     u0: inner.u0 + GLASS_INSET,

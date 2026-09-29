@@ -66,9 +66,7 @@
       ref.lookAt(c.x, c.y, c.z)
     }}
   >
-    {#if !locked}
-      <OrbitControls target={orbitTarget} />
-    {/if}
+    <OrbitControls enabled={!locked} target={orbitTarget} />
   </T.PerspectiveCamera>
 
   <T.OrthographicCamera

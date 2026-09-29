@@ -27,7 +27,7 @@
     GLASS_COLOUR,
     GLASS_OPACITY,
   } from '../../lib/geometry/frames'
-  import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
@@ -35,18 +35,21 @@
   import type { OrbitControls as OrbitControlsInstance } from 'three/examples/jsm/controls/OrbitControls.js'
   import type { Ring } from '../../lib/geometry/pad'
   import { liftAboveGround } from './ground-limit'
+  import ReviewInteractivity from './ReviewInteractivity.svelte'
 
   interface Props {
     sunDate: Date
+    onSelectWall?: (wallId: string) => void
   }
 
-  let { sunDate }: Props = $props()
+  let { sunDate, onSelectWall }: Props = $props()
 
   type WallMeshes = {
     key: string
     wallId: string
     datumY: number
     geoms: BufferGeometry[]
+    courses: BufferGeometry[]
     lintel: BufferGeometry | null
     frame: BufferGeometry | null
     glass: BufferGeometry | null
@@ -55,6 +58,7 @@
 
   const DECK_THICKNESS = deckThickness()
 
+  let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
   let contourMinor = $state<BufferGeometry | null>(null)
   let contourMajor = $state<BufferGeometry | null>(null)
@@ -72,6 +76,8 @@
     const n = ring.length || 1
     return { x: sx / n, y: 2, z: sz / n }
   })
+
+  const orbitTarget = $derived<[number, number, number]>([plotCenter.x, plotCenter.y, plotCenter.z])
 
   const sun = $derived(
     sunDirection(
@@ -102,6 +108,11 @@
     return raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
   }
 
+  function onWallClick(wallId: string) {
+    if (!locked) return
+    onSelectWall?.(wallId)
+  }
+
   $effect(() => {
     const heightfield = doc.heightfield
     const floors = doc.building.floors
@@ -117,15 +128,17 @@
         if (wall.skin === 'logical') continue
         const samples = bottomSamplesForWall(floor, wall)
         const geoms = buildWallGeometries(floor, wall, samples)
+        const courses = buildCourseFaceGeometries(floor, wall, samples)
         const lintel = buildLintelGeometry(floor, wall)
         const frame = buildOpeningFrameGeometry(floor, wall, samples)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
-        if (geoms.length === 0 && !lintel && !frame && !glass) continue
+        if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
           wallId: wall.id,
           datumY: floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0),
           geoms,
+          courses,
           lintel,
           frame,
           glass,
@@ -144,6 +157,7 @@
       major?.dispose()
       for (const wall of built) {
         for (const g of wall.geoms) g.dispose()
+        for (const g of wall.courses) g.dispose()
         wall.lintel?.dispose()
         wall.frame?.dispose()
         wall.glass?.dispose()
@@ -272,87 +286,125 @@
   }
 </script>
 
-<Canvas shadows>
-  <T.PerspectiveCamera
-    makeDefault
-    position={[plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]}
-    oncreate={(ref) => {
-      ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
-    }}
-  >
-    <OrbitControls
-      target={[plotCenter.x, plotCenter.y, plotCenter.z]}
-      onchange={(event) => keepCameraAboveGround(event.target)}
-    />
-  </T.PerspectiveCamera>
-
-  <T.AmbientLight intensity={0.35} />
-  <T.DirectionalLight
-    position={lightPosition}
-    intensity={1.15}
-    castShadow
-    oncreate={(ref) => {
-      configureSunLight(ref)
-    }}
-  />
-
-  {#if groundGeometry}
-    <T.Mesh geometry={groundGeometry} receiveShadow>
-      <T.MeshStandardMaterial color="#6b8f71" />
-    </T.Mesh>
-  {/if}
-  {#if contourMinor}
-    <T.LineSegments geometry={contourMinor}>
-      <T.LineBasicMaterial color="#3f3428" />
-    </T.LineSegments>
-  {/if}
-  {#if contourMajor}
-    <T.LineSegments geometry={contourMajor}>
-      <T.LineBasicMaterial color="#1a120c" />
-    </T.LineSegments>
-  {/if}
-
-  {#each floorSlabs as slab (slab.key)}
-    <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>
-      <T.MeshStandardMaterial
-        color={slab.color}
-        roughness={0.95}
-        side={DoubleSide}
-        polygonOffset={slab.polygonOffset ?? false}
-        polygonOffsetFactor={1}
-        polygonOffsetUnits={1}
+<div class="scene">
+  <button type="button" class="lock" onclick={() => (locked = !locked)}>
+    {locked ? 'Perspective' : 'Fixed view'}
+  </button>
+  <Canvas shadows>
+    <ReviewInteractivity />
+    <T.PerspectiveCamera
+      makeDefault
+      position={[plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]}
+      oncreate={(ref) => {
+        ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
+      }}
+    >
+      <OrbitControls
+        enabled={!locked}
+        target={orbitTarget}
+        onchange={(event) => keepCameraAboveGround(event.target)}
       />
-    </T.Mesh>
-  {/each}
+    </T.PerspectiveCamera>
 
-  {#each wallMeshes as wall (wall.key)}
-    <T.Group position.y={wall.datumY}>
-      {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
-        <T.Mesh geometry={geom} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#c4b5a0" />
-        </T.Mesh>
-      {/each}
-      {#if wall.lintel}
-        <T.Mesh geometry={wall.lintel} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#8a8680" />
-        </T.Mesh>
-      {/if}
-      {#if wall.frame}
-        <T.Mesh geometry={wall.frame} castShadow receiveShadow>
-          <T.MeshStandardMaterial color={FRAME_COLOUR} />
-        </T.Mesh>
-      {/if}
-      {#if wall.glass}
-        <T.Mesh geometry={wall.glass}>
-          <T.MeshStandardMaterial
-            color={GLASS_COLOUR}
-            transparent
-            opacity={GLASS_OPACITY}
-            depthWrite={false}
-            side={DoubleSide}
-          />
-        </T.Mesh>
-      {/if}
-    </T.Group>
-  {/each}
-</Canvas>
+    <T.AmbientLight intensity={0.35} />
+    <T.DirectionalLight
+      position={lightPosition}
+      intensity={1.15}
+      castShadow
+      oncreate={(ref) => {
+        configureSunLight(ref)
+      }}
+    />
+
+    {#if groundGeometry}
+      <T.Mesh geometry={groundGeometry} receiveShadow>
+        <T.MeshStandardMaterial color="#6b8f71" />
+      </T.Mesh>
+    {/if}
+    {#if contourMinor}
+      <T.LineSegments geometry={contourMinor}>
+        <T.LineBasicMaterial color="#3f3428" />
+      </T.LineSegments>
+    {/if}
+    {#if contourMajor}
+      <T.LineSegments geometry={contourMajor}>
+        <T.LineBasicMaterial color="#1a120c" />
+      </T.LineSegments>
+    {/if}
+
+    {#each floorSlabs as slab (slab.key)}
+      <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>
+        <T.MeshStandardMaterial
+          color={slab.color}
+          roughness={0.95}
+          side={DoubleSide}
+          polygonOffset={slab.polygonOffset ?? false}
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      </T.Mesh>
+    {/each}
+
+    {#each wallMeshes as wall (wall.key)}
+      <T.Group position.y={wall.datumY}>
+        {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
+          <T.Mesh
+            geometry={geom}
+            castShadow
+            receiveShadow
+            onclick={() => onWallClick(wall.wallId)}
+          >
+            <T.MeshStandardMaterial color="#6e6256" />
+          </T.Mesh>
+        {/each}
+        {#each wall.courses as geom, i (`${wall.key}-course-${i}`)}
+          <T.Mesh geometry={geom} castShadow receiveShadow>
+            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
+          </T.Mesh>
+        {/each}
+        {#if wall.lintel}
+          <T.Mesh geometry={wall.lintel} castShadow receiveShadow>
+            <T.MeshStandardMaterial color="#8a8680" />
+          </T.Mesh>
+        {/if}
+        {#if wall.frame}
+          <T.Mesh geometry={wall.frame} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={FRAME_COLOUR} />
+          </T.Mesh>
+        {/if}
+        {#if wall.glass}
+          <T.Mesh geometry={wall.glass}>
+            <T.MeshStandardMaterial
+              color={GLASS_COLOUR}
+              transparent
+              opacity={GLASS_OPACITY}
+              depthWrite={false}
+              side={DoubleSide}
+            />
+          </T.Mesh>
+        {/if}
+      </T.Group>
+    {/each}
+  </Canvas>
+</div>
+
+<style>
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .lock {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 1;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
+    font: 0.875rem system-ui, sans-serif;
+    cursor: pointer;
+  }
+</style>

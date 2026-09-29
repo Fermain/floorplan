@@ -55,6 +55,12 @@
     )
   }
 
+  interface Props {
+    onSelectWall?: (wallId: string) => void
+  }
+
+  let { onSelectWall }: Props = $props()
+
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
   const summerLabel = $derived(solsticeLabel('summer'))
   const winterLabel = $derived(solsticeLabel('winter'))
@@ -71,7 +77,7 @@
     <button type="button" onclick={() => (solsticeKind = 'winter')}>{winterLabel}</button>
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} />
+    <ReviewScene {sunDate} {onSelectWall} />
   </div>
 </div>
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Floor, Wall } from '../model/types'
+import { BLOCK_HEIGHT } from '../plot/fixture'
 import {
   FRAME_SECTION,
   GLASS_INSET,
@@ -9,13 +10,14 @@ import {
 
 describe('openingFrameLayout', () => {
   const opening = { u: 1.5, v: 0.9, width: 0.9, height: 1.2 }
+  const sillJoint = Math.floor((opening.v + 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
 
   it('keeps the frame inside the opening rectangle', () => {
     const layout = openingFrameLayout(opening)
     expect(layout).not.toBeNull()
     expect(layout!.outer.u0).toBe(opening.u)
     expect(layout!.outer.u1).toBe(opening.u + opening.width)
-    expect(layout!.outer.y0).toBe(opening.v)
+    expect(layout!.outer.y0).toBe(sillJoint)
     expect(layout!.outer.y1).toBe(opening.v + opening.height)
     for (const member of layout!.members) {
       expect(member.u0).toBeGreaterThanOrEqual(layout!.outer.u0 - 1e-9)
@@ -42,6 +44,26 @@ describe('openingFrameLayout', () => {
     expect(layout!.glass.u1).toBeLessThan(layout!.inner.u1)
     expect(layout!.glass.y0).toBeGreaterThan(layout!.inner.y0)
     expect(layout!.glass.y1).toBeLessThan(layout!.inner.y1)
+  })
+
+  it('drops the outer bottom to the course joint below a window sill', () => {
+    const layout = openingFrameLayout(opening)
+    expect(layout).not.toBeNull()
+    expect(sillJoint).toBeCloseTo(0.83, 5)
+    expect(sillJoint).toBeLessThan(opening.v)
+    const lowest = Math.min(...layout!.members.map((m) => m.y0))
+    expect(lowest).toBeCloseTo(sillJoint, 5)
+    expect(layout!.glass.y0).toBeGreaterThan(opening.v)
+  })
+
+  it('does not grow a door rail below the floor', () => {
+    const door = { u: 1, v: 0, width: 0.9, height: 2.1 }
+    const layout = openingFrameLayout(door)
+    expect(layout).not.toBeNull()
+    expect(layout!.outer.y0).toBe(0)
+    for (const member of layout!.members) {
+      expect(member.y0).toBeGreaterThanOrEqual(0)
+    }
   })
 })
 

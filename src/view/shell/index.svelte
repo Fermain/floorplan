@@ -122,6 +122,12 @@
     mode = 'elevation'
   }
 
+  function selectWallFromReview(wallId: string) {
+    selectedWallId = wallId
+    selectedOpeningId = null
+    mode = 'elevation'
+  }
+
   function explainImport(reason: string): string {
     if (reason === 'existing walls leave the new plot') {
       return 'Those walls sit outside the new plot. Remove them, or import a ring that contains them.'
@@ -230,7 +236,7 @@
         onSelectOpening={(id) => (selectedOpeningId = id)}
       />
     {:else if mode === 'review'}
-      <ReviewView />
+      <ReviewView onSelectWall={selectWallFromReview} />
     {/if}
   </div>
 </div>

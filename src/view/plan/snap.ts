@@ -247,23 +247,43 @@ export function alignToNodes(
   x: number,
   z: number,
   nodes: Point[],
+  start: Point,
   tolerance = ALIGN_SNAP_M,
 ): { x: number; z: number; traces: SnapTrace[] } {
-  let bestX: { node: Point; dist: number } | undefined
-  let bestZ: { node: Point; dist: number } | undefined
+  let best: { x: number; z: number; dist: number; node: Point; square: boolean } | undefined
   for (const node of nodes) {
-    const dx = Math.abs(x - node.x)
-    const dz = Math.abs(z - node.z)
-    if (dx <= 1e-6 && dz <= 1e-6) continue
-    if (dx <= tolerance && (!bestX || dx < bestX.dist)) bestX = { node, dist: dx }
-    if (dz <= tolerance && (!bestZ || dz < bestZ.dist)) bestZ = { node, dist: dz }
+    const ndx = node.x - start.x
+    const ndz = node.z - start.z
+    const nlen = Math.hypot(ndx, ndz)
+    if (nlen < 1e-9) continue
+    const ux = ndx / nlen
+    const uz = ndz / nlen
+    const vx = -uz
+    const vz = ux
+    const fromSx = x - start.x
+    const fromSz = z - start.z
+    const dist0 = Math.abs(fromSx * vx + fromSz * vz)
+    if (dist0 <= tolerance) {
+      const t = fromSx * ux + fromSz * uz
+      const px = start.x + t * ux
+      const pz = start.z + t * uz
+      if (Math.hypot(px - start.x, pz - start.z) > 1e-6 && (!best || dist0 < best.dist)) {
+        best = { x: px, z: pz, dist: dist0, node, square: false }
+      }
+    }
+    const dist90 = Math.abs(fromSx * ux + fromSz * uz)
+    if (dist90 <= tolerance) {
+      const s = fromSx * vx + fromSz * vz
+      const px = start.x + s * vx
+      const pz = start.z + s * vz
+      if (Math.hypot(px - x, pz - z) <= tolerance + 1e-9 && Math.hypot(px - start.x, pz - start.z) > 1e-6 && (!best || dist90 < best.dist)) {
+        best = { x: px, z: pz, dist: dist90, node, square: true }
+      }
+    }
   }
-  const sx = bestX ? bestX.node.x : x
-  const sz = bestZ ? bestZ.node.z : z
-  const traces: SnapTrace[] = []
-  if (bestX) traces.push(...guide(bestX.node, sx, sz))
-  if (bestZ && bestZ.node !== bestX?.node) traces.push(...guide(bestZ.node, sx, sz))
-  return { x: sx, z: sz, traces }
+  if (!best) return { x, z, traces: [] }
+  const from = best.square ? start : best.node
+  return { x: best.x, z: best.z, traces: guide(from, best.x, best.z) }
 }
 
 export function alignTranslation(

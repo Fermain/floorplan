@@ -126,7 +126,7 @@ describe('snapEndToOrthogonal', () => {
 
 describe('alignToNodes', () => {
   it('snaps onto a nearby corner axis and reports the trace', () => {
-    const hit = alignToNodes(5.2, 8, [{ x: 5, z: 2 }])
+    const hit = alignToNodes(5.2, 8, [{ x: 5, z: 2 }], { x: 5, z: 10 })
     expect(hit.x).toBe(5)
     expect(hit.z).toBe(8)
     expect(hit.traces).toHaveLength(1)
@@ -134,8 +134,20 @@ describe('alignToNodes', () => {
   })
 
   it('leaves a clear miss alone', () => {
-    const hit = alignToNodes(6, 8, [{ x: 5, z: 2 }])
+    const hit = alignToNodes(6, 8, [{ x: 5, z: 2 }], { x: 5, z: 10 })
     expect(hit).toMatchObject({ x: 6, z: 8, traces: [] })
+  })
+
+  it('locks a near perpendicular onto 90 degrees and leaves a diagonal alone', () => {
+    const start = { x: 0, z: 0 }
+    const node = { x: 5, z: 0 }
+    const square = alignToNodes(0.2, 4, [node], start)
+    expect(square.x).toBeCloseTo(0, 5)
+    expect(square.z).toBeCloseTo(4, 5)
+    expect(smallerAngleDeg(node.x - start.x, node.z - start.z, square.x - start.x, square.z - start.z)).toBeCloseTo(90, 5)
+    expect(square.traces).toHaveLength(1)
+    const diagonal = alignToNodes(5.1, 5, [node], start)
+    expect(diagonal).toMatchObject({ x: 5.1, z: 5, traces: [] })
   })
 
   it('slides a moving corner onto a fixed corner', () => {
