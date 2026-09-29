@@ -221,15 +221,7 @@ export type SnapTrace = { x1: number; z1: number; x2: number; z2: number }
 type Point = { x: number; z: number }
 
 function traceTo(node: Point, x: number, z: number): SnapTrace {
-  const dx = x - node.x
-  const dz = z - node.z
-  const len = Math.hypot(dx, dz)
-  return {
-    x1: node.x,
-    z1: node.z,
-    x2: x + (dx / len) * 0.8,
-    z2: z + (dz / len) * 0.8,
-  }
+  return { x1: node.x, z1: node.z, x2: x, z2: z }
 }
 
 function guide(from: Point, x: number, z: number): SnapTrace[] {
@@ -241,6 +233,34 @@ function guide(from: Point, x: number, z: number): SnapTrace[] {
     ]
   }
   return [traceTo(from, x, z)]
+}
+
+function matchLength(
+  x: number,
+  z: number,
+  nodes: Point[],
+  start: Point,
+  tolerance: number,
+): { x: number; z: number; node: Point } | undefined {
+  const sx = x - start.x
+  const sz = z - start.z
+  const slen = Math.hypot(sx, sz)
+  if (slen < 1e-9) return undefined
+  const ux = sx / slen
+  const uz = sz / slen
+  let best: { x: number; z: number; dist: number; node: Point } | undefined
+  for (const node of nodes) {
+    const relX = node.x - start.x
+    const relZ = node.z - start.z
+    if (Math.hypot(relX, relZ) < 1e-9) continue
+    const t = relX * ux + relZ * uz
+    if (t <= 1e-6) continue
+    const px = start.x + t * ux
+    const pz = start.z + t * uz
+    const dist = Math.hypot(px - x, pz - z)
+    if (dist <= tolerance && (!best || dist < best.dist)) best = { x: px, z: pz, dist, node }
+  }
+  return best
 }
 
 export function alignToNodes(
@@ -281,6 +301,9 @@ export function alignToNodes(
       }
     }
   }
+  const directed = best ? { x: best.x, z: best.z } : { x, z }
+  const matched = matchLength(directed.x, directed.z, nodes, start, tolerance)
+  if (matched) return { x: matched.x, z: matched.z, traces: guide(matched.node, matched.x, matched.z) }
   if (!best) return { x, z, traces: [] }
   const from = best.square ? start : best.node
   return { x: best.x, z: best.z, traces: guide(from, best.x, best.z) }

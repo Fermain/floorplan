@@ -130,7 +130,7 @@ describe('alignToNodes', () => {
     expect(hit.x).toBe(5)
     expect(hit.z).toBe(8)
     expect(hit.traces).toHaveLength(1)
-    expect(hit.traces[0]).toMatchObject({ x1: 5, z1: 2 })
+    expect(hit.traces[0]).toMatchObject({ x1: 5, z1: 2, x2: 5, z2: 8 })
   })
 
   it('leaves a clear miss alone', () => {
@@ -146,8 +146,29 @@ describe('alignToNodes', () => {
     expect(square.z).toBeCloseTo(4, 5)
     expect(smallerAngleDeg(node.x - start.x, node.z - start.z, square.x - start.x, square.z - start.z)).toBeCloseTo(90, 5)
     expect(square.traces).toHaveLength(1)
+    expect(square.traces[0]).toMatchObject({ x1: start.x, z1: start.z, x2: square.x, z2: square.z })
     const diagonal = alignToNodes(5.1, 5, [node], start)
     expect(diagonal).toMatchObject({ x: 5.1, z: 5, traces: [] })
+  })
+
+  it('lands the free end level with the first corner so the last side closes a rectangle', () => {
+    const first = { x: 0, z: 0 }
+    const elbow = { x: 0, z: 5 }
+    const start = { x: 8, z: 5 }
+    const hit = alignToNodes(8, 0.2, [first, elbow, start], start)
+    expect(hit.x).toBeCloseTo(8, 5)
+    expect(hit.z).toBeCloseTo(0, 5)
+    expect(hit.traces[0]).toMatchObject({ x1: first.x, z1: first.z, x2: 8, z2: 0 })
+    const rotatedStart = { x: 3, z: 6 }
+    const rotatedEnd = { x: 0, z: 5 }
+    const len = Math.hypot(rotatedEnd.x - rotatedStart.x, rotatedEnd.z - rotatedStart.z)
+    const ux = (rotatedEnd.x - rotatedStart.x) / len
+    const uz = (rotatedEnd.z - rotatedStart.z) / len
+    const rotated = alignToNodes(rotatedEnd.x - ux * 0.2, rotatedEnd.z - uz * 0.2, [{ x: 1, z: 2 }, { x: 4, z: 3 }], rotatedStart)
+    expect(rotated.x).toBeCloseTo(rotatedEnd.x, 5)
+    expect(rotated.z).toBeCloseTo(rotatedEnd.z, 5)
+    const miss = alignToNodes(8, 2, [first], start)
+    expect(miss).toMatchObject({ x: 8, z: 2, traces: [] })
   })
 
   it('slides a moving corner onto a fixed corner', () => {
