@@ -188,14 +188,14 @@ describe('ground pad', () => {
     expect(groundPad(docWith([open]))).toBeNull()
   })
 
-  it('places a 75 mm surface bed with its top 150 mm above the structure datum', () => {
+  it('fills the surface bed from the structure datum up to 150 mm', () => {
     expect(SURFACE_BED_TOP_ABOVE_DATUM_M).toBeCloseTo(0.15, 5)
-    expect(SURFACE_BED_THICKNESS_M).toBeCloseTo(0.075, 5)
+    expect(SURFACE_BED_THICKNESS_M).toBeCloseTo(SURFACE_BED_TOP_ABOVE_DATUM_M, 5)
     const pad = groundPad(docWith([rectFloor(2, 1, 6, 3)]))
     expect(pad).not.toBeNull()
     if (!pad) return
     const datum = pad.structures[0].datum
     expect(datum + SURFACE_BED_TOP_ABOVE_DATUM_M).toBeCloseTo(datum + 0.15, 5)
-    expect(SURFACE_BED_TOP_ABOVE_DATUM_M - SURFACE_BED_THICKNESS_M).toBeCloseTo(0.075, 5)
+    expect(datum + SURFACE_BED_TOP_ABOVE_DATUM_M - SURFACE_BED_THICKNESS_M).toBeCloseTo(datum, 5)
   })
 })

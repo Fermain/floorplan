@@ -10,7 +10,7 @@
     Shape,
   } from 'three'
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
-  import { deckPolygons, deckThickness, type DeckPolygon } from '../../lib/geometry/deck'
+  import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../../lib/geometry/deck'
   import {
     floorWorldDatum,
     groundPad,
@@ -252,16 +252,20 @@
   function slabsFor(structures: { datum: number; rings: Ring[] }[]): FloorSlab[] {
     const slabs: FloorSlab[] = []
     structures.forEach((structure, structureIndex) => {
-      structure.rings.forEach((ring, ringIndex) => {
-        if (ring.length < 3) return
-        const shape = ringShape(ring)
+      surfaceBedPolygons(structure.rings).forEach((polygon, polygonIndex) => {
+        if (polygon.outer.length < 3) return
+        const shape = ringShape(polygon.outer)
+        for (const hole of polygon.holes) {
+          if (hole.length < 3) continue
+          shape.holes.push(ringPath(hole))
+        }
         const geometry = new ExtrudeGeometry(shape, {
           depth: SURFACE_BED_THICKNESS_M,
           bevelEnabled: false,
         })
         geometry.rotateX(-Math.PI / 2)
         slabs.push({
-          key: `${structureIndex}-${ringIndex}`,
+          key: `${structureIndex}-${polygonIndex}`,
           geometry,
           y: structure.datum + SURFACE_BED_TOP_ABOVE_DATUM_M - SURFACE_BED_THICKNESS_M,
           color: '#a3a3a3',

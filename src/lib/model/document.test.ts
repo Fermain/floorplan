@@ -387,6 +387,19 @@ describe('door width', () => {
     expect(door.height).toBeCloseTo(DEFAULT_DOOR_HEIGHT, 5)
   })
 
+  it('keeps a portal on the floor at door height', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const added = addOpening(d, floor.id, wall.id, 'portal', 2, 0.2)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const portal = added.document.building.floors[0].walls[0].openings[0]
+    expect(portal.width).toBeCloseTo(0.6, 5)
+    expect(portal.v).toBe(0)
+    expect(portal.height).toBeCloseTo(DEFAULT_DOOR_HEIGHT, 5)
+  })
+
   it('keeps the centre when a door is widened', () => {
     const d = rectInsidePlot(fixtureDocument())
     const floor = d.building.floors[0]
@@ -505,6 +518,11 @@ describe('door width', () => {
     if (door.ok) return
     expect(door.reason).toBe('wall too short for a door')
     expect(door.document).toBe(d)
+    const portal = addOpening(d, fid, wall.id, 'portal', 0.1, 0.9)
+    expect(portal.ok).toBe(false)
+    if (portal.ok) return
+    expect(portal.reason).toBe('wall too short for a portal')
+    expect(portal.document).toBe(d)
   })
 })
 

@@ -13,7 +13,14 @@ const TOL = 0.001
 export type WallSchedule = {
   wholeBricks: number
   cutBricks: number
-  openings: { window: number, door: number, external: number, internal: number, garage: number }
+  openings: {
+    window: number,
+    door: number,
+    external: number,
+    internal: number,
+    garage: number,
+    portal: number,
+  }
   lintels: { length: number }[]
 }
 
@@ -51,7 +58,7 @@ function emptySchedule(): WallSchedule {
   return {
     wholeBricks: 0,
     cutBricks: 0,
-    openings: { window: 0, door: 0, external: 0, internal: 0, garage: 0 },
+    openings: { window: 0, door: 0, external: 0, internal: 0, garage: 0, portal: 0 },
     lintels: [],
   }
 }
@@ -155,7 +162,7 @@ export function scheduleWall(
   const spans = collectWallBlockSpans(floor, wall, bottomSamples)
   const { wholeBricks, cutBricks } = countBricks(spans, leafRanges)
 
-  const openings = { window: 0, door: 0, external: 0, internal: 0, garage: 0 }
+  const openings = { window: 0, door: 0, external: 0, internal: 0, garage: 0, portal: 0 }
   for (const opening of wall.openings) tallyOpening(openings, opening.kind)
 
   const lintels = collectLintelSpans(floor, wall).map((span) => ({
@@ -177,6 +184,7 @@ export function scheduleBuilding(document: Document): BuildingSchedule {
       total.openings.external += part.openings.external
       total.openings.internal += part.openings.internal
       total.openings.garage += part.openings.garage
+      total.openings.portal += part.openings.portal
       total.lintels.push(...part.lintels)
     }
   }
@@ -191,6 +199,7 @@ function tallyOpening(
   else if (kind === 'external-door') openings.external += 1
   else if (kind === 'internal-door') openings.internal += 1
   else if (kind === 'garage') openings.garage += 1
+  else if (kind === 'portal') openings.portal += 1
   else openings.door += 1
 }
 
@@ -217,6 +226,9 @@ export function formatSchedule(schedule: WallSchedule): string {
   }
   if (schedule.openings.garage > 0) {
     parts.push(plural(schedule.openings.garage, 'garage door', 'garage doors'))
+  }
+  if (schedule.openings.portal > 0) {
+    parts.push(plural(schedule.openings.portal, 'portal', 'portals'))
   }
   if (schedule.lintels.length === 1) {
     parts.push(`1 lintel ${schedule.lintels[0].length.toFixed(2)} m`)

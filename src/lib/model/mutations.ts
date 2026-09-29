@@ -237,6 +237,7 @@ export function rotateCorners(
 
 function shortWallReason(kind: OpeningKind): string {
   if (kind === 'garage') return 'wall too short for a garage door'
+  if (kind === 'portal') return 'wall too short for a portal'
   return 'wall too short for a door'
 }
 

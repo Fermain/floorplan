@@ -124,6 +124,14 @@ describe('openingFrameLayout', () => {
     }
   })
 
+  it('gives a portal no frame', () => {
+    const portal = openingFrameLayout({ u: 0, v: 0, width: 0.9, height: 2.1, kind: 'portal' })
+    expect(portal).not.toBeNull()
+    expect(portal!.members).toEqual([])
+    expect(portal!.glass).toEqual([])
+    expect(portal!.panels).toEqual([])
+  })
+
   it('does not grow a door rail below the floor', () => {
     const door = { u: 1, v: 0, width: 0.9, height: 2.1 }
     const layout = openingFrameLayout(door)

@@ -4,10 +4,10 @@ import type { Document, Floor, Heightfield, Wall } from '../model/types'
 import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import { bilinearHeight } from './terrain'
 
-const WALL_OUTSTAND_M = CAVITY / 2 + BLOCK_THICKNESS
+export const WALL_OUTSTAND_M = CAVITY / 2 + BLOCK_THICKNESS
 
 export const SURFACE_BED_TOP_ABOVE_DATUM_M = 0.15
-export const SURFACE_BED_THICKNESS_M = 0.075
+export const SURFACE_BED_THICKNESS_M = SURFACE_BED_TOP_ABOVE_DATUM_M
 
 export type Ring = { x: number; z: number }[]
 

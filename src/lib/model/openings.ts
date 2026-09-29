@@ -4,10 +4,12 @@ import {
   DEFAULT_EXTERNAL_DOOR_WIDTH,
   DEFAULT_GARAGE_WIDTH,
   DEFAULT_INTERNAL_DOOR_WIDTH,
+  DEFAULT_PORTAL_WIDTH,
   DOOR_MIN_WIDTH,
   EXTERNAL_DOOR_MIN_WIDTH,
   GARAGE_MIN_WIDTH,
   INTERNAL_DOOR_MIN_WIDTH,
+  PORTAL_MIN_WIDTH,
   WINDOW_MIN_WIDTH,
   OPENING_EDGE_PAD,
   OPENING_MIN_GAP,
@@ -26,6 +28,7 @@ export function openingMinWidth(kind: OpeningKind): number {
   if (kind === 'external-door') return EXTERNAL_DOOR_MIN_WIDTH
   if (kind === 'internal-door') return INTERNAL_DOOR_MIN_WIDTH
   if (kind === 'door') return DOOR_MIN_WIDTH
+  if (kind === 'portal') return PORTAL_MIN_WIDTH
   return WINDOW_MIN_WIDTH
 }
 
@@ -45,6 +48,9 @@ export function defaultOpeningDimensions(kind: OpeningKind): {
   }
   if (kind === 'door') {
     return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_DOOR_WIDTH }
+  }
+  if (kind === 'portal') {
+    return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_PORTAL_WIDTH }
   }
   return { v: DEFAULT_SILL, height: DEFAULT_WINDOW_HEIGHT, width: DEFAULT_WINDOW_WIDTH }
 }

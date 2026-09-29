@@ -170,6 +170,9 @@ export function openingFrameLayout(opening: OpeningRect): OpeningFrameLayout | n
     y0: innerY0,
     y1: y1 - FRAME_SECTION,
   }
+  if (opening.kind === 'portal') {
+    return { outer, inner, members: [], glass: [], panels: [] }
+  }
   const members: FrameMemberSpan[] = [
     { u0, u1, y0, y1: innerY0 },
     { u0, u1, y0: y1 - FRAME_SECTION, y1 },

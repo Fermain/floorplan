@@ -10,12 +10,20 @@ import {
   FLOOR_TO_FLOOR,
 } from '../plot/fixture'
 import { wallMeshURange } from './walls'
-import { pointInRing, type Ring } from './pad'
+import { pointInRing, WALL_OUTSTAND_M, type Ring } from './pad'
 
 const CAVITY_FACE_M = CAVITY / 2
 const MAX_DECK_THICKNESS_M = 0.255
+const SURFACE_BED_FACE_CLEARANCE_M = 0.02
 
 export type DeckPolygon = { outer: Ring; holes: Ring[] }
+
+export function surfaceBedPolygons(rings: Ring[]): DeckPolygon[] {
+  const expanded = rings
+    .map((ring) => offsetOutward(ring, WALL_OUTSTAND_M - SURFACE_BED_FACE_CLEARANCE_M))
+    .filter((ring) => ring.length >= 3)
+  return unionRings(expanded)
+}
 
 export function deckThickness(): number {
   const courseCount = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)

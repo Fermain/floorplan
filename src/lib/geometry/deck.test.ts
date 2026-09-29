@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
 import { pointInRing } from './pad'
-import { deckPolygons, deckThickness } from './deck'
+import { deckPolygons, deckThickness, surfaceBedPolygons } from './deck'
 import type { Floor } from '../model/types'
 
 const CAVITY_FACE_M = CAVITY / 2
@@ -83,5 +83,38 @@ describe('deckPolygons', () => {
     expect(covers(polygons, 4 + CAVITY_FACE_M + 0.01, 7)).toBe(true)
     expect(covers(polygons, 4 - OUTER_FACE_M + 0.01, 7)).toBe(false)
     expect(covers(polygons, 4 - 0.01, 7)).toBe(false)
+  })
+})
+
+describe('surfaceBedPolygons', () => {
+  it('keeps the slab just inside the outer face of the wall', () => {
+    const room = [
+      { x: 0, z: 0 },
+      { x: 4, z: 0 },
+      { x: 4, z: 2 },
+      { x: 0, z: 2 },
+    ]
+    const polygons = surfaceBedPolygons([room])
+    expect(covers(polygons, -(OUTER_FACE_M - 0.04), 1)).toBe(true)
+    expect(covers(polygons, -(OUTER_FACE_M - 0.01), 1)).toBe(false)
+    expect(covers(polygons, 2, 1)).toBe(true)
+  })
+
+  it('joins two rooms into one slab under the shared wall', () => {
+    const left = [
+      { x: 0, z: 0 },
+      { x: 2, z: 0 },
+      { x: 2, z: 2 },
+      { x: 0, z: 2 },
+    ]
+    const right = [
+      { x: 2, z: 0 },
+      { x: 4, z: 0 },
+      { x: 4, z: 2 },
+      { x: 2, z: 2 },
+    ]
+    const polygons = surfaceBedPolygons([left, right])
+    expect(polygons).toHaveLength(1)
+    expect(covers(polygons, 2, 1)).toBe(true)
   })
 })

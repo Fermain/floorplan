@@ -15,6 +15,7 @@ import {
   DEFAULT_EXTERNAL_DOOR_WIDTH,
   DEFAULT_GARAGE_WIDTH,
   DEFAULT_INTERNAL_DOOR_WIDTH,
+  DEFAULT_PORTAL_WIDTH,
   DEFAULT_WINDOW_WIDTH,
 } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -41,6 +42,7 @@ import {
     'external-door': DEFAULT_EXTERNAL_DOOR_WIDTH,
     'internal-door': DEFAULT_INTERNAL_DOOR_WIDTH,
     garage: DEFAULT_GARAGE_WIDTH,
+    portal: DEFAULT_PORTAL_WIDTH,
   })
   let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
@@ -315,6 +317,7 @@ import {
     { kind: 'external-door', label: 'External door' },
     { kind: 'internal-door', label: 'Internal door' },
     { kind: 'garage', label: 'Garage door' },
+    { kind: 'portal', label: 'Portal' },
   ]
 
   function insertHint(kind: OpeningKind): string {
@@ -322,6 +325,7 @@ import {
     if (kind === 'garage') return 'Click the wall to place a garage door. Drag a door to move it. Remove deletes the selected one.'
     if (kind === 'external-door') return 'Click the wall to place an external door. Drag a door to move it. Remove deletes the selected one.'
     if (kind === 'internal-door') return 'Click the wall to place an internal door. Drag a door to move it. Remove deletes the selected one.'
+    if (kind === 'portal') return 'Click the wall to place a portal. Drag an opening to move it. Remove deletes the selected one.'
     return 'Click the wall to place a sliding door. Drag a door to move it. Remove deletes the selected one.'
   }
 
@@ -446,6 +450,8 @@ import {
         </label>
       {:else if widthKind === 'garage'}
         <span class="note">This wall is too short for a garage door.</span>
+      {:else if widthKind === 'portal'}
+        <span class="note">This wall is too short for a portal.</span>
       {:else if isFloorOpening(widthKind)}
         <span class="note">This wall is too short for a door.</span>
       {:else}
