@@ -323,23 +323,47 @@ import {
   ]
 
   $effect(() => {
-    const text =
-      !wall || !frame
-        ? ''
-        : !locked
-          ? 'Perspective. The fixed view is where this wall is edited.'
-          : insertHint(insertTool)
-    onStatus?.({ text, error: false })
+    onStatus?.(focusStatus())
     return () => onStatus?.({ text: '', error: false })
   })
 
+  function focusStatus(): { text: string; error: boolean } {
+    if (!wall || !frame) return { text: '', error: false }
+    if (widthLimits && !widthAllowed) {
+      const noun =
+        widthKind === 'garage'
+          ? 'a garage door'
+          : widthKind === 'portal'
+            ? 'a portal'
+            : isFloorOpening(widthKind)
+              ? 'a door'
+              : 'a window'
+      return { text: `This wall is too short for ${noun}.`, error: true }
+    }
+    if (readout) {
+      const parts = [`u ${mm(readout.u)} mm`, `v ${mm(readout.v)} mm`]
+      if (selectedOpening) {
+        parts.push(
+          `width ${mm(selectedOpening.width)} mm`,
+          `height ${mm(selectedOpening.height)} mm`,
+          `sill ${mm(selectedOpening.v)} mm`,
+          `head ${mm(selectedOpening.v + selectedOpening.height)} mm`,
+        )
+      }
+      return { text: parts.join(', '), error: false }
+    }
+    if (!locked) return { text: 'Perspective. The fixed view is where this wall is edited.', error: false }
+    if (wall.openings.length > 0 && scheduleLine) return { text: scheduleLine, error: false }
+    return { text: insertHint(insertTool), error: false }
+  }
+
   function insertHint(kind: OpeningKind): string {
-    if (kind === 'window') return 'Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.'
-    if (kind === 'garage') return 'Click the wall to place a garage door. Drag a door to move it. Remove deletes the selected one.'
-    if (kind === 'external-door') return 'Click the wall to place an external door. Drag a door to move it. Remove deletes the selected one.'
-    if (kind === 'internal-door') return 'Click the wall to place an internal door. Drag a door to move it. Remove deletes the selected one.'
-    if (kind === 'portal') return 'Click the wall to place a portal. Drag an opening to move it. Remove deletes the selected one.'
-    return 'Click the wall to place a sliding door. Drag a door to move it. Remove deletes the selected one.'
+    if (kind === 'window') return 'Click the wall to place a window.'
+    if (kind === 'garage') return 'Click the wall to place a garage door.'
+    if (kind === 'external-door') return 'Click the wall to place an external door.'
+    if (kind === 'internal-door') return 'Click the wall to place an internal door.'
+    if (kind === 'portal') return 'Click the wall to place a portal.'
+    return 'Click the wall to place a sliding door.'
   }
 
   function selectAdded(result: { ok: boolean; document: typeof doc }): void {
@@ -458,29 +482,9 @@ import {
           />
           <span>mm</span>
         </label>
-      {:else if widthKind === 'garage'}
-        <span class="note">This wall is too short for a garage door.</span>
-      {:else if widthKind === 'portal'}
-        <span class="note">This wall is too short for a portal.</span>
-      {:else if isFloorOpening(widthKind)}
-        <span class="note">This wall is too short for a door.</span>
-      {:else}
-        <span class="note">This wall is too short for a window.</span>
       {/if}
       {#if editingOpening}
         <button type="button" onclick={removeSelected}>Remove</button>
-      {/if}
-      {#if scheduleLine}
-        <span class="schedule">{scheduleLine}</span>
-      {/if}
-      {#if readout}
-        <span class="readout">
-          u: {mm(readout.u)} mm, v: {mm(readout.v)} mm
-          {#if selectedOpening}
-            , width: {mm(selectedOpening.width)} mm, height: {mm(selectedOpening.height)} mm, sill:
-            {mm(selectedOpening.v)} mm, head: {mm(selectedOpening.v + selectedOpening.height)} mm
-          {/if}
-        </span>
       {/if}
     </div>
     <div class="scene">
@@ -531,15 +535,19 @@ import {
     align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
-    padding: 0.75rem 1rem;
-    font: 0.9375rem system-ui, sans-serif;
-    border-bottom: 1px solid #ddd;
+    padding: 0.5rem 0.75rem;
+    background: #fff;
+    border-bottom: 1px solid #e4e4e7;
+    font: 0.875rem system-ui, sans-serif;
     flex-shrink: 0;
   }
 
   .bar button {
+    padding: 0.35rem 0.65rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
     font: inherit;
-    padding: 0.35rem 0.75rem;
     cursor: pointer;
   }
 
@@ -602,16 +610,6 @@ import {
   .width input[type='number'] {
     width: 4.5rem;
     font: inherit;
-  }
-
-  .note,
-  .schedule {
-    color: #3f3f46;
-  }
-
-  .schedule,
-  .readout {
-    font-variant-numeric: tabular-nums;
   }
 
   .scene {

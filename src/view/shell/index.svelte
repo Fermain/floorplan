@@ -152,11 +152,14 @@
       <ReviewView onSelectWall={selectWallFromReview} onStatus={setViewStatus} />
     {/if}
   </div>
-  <p class="status" class:error={statusError}>{statusText}</p>
+  {#if statusText}
+    <p class="toast" class:error={statusError}>{statusText}</p>
+  {/if}
 </div>
 
 <style>
   .shell {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -206,17 +209,24 @@
     min-height: 0;
   }
 
-  .status {
+  .toast {
+    position: absolute;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 2;
+    max-width: 22rem;
     margin: 0;
-    min-height: 1.25rem;
-    padding: 0.4rem 0.75rem;
-    border-top: 1px solid #e4e4e7;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
     background: #fff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
     color: #3f3f46;
     font: 0.8125rem system-ui, sans-serif;
+    pointer-events: none;
   }
 
-  .status.error {
+  .toast.error {
     color: #b91c1c;
   }
 </style>

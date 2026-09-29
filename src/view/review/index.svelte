@@ -62,13 +62,15 @@
 
   let { onSelectWall, onStatus }: Props = $props()
 
-  $effect(() => {
-    onStatus?.({ text: '', error: false })
-  })
-
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
   const summerLabel = $derived(solsticeLabel('summer'))
   const winterLabel = $derived(solsticeLabel('winter'))
+  const activeLabel = $derived(solsticeKind === 'summer' ? summerLabel : winterLabel)
+
+  $effect(() => {
+    onStatus?.({ text: `${activeLabel}, hour ${hour} UTC`, error: false })
+    return () => onStatus?.({ text: '', error: false })
+  })
 </script>
 
 <div class="root">
@@ -78,8 +80,12 @@
       <input type="range" min="0" max="24" step="1" bind:value={hour} />
       <span class="hour">{hour}</span>
     </label>
-    <button type="button" onclick={() => (solsticeKind = 'summer')}>{summerLabel}</button>
-    <button type="button" onclick={() => (solsticeKind = 'winter')}>{winterLabel}</button>
+    <button type="button" class:active={solsticeKind === 'summer'} onclick={() => (solsticeKind = 'summer')}>
+      Summer
+    </button>
+    <button type="button" class:active={solsticeKind === 'winter'} onclick={() => (solsticeKind = 'winter')}>
+      Winter
+    </button>
   </div>
   <div class="viewport">
     <ReviewScene {sunDate} {onSelectWall} />
@@ -98,17 +104,26 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    font: 0.9375rem system-ui, sans-serif;
-    border-bottom: 1px solid #ddd;
+    gap: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
+    background: #fff;
+    border-bottom: 1px solid #e4e4e7;
+    font: 0.875rem system-ui, sans-serif;
     flex-shrink: 0;
   }
 
   .bar button {
+    padding: 0.35rem 0.65rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
     font: inherit;
-    padding: 0.35rem 0.75rem;
     cursor: pointer;
+  }
+
+  .bar button.active {
+    border-color: #2563eb;
+    background: #eff6ff;
   }
 
   .scrub {

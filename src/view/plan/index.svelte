@@ -1032,19 +1032,13 @@
     if (tool === 'select') {
       if (rotateDrag) {
         const deg = turnLabel(rotateDrag.angle)
-        return rotateDrag.snapped
-          ? `Release to turn the building, ${deg}°. Snaps to the angle.`
-          : `Release to turn the building, ${deg}°.`
+        return rotateDrag.snapped ? `${deg}°. Snaps to the angle.` : `${deg}°.`
       }
-      return moveDrag
-        ? 'Release to place the building.'
-        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. The compass is north-south, and it is the default. Double-click a wall for Focus. Add storey lays a floor on the selected building. Shift draws a rectangle.'
+      return moveDrag ? 'Release to place the building.' : ''
     }
     if (tool === 'draw-rect') {
-      if (!pendingDraw) {
-        return 'Click inside the plot to start a rectangle, then click the opposite corner. Shift leaves the rectangle. Right-click or Escape stops.'
-      }
-      if (!rectanglePreview) return 'Click the opposite corner. Right-click or Escape stops.'
+      if (!pendingDraw) return 'Click two corners. Shift leaves the rectangle.'
+      if (!rectanglePreview) return 'Click the opposite corner.'
       const size = `${rectanglePreview.width.toFixed(2)} m by ${rectanglePreview.depth.toFixed(2)} m`
       if (!rectanglePreview.allowed) return `That rectangle leaves the plot. ${size}`
       const snap =
@@ -1057,13 +1051,15 @@
               : rectanglePreview.snap === 'align'
                 ? ' Lines up with a corner.'
                 : ''
-      return `Click to place the rectangle, ${size}.${snap} Right-click or Escape stops.`
+      return `${size}.${snap}`
     }
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
     if (!previewLine) {
-      return 'Click inside the plot to start a wall, then click each corner. Shift draws a rectangle. Right-click or Escape stops.'
+      return tool === 'draw-logical'
+        ? 'Click each corner of a logical wall.'
+        : 'Click each corner. Shift draws a rectangle.'
     }
-    if (previewLine.length <= 0.05) return 'Click the next corner. Right-click or Escape stops.'
+    if (previewLine.length <= 0.05) return 'Click the next corner.'
     const angle = previewLine.angle ? `, ${previewLine.angle.label}` : ''
     if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m${angle}`
     const snap = previewLine.cornerId
@@ -1079,22 +1075,19 @@
           : previewLine.minTurn
             ? ` Minimum angle is ${MIN_TURN_DEG}°.`
             : ''
-    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Shift turns it into a rectangle. Right-click or Escape stops.`
+    return `${previewLine.length.toFixed(2)} m${angle}.${snap}`
   })
 
   const planHint = $derived.by(() => {
-    const extra: string[] = []
-    if (activeStoreyIndex >= 2) extra.push('Empirical masonry rules stop at two storeys.')
+    if (drawHintBody) return drawHintBody
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
-      extra.push('A wall on this storey does not land on a wall below.')
+      return 'A wall on this storey does not land on a wall below.'
     }
     if (storeyHasLongSolidWall(levelFloors)) {
-      extra.push('A straight wall is longer than 8 m and wants a movement joint.')
+      return 'A straight wall is longer than 8 m and wants a movement joint.'
     }
-    const main = drawHintBody
-    if (extra.length === 0) return main
-    const tail = extra.join(' ')
-    return main ? `${main} ${tail}` : tail
+    if (activeStoreyIndex >= 2) return 'Empirical masonry rules stop at two storeys.'
+    return ''
   })
 
   $effect(() => {
