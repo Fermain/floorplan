@@ -38,15 +38,6 @@ importers:
       three:
         specifier: ^0.186.1
         version: 0.186.1
-      three-bvh-csg:
-        specifier: ^0.0.18
-        version: 0.0.18(three-mesh-bvh@0.9.15(three@0.186.1))(three@0.186.1)
-      three-csg-ts:
-        specifier: ^3.2.0
-        version: 3.2.0(@types/three@0.186.0)(three@0.186.1)
-      three-mesh-bvh:
-        specifier: ^0.9.15
-        version: 0.9.15(three@0.186.1)
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -1052,18 +1043,6 @@ packages:
   svelte@5.57.1:
     resolution: {integrity: sha512-Uqj49lWKB+iSSnneuwiYYJ7MZgkB+eXr0LXBhv4uDuAkXqnWmq65Sxflfvp0Lc6MdKjMUxGaeOKWJqz5SNiVIA==}
     engines: {node: '>=18'}
-
-  three-bvh-csg@0.0.18:
-    resolution: {integrity: sha512-M3GCZMmGFgASGuDf+YMamM83nVlD/vdwzVHcYbFxgW+g1S7/nKPiuY00YVHOMbjmJPh8mLevGZL65ItHUuGt2w==}
-    peerDependencies:
-      three: '>=0.179.0'
-      three-mesh-bvh: '>=0.9.7'
-
-  three-csg-ts@3.2.0:
-    resolution: {integrity: sha512-oTYg8kdal6qgHDbso/6VzA12Udf2ic2uXhf0XlJzuSP+Gs0OUR5gTHSZ7GotAE+M/QcVlw41eOwiWZVnJG5/8w==}
-    peerDependencies:
-      '@types/three': '>= 0.154.0'
-      three: '>= 0.154.0'
 
   three-instanced-uniforms-mesh@0.52.5:
     resolution: {integrity: sha512-6HrT4tNoSSw83yVAxqPmBZDLg9T7blWsZCqfHjPu7MKxHLt3pV4RMA+NxEwLokbqh7qFGDadhfYwjL0aLhb5fw==}
@@ -2196,16 +2175,6 @@ snapshots:
       zimmerframe: 1.1.5
     transitivePeerDependencies:
       - '@typescript-eslint/types'
-
-  three-bvh-csg@0.0.18(three-mesh-bvh@0.9.15(three@0.186.1))(three@0.186.1):
-    dependencies:
-      three: 0.186.1
-      three-mesh-bvh: 0.9.15(three@0.186.1)
-
-  three-csg-ts@3.2.0(@types/three@0.186.0)(three@0.186.1):
-    dependencies:
-      '@types/three': 0.186.0
-      three: 0.186.1
 
   three-instanced-uniforms-mesh@0.52.5(three@0.186.1):
     dependencies:

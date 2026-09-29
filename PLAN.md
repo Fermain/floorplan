@@ -1,6 +1,6 @@
 # Floorplan multi-agent plan
 
-Status: accepted. Waves 0–5 are committed. The editor shell is the default page, and a metre GeoJSON, KML, or heightfield file can replace the fixture. `?exp=` still opens the spikes.
+Status: accepted. Waves 0–5 are committed. The editor shell is the default page, and a metre GeoJSON, KML, or heightfield file can replace the fixture. The ortho, terrain, and CSG spikes have been removed.
 
 Orchestrator: the parent agent in this chat. Workers: Cursor Composer agents (`composer-2.5-fast`), local, `generalPurpose`. They share this working tree. They do not commit. Cloud agents are not part of this plan.
 

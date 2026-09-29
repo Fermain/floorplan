@@ -33,27 +33,8 @@ To build this prototype efficiently, agents should adhere to the following stack
 * **3D Rendering Canvas:** **Three.js** (via **Threlte** for declarative Svelte integration). Map the reactive architectural state directly to 3D meshes.
 * **Data Processing:** If GIS parsing, topological triangulation, or heavy mesh calculations bottleneck the browser, offload processing to a fast **Go** backend API that returns optimized JSON or binary arrays to the client.
 * **Spatial Math:** **Turf.js** for handling the 2D GIS plot boundaries, checking intersections, and ensuring walls stay within legal property lines.
-* **Constructive Solid Geometry (CSG):** **`three-csg-ts`** for performing the boolean math required to dynamically subtract window and door volumes from wall meshes.
 
-## Experiments to Run (R&D Baselines)
-
-Assign these specific technical spikes to the swarm before integrating the full application:
-
-1. **The Orthographic Wall Projection Experiment:**
-* *Goal:* Prove the "2D Plane Focus" UX concept.
-* *Task:* Render a 3D wall. Create a UI interaction that transitions the camera to an orthographic projection perfectly perpendicular to that wall. Map 2D mouse clicks on this orthographic view back to the 3D local coordinates of the wall mesh to place a window.
-
-
-2. **The Terrain-to-Wall Intersection Experiment:**
-* *Goal:* Handle building on non-flat GIS heightmaps.
-* *Task:* Import a heightmap array to distort a plane geometry. Draw a 2D wall line across a steep gradient. Calculate how the bottom vertices of the extruded wall mesh must extend downward to intersect seamlessly with the uneven terrain without leaving gaps.
-
-
-3. **Real-time Boolean Performance Profiling:**
-* *Goal:* Ensure the procedural window mechanics don't cause frame drops.
-* *Task:* Build a double-skinned wall composed of discrete blocks. Use CSG to punch 10 holes (windows) through it simultaneously. Measure the ms delay. Determine if this needs to be moved to a Web Worker.
-
-
+Openings are clipped out of the block courses. The early ortho, terrain, and CSG spikes, including `three-csg-ts`, have been removed.
 
 ## Reference Repositories (Baselines)
 
