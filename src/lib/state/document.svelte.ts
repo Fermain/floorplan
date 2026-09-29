@@ -66,6 +66,7 @@ export const documentStore = {
   redo,
   addCorner: bind(mutations.addCorner),
   addWall: bind(mutations.addWall),
+  addWallRing: bind(mutations.addWallRing),
   moveCorner: bind(mutations.moveCorner),
   moveCorners: bind(mutations.moveCorners),
   rotateCorners: bind(mutations.rotateCorners),

@@ -30,7 +30,7 @@
     MIN_TURN_DEG,
     type SnapTrace,
   } from './snap'
-  import { angleReadout, lengthReadout, resolveWallEnd } from './draw'
+  import { angleReadout, lengthReadout, resolveRectangle, resolveWallEnd } from './draw'
   import {
     cornerIdAt,
     gridFromSegment,
@@ -50,7 +50,7 @@
   import { roofableFloor, storeyAddTarget } from './storey'
   import { plotBounds, pointsAttr, ringPath } from './svg'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'select'
 
   const PLOT_MARGIN_M = 1
 
@@ -170,7 +170,7 @@
     return ids
   })
   const showUnlandedWarning = $derived(
-    tool === 'select' || tool === 'draw-double' || tool === 'draw-logical',
+    tool === 'select' || tool === 'draw-double' || tool === 'draw-logical' || tool === 'draw-rect',
   )
   const contours = $derived.by(() => {
     const pad = groundPad(document)
@@ -400,31 +400,75 @@
       return
     }
 
-    if (tool === 'draw-double' || tool === 'draw-logical') {
-      const skin: WallSkin = tool === 'draw-logical' ? 'logical' : 'double'
+    if (tool === 'draw-double' || tool === 'draw-logical' || tool === 'draw-rect') {
       if (!pendingDraw) {
-      const hit = nearestCorner(activeFloor.corners, plan.x, plan.z)
-      const below = hit ? undefined : nearestNode(belowNodes(), plan.x, plan.z)
-      const wallHit = hit || below
-        ? undefined
-        : nearestWallPoint(activeFloor.corners, activeFloor.walls, plan.x, plan.z)
-      if (!hit && !below && !wallHit && activeStoreyIndex > 0 && !floorIdForPoint(plan.x, plan.z)) {
-          errorMessage = 'Add a storey on that building before drawing here.'
-          return
-        }
-      if (!hit && !below && !wallHit && !pointInPlot(document.plot, plan.x, plan.z)) {
-          errorMessage = 'Click inside the plot to start a wall.'
-          return
-        }
-        pendingDraw = hit
-          ? { startCornerId: hit.id }
-          : { startPoint: { x: below?.x ?? wallHit?.x ?? plan.x, z: below?.z ?? wallHit?.z ?? plan.z } }
-        pointerPlan = plan
-        errorMessage = null
+        beginDraw(activeFloor, plan)
         return
       }
-      finishDraw(plan.x, plan.z, skin)
+      if (tool === 'draw-rect') finishRectangle(plan.x, plan.z)
+      else finishDraw(plan.x, plan.z, tool === 'draw-logical' ? 'logical' : 'double')
     }
+  }
+
+  function beginDraw(floor: Floor, plan: { x: number; z: number }) {
+    const hit = nearestCorner(floor.corners, plan.x, plan.z)
+    const below = hit ? undefined : nearestNode(belowNodes(), plan.x, plan.z)
+    const wallHit = hit || below ? undefined : nearestWallPoint(floor.corners, floor.walls, plan.x, plan.z)
+    if (!hit && !below && !wallHit && activeStoreyIndex > 0 && !floorIdForPoint(plan.x, plan.z)) {
+      errorMessage = 'Add a storey on that building before drawing here.'
+      return
+    }
+    if (!hit && !below && !wallHit && !pointInPlot(document.plot, plan.x, plan.z)) {
+      errorMessage =
+        tool === 'draw-rect' ? 'Click inside the plot to start a rectangle.' : 'Click inside the plot to start a wall.'
+      return
+    }
+    pendingDraw = hit
+      ? { startCornerId: hit.id }
+      : { startPoint: { x: below?.x ?? wallHit?.x ?? plan.x, z: below?.z ?? wallHit?.z ?? plan.z } }
+    pointerPlan = plan
+    errorMessage = null
+  }
+
+  function finishRectangle(endX: number, endZ: number) {
+    const floor = activeFloor
+    if (!floor || !pendingDraw) return
+    const start = startCoords(floor, pendingDraw)
+    if (!start) {
+      pendingDraw = null
+      return
+    }
+    const drawFloorId = pendingDraw.startCornerId
+      ? floorIdFor(pendingDraw.startCornerId)
+      : floorIdForPoint(start.x, start.z)
+    if (!drawFloorId) {
+      errorMessage = 'Add a storey on that building before drawing here.'
+      return
+    }
+    const rect = resolveRectangle(
+      document.plot,
+      floor,
+      belowNodes(),
+      start,
+      pendingDraw.startCornerId,
+      endX,
+      endZ,
+      highlightedDirection(floor),
+    )
+    if (!rect) return
+    if (!rect.allowed) {
+      errorMessage = 'That rectangle leaves the plot.'
+      return
+    }
+    const result = documentStore.addWallRing(
+      drawFloorId,
+      rect.corners.map((corner, index) => ({ ...corner, cornerId: rect.cornerIds[index] })),
+      'double',
+    )
+    if (!applyResult(result)) return
+    pendingDraw = null
+    chainOriginId = null
+    pointerPlan = null
   }
 
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
@@ -755,7 +799,7 @@
   }
 
   const previewLine = $derived.by(() => {
-    if (!pendingDraw || !pointerPlan || !activeFloor) return null
+    if (tool === 'draw-rect' || !pendingDraw || !pointerPlan || !activeFloor) return null
     const start = startCoords(activeFloor, pendingDraw)
     if (!start) return null
     const highlighted = highlightedDirection(activeFloor)
@@ -790,6 +834,26 @@
       lengthLabel: lengthReadout(start.x, start.z, resolved.x, resolved.z, length),
       traces: resolved.traces,
     }
+  })
+
+  const rectanglePreview = $derived.by(() => {
+    if (tool !== 'draw-rect' || !pendingDraw || !pointerPlan || !activeFloor) return null
+    const start = startCoords(activeFloor, pendingDraw)
+    if (!start) return null
+    const rect = resolveRectangle(
+      document.plot,
+      activeFloor,
+      belowNodes(),
+      start,
+      pendingDraw.startCornerId,
+      pointerPlan.x,
+      pointerPlan.z,
+      highlightedDirection(activeFloor),
+    )
+    if (!rect) return null
+    const width = lengthReadout(rect.corners[0].x, rect.corners[0].z, rect.corners[1].x, rect.corners[1].z, rect.width)
+    const depth = lengthReadout(rect.corners[0].x, rect.corners[0].z, rect.corners[3].x, rect.corners[3].z, rect.depth)
+    return { ...rect, widthLabel: width, depthLabel: depth }
   })
 
   const rotateHandle = $derived.by(() => {
@@ -840,7 +904,7 @@
 
   const hoveredBelow = $derived.by(() => {
     if (!pointerPlan || activeStoreyIndex <= 0) return undefined
-    if (tool !== 'draw-double' && tool !== 'draw-logical') return undefined
+    if (tool !== 'draw-double' && tool !== 'draw-logical' && tool !== 'draw-rect') return undefined
     if (hoveredCorner) return undefined
     const start = pendingDraw && activeFloor ? startCoords(activeFloor, pendingDraw) ?? undefined : undefined
     return nearestNode(belowNodes(), pointerPlan.x, pointerPlan.z, CORNER_SNAP_M, start)
@@ -848,7 +912,7 @@
 
   const hoveredWall = $derived.by(() => {
     if (!pointerPlan || !activeFloor || hoveredCorner) return undefined
-    if (tool !== 'draw-double' && tool !== 'draw-logical') return undefined
+    if (tool !== 'draw-double' && tool !== 'draw-logical' && tool !== 'draw-rect') return undefined
     return nearestWallPoint(
       activeFloor.corners,
       activeFloor.walls,
@@ -878,7 +942,9 @@
     return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
   })
 
-  const snapTraces = $derived(moveDrag?.traces.length ? moveDrag.traces : (previewLine?.traces ?? []))
+  const snapTraces = $derived(
+    moveDrag?.traces.length ? moveDrag.traces : (rectanglePreview?.traces ?? previewLine?.traces ?? []),
+  )
 
   const drawHintBody = $derived.by(() => {
     if (tool === 'select') {
@@ -891,6 +957,25 @@
       return moveDrag
         ? 'Release to place the building.'
         : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building.'
+    }
+    if (tool === 'draw-rect') {
+      if (!pendingDraw) {
+        return 'Click inside the plot to start a rectangle, then click the opposite corner. Right-click or Escape stops.'
+      }
+      if (!rectanglePreview) return 'Click the opposite corner. Right-click or Escape stops.'
+      const size = `${rectanglePreview.width.toFixed(2)} m by ${rectanglePreview.depth.toFixed(2)} m`
+      if (!rectanglePreview.allowed) return `That rectangle leaves the plot. ${size}`
+      const snap =
+        rectanglePreview.snap === 'corner'
+          ? ' Snaps to the corner.'
+          : rectanglePreview.snap === 'node'
+            ? ' Snaps to the node below.'
+            : rectanglePreview.snap === 'wall'
+              ? ' Snaps to the wall.'
+              : rectanglePreview.snap === 'align'
+                ? ' Lines up with a corner.'
+                : ''
+      return `Click to place the rectangle, ${size}.${snap} Right-click or Escape stops.`
     }
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
     if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Right-click or Escape stops.'
@@ -942,6 +1027,9 @@
       </button>
       <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
         Logical wall
+      </button>
+      <button type="button" class:active={tool === 'draw-rect'} onclick={() => setTool('draw-rect')}>
+        Rectangle
       </button>
       <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
     </div>
@@ -1270,6 +1358,49 @@
           pointer-events="none"
         />
       {/if}
+      {#if rectanglePreview}
+        {#each rectanglePreview.corners as corner, i (i)}
+          {@const next = rectanglePreview.corners[(i + 1) % rectanglePreview.corners.length]}
+          <line
+            x1={corner.x}
+            y1={corner.z}
+            x2={next.x}
+            y2={next.z}
+            stroke={rectanglePreview.allowed ? '#2563eb' : '#b91c1c'}
+            stroke-width="0.04"
+            stroke-dasharray="0.15 0.1"
+            pointer-events="none"
+          />
+        {/each}
+        {#if rectanglePreview.widthLabel}
+          <text
+            x={rectanglePreview.widthLabel.x}
+            y={rectanglePreview.widthLabel.z}
+            fill="#1d4ed8"
+            font-size="0.38"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            pointer-events="none"
+            transform={`rotate(${rectanglePreview.widthLabel.rotate} ${rectanglePreview.widthLabel.x} ${rectanglePreview.widthLabel.z})`}
+          >
+            {rectanglePreview.widthLabel.text}
+          </text>
+        {/if}
+        {#if rectanglePreview.depthLabel}
+          <text
+            x={rectanglePreview.depthLabel.x}
+            y={rectanglePreview.depthLabel.z}
+            fill="#1d4ed8"
+            font-size="0.38"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            pointer-events="none"
+            transform={`rotate(${rectanglePreview.depthLabel.rotate} ${rectanglePreview.depthLabel.x} ${rectanglePreview.depthLabel.z})`}
+          >
+            {rectanglePreview.depthLabel.text}
+          </text>
+        {/if}
+      {/if}
       {#if previewLine}
         <circle
           cx={previewLine.x1}
@@ -1353,7 +1484,17 @@
           {rotateLabel.text}
         </text>
       {/if}
-      {#if previewLine?.wallSnap || previewLine?.nodeSnap}
+      {#if rectanglePreview?.snap === 'corner' || rectanglePreview?.snap === 'node' || rectanglePreview?.snap === 'wall'}
+        <circle
+          cx={rectanglePreview.corners[2].x}
+          cy={rectanglePreview.corners[2].z}
+          r="0.22"
+          fill="none"
+          stroke="#2563eb"
+          stroke-width="0.045"
+          pointer-events="none"
+        />
+      {:else if previewLine?.wallSnap || previewLine?.nodeSnap}
         <circle
           cx={previewLine.x2}
           cy={previewLine.z2}
@@ -1384,7 +1525,7 @@
           pointer-events="none"
         />
       {/if}
-      {#if (tool === 'draw-double' || tool === 'draw-logical') && pointerPlan}
+      {#if (tool === 'draw-double' || tool === 'draw-logical' || tool === 'draw-rect') && pointerPlan}
         <circle
           cx={pointerPlan.x}
           cy={pointerPlan.z}

@@ -5,6 +5,7 @@ import {
   addOpening,
   addStorey,
   addWall,
+  addWallRing,
   moveCorners,
   rotateCorners,
   removeOpening,
@@ -153,6 +154,50 @@ describe('plot limit', () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.document).toEqual(d)
+  })
+})
+
+describe('addWallRing', () => {
+  it('closes four walls in one mutation and one undo', () => {
+    loadDocument(fixtureDocument())
+    const before = structuredClone(getDocument())
+    const fid = floorId(before)
+    const placed = documentStore.addWallRing(
+      fid,
+      [
+        { x: 4, z: 4 },
+        { x: 10, z: 4 },
+        { x: 10, z: 10 },
+        { x: 4, z: 10 },
+      ],
+      'double',
+    )
+    expect(placed.ok).toBe(true)
+    const floor = getDocument().building.floors[0]
+    expect(floor.corners).toHaveLength(4)
+    expect(floor.walls).toHaveLength(4)
+    expect(deriveRooms(floor)).toHaveLength(1)
+    expect(undo()).toBe(true)
+    expect(getDocument()).toEqual(before)
+  })
+
+  it('keeps the original document when a side leaves the plot', () => {
+    const d = fixtureDocument()
+    const placed = addWallRing(
+      d,
+      floorId(d),
+      [
+        { x: 1, z: 2 },
+        { x: -4, z: 2 },
+        { x: -4, z: 8 },
+        { x: 1, z: 8 },
+      ],
+      'double',
+    )
+    expect(placed.ok).toBe(false)
+    if (placed.ok) return
+    expect(placed.reason).toBe('wall outside plot')
+    expect(placed.document).toEqual(d)
   })
 })
 

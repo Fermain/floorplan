@@ -129,6 +129,46 @@ export function addWall(
   return ok(next)
 }
 
+export function addWallRing(
+  document: Document,
+  floorId: string,
+  points: { x: number; z: number; cornerId?: string }[],
+  skin: WallSkin,
+): MutationResult {
+  if (points.length < 3) return fail(document, 'degenerate wall')
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    if (Math.hypot(a.x - b.x, a.z - b.z) <= EPS) return fail(document, 'degenerate wall')
+    if (!segmentAllowedInPlot(document.plot, a.x, a.z, b.x, b.z)) return fail(document, 'wall outside plot')
+  }
+  let doc = document
+  const ids: string[] = []
+  for (const point of points) {
+    const floor = getFloor(doc, floorId)
+    if (!floor) return fail(document, 'floor not found')
+    const named = point.cornerId ? floor.corners.find((corner) => corner.id === point.cornerId) : undefined
+    const near =
+      named ?? floor.corners.find((corner) => Math.hypot(corner.x - point.x, corner.z - point.z) <= EPS)
+    if (near) {
+      ids.push(near.id)
+      continue
+    }
+    const added = addCorner(doc, floorId, point.x, point.z)
+    if (!added.ok) return fail(document, added.reason ?? 'corner not found')
+    doc = added.document
+    const created = getFloor(doc, floorId)?.corners.at(-1)
+    if (!created) return fail(document, 'corner not found')
+    ids.push(created.id)
+  }
+  for (let i = 0; i < ids.length; i++) {
+    const wall = addWall(doc, floorId, ids[i], ids[(i + 1) % ids.length], skin)
+    if (!wall.ok) return fail(document, wall.reason ?? 'degenerate wall')
+    doc = wall.document
+  }
+  return ok(doc)
+}
+
 export function moveCorner(
   document: Document,
   floorId: string,

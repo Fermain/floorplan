@@ -1,6 +1,7 @@
 import { cornerById } from '../../lib/model/geom'
 import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
 import type { Floor, Plot } from '../../lib/model/types'
+import { BLOCK_LENGTH } from '../../lib/plot/fixture'
 import {
   alignToNodes,
   headingFromNorthDeg,
@@ -11,7 +12,9 @@ import {
   snapEndToMinTurn,
   snapEndToModule,
   snapEndToOrthogonal,
+  ALIGN_SNAP_M,
   CORNER_SNAP_M,
+  MODULE_SNAP_TOLERANCE_M,
   type SnapTrace,
 } from './snap'
 import { fmt } from './svg'
@@ -209,5 +212,159 @@ export function lengthReadout(
     z: (z1 + z2) / 2 + nz * 0.4,
     rotate: deg,
     text: `${length.toFixed(2)} m`,
+  }
+}
+
+const MIN_RECT_SIDE_M = 0.05
+
+export type RectangleSnap = 'corner' | 'node' | 'wall' | 'align'
+
+export type ResolvedRectangle = {
+  corners: [PlanPoint, PlanPoint, PlanPoint, PlanPoint]
+  cornerIds: [string | undefined, string | undefined, string | undefined, string | undefined]
+  width: number
+  depth: number
+  allowed: boolean
+  snap: RectangleSnap | null
+  traces: SnapTrace[]
+}
+
+function rectangleAxes(highlighted: { dx: number; dz: number } | null) {
+  if (!highlighted) return { ux: 1, uz: 0, vx: 0, vz: 1 }
+  const len = Math.hypot(highlighted.dx, highlighted.dz)
+  if (len < 1e-9) return { ux: 1, uz: 0, vx: 0, vz: 1 }
+  return {
+    ux: highlighted.dx / len,
+    uz: highlighted.dz / len,
+    vx: -highlighted.dz / len,
+    vz: highlighted.dx / len,
+  }
+}
+
+function snapSpan(delta: number): number {
+  const snapped = Math.round(delta / BLOCK_LENGTH) * BLOCK_LENGTH
+  if (snapped === 0 || Math.abs(delta - snapped) > MODULE_SNAP_TOLERANCE_M) return delta
+  return snapped
+}
+
+function alignSpan(
+  delta: number,
+  nodes: PlanPoint[],
+  start: PlanPoint,
+  ux: number,
+  uz: number,
+): { delta: number; node?: PlanPoint } {
+  let best: { delta: number; dist: number; node: PlanPoint } | undefined
+  for (const node of nodes) {
+    const along = (node.x - start.x) * ux + (node.z - start.z) * uz
+    if (Math.abs(along) < 1e-6) continue
+    const dist = Math.abs(along - delta)
+    if (dist <= ALIGN_SNAP_M && (!best || dist < best.dist)) best = { delta: along, dist, node }
+  }
+  return best ?? { delta }
+}
+
+function rectangleCorners(
+  start: PlanPoint,
+  axes: { ux: number; uz: number; vx: number; vz: number },
+  du: number,
+  dv: number,
+): [PlanPoint, PlanPoint, PlanPoint, PlanPoint] {
+  const at = (u: number, v: number): PlanPoint => ({
+    x: start.x + axes.ux * u + axes.vx * v,
+    z: start.z + axes.uz * u + axes.vz * v,
+  })
+  return [start, at(du, 0), at(du, dv), at(0, dv)]
+}
+
+function rectangleInPlot(plot: Plot, corners: PlanPoint[]): boolean {
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i]
+    const b = corners[(i + 1) % corners.length]
+    if (!pointInPlot(plot, a.x, a.z)) return false
+    if (!segmentAllowedInPlot(plot, a.x, a.z, b.x, b.z)) return false
+  }
+  return true
+}
+
+function cornerIdNear(floor: Floor, x: number, z: number, exceptId?: string): string | undefined {
+  return floor.corners.find(
+    (corner) => corner.id !== exceptId && Math.hypot(corner.x - x, corner.z - z) <= 1e-4,
+  )?.id
+}
+
+export function resolveRectangle(
+  plot: Plot,
+  floor: Floor,
+  below: PlanPoint[],
+  start: PlanPoint,
+  startCornerId: string | undefined,
+  x: number,
+  z: number,
+  highlighted: { dx: number; dz: number } | null,
+): ResolvedRectangle | null {
+  const axes = rectangleAxes(highlighted)
+  const project = (point: PlanPoint) => ({
+    du: (point.x - start.x) * axes.ux + (point.z - start.z) * axes.uz,
+    dv: (point.x - start.x) * axes.vx + (point.z - start.z) * axes.vz,
+  })
+  const hit = nearestCorner(floor.corners, x, z, CORNER_SNAP_M, startCornerId)
+  const node = hit ? undefined : nearestNode(below, x, z, CORNER_SNAP_M, start)
+  const wallHit =
+    hit || node ? undefined : nearestWallPoint(floor.corners, floor.walls, x, z, CORNER_SNAP_M, startCornerId)
+  const locked = hit ?? node ?? wallHit
+  const snap: RectangleSnap | null = hit ? 'corner' : node ? 'node' : wallHit ? 'wall' : null
+  let du: number
+  let dv: number
+  let traces: SnapTrace[] = []
+  let aligned = false
+  if (locked) {
+    const spans = project(locked)
+    du = spans.du
+    dv = spans.dv
+  } else {
+    const raw = project({ x, z })
+    const moduleDu = snapSpan(raw.du)
+    const moduleDv = snapSpan(raw.dv)
+    const nodes = [...floor.corners, ...below]
+    const uAlign = alignSpan(moduleDu, nodes, start, axes.ux, axes.uz)
+    const vAlign = alignSpan(moduleDv, nodes, start, axes.vx, axes.vz)
+    du = uAlign.delta
+    dv = vAlign.delta
+    const chosen = rectangleCorners(start, axes, du, dv)
+    if (!rectangleInPlot(plot, chosen)) {
+      du = moduleDu
+      dv = moduleDv
+    } else {
+      aligned = uAlign.node !== undefined || vAlign.node !== undefined
+      const far = chosen[2]
+      if (uAlign.node) traces.push({ x1: uAlign.node.x, z1: uAlign.node.z, x2: far.x, z2: far.z })
+      if (vAlign.node && vAlign.node !== uAlign.node) {
+        traces.push({ x1: vAlign.node.x, z1: vAlign.node.z, x2: far.x, z2: far.z })
+      }
+    }
+    if (!rectangleInPlot(plot, rectangleCorners(start, axes, du, dv))) {
+      du = raw.du
+      dv = raw.dv
+      traces = []
+      aligned = false
+    }
+  }
+  if (Math.abs(du) <= MIN_RECT_SIDE_M || Math.abs(dv) <= MIN_RECT_SIDE_M) return null
+  const corners = rectangleCorners(start, axes, du, dv)
+  const cornerIds: ResolvedRectangle['cornerIds'] = [
+    startCornerId,
+    cornerIdNear(floor, corners[1].x, corners[1].z, startCornerId),
+    hit?.id ?? cornerIdNear(floor, corners[2].x, corners[2].z, startCornerId),
+    cornerIdNear(floor, corners[3].x, corners[3].z, startCornerId),
+  ]
+  return {
+    corners,
+    cornerIds,
+    width: Math.abs(du),
+    depth: Math.abs(dv),
+    allowed: rectangleInPlot(plot, corners),
+    snap: aligned ? 'align' : snap,
+    traces,
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fixtureDocument } from '../../lib/plot/fixture'
 import type { Floor } from '../../lib/model/types'
-import { lengthReadout, resolveWallEnd } from './draw'
+import { lengthReadout, resolveRectangle, resolveWallEnd } from './draw'
 import { previewFloor, snapTurn } from './gesture'
 import { storeyAddTarget } from './storey'
 
@@ -34,6 +34,37 @@ describe('resolveWallEnd', () => {
     expect(end.cornerId).toBeUndefined()
     expect(end.x).toBeCloseTo(6.32, 5)
     expect(end.z).toBeCloseTo(8, 5)
+  })
+})
+
+describe('resolveRectangle', () => {
+  const plot = fixtureDocument().plot
+
+  it('snaps each side to the block module', () => {
+    const rect = resolveRectangle(plot, floor(), [], { x: 4, z: 8 }, undefined, 6.34, 12.66, null)
+    expect(rect?.width).toBeCloseTo(2.32, 5)
+    expect(rect?.depth).toBeCloseTo(4.64, 5)
+    expect(rect?.corners[2]).toEqual({ x: 6.32, z: 12.64 })
+    expect(rect?.allowed).toBe(true)
+  })
+
+  it('uses a nearby corner as the opposite corner', () => {
+    const rect = resolveRectangle(plot, floor(), [], { x: 4, z: 8 }, undefined, 6.08, 4.08, null)
+    expect(rect?.cornerIds[2]).toBe('b')
+    expect(rect?.corners[2]).toEqual({ x: 6, z: 4 })
+    expect(rect?.width).toBeCloseTo(2, 5)
+    expect(rect?.depth).toBeCloseTo(4, 5)
+  })
+
+  it('lines a side up with another corner', () => {
+    const rect = resolveRectangle(plot, floor(), [{ x: 6.5, z: 8 }], { x: 4, z: 8 }, undefined, 6.4, 11, null)
+    expect(rect?.width).toBeCloseTo(2.5, 5)
+    expect(rect?.snap).toBe('align')
+  })
+
+  it('refuses a rectangle that leaves the plot', () => {
+    const rect = resolveRectangle(plot, floor(), [], { x: 1, z: 2 }, undefined, -4, 8, null)
+    expect(rect?.allowed).toBe(false)
   })
 })
 
