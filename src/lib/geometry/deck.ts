@@ -9,7 +9,7 @@ import {
   DEFAULT_STOREY_HEIGHT,
   FLOOR_TO_FLOOR,
 } from '../plot/fixture'
-import { wallMeshURange } from './walls'
+import { leafSigns, wallMeshURange } from './walls'
 import { pointInRing, WALL_OUTSTAND_M, type Ring } from './pad'
 
 const CAVITY_FACE_M = CAVITY / 2
@@ -126,12 +126,6 @@ function roomSideAlongNormal(
   if (pos && !neg) return 1
   if (neg && !pos) return -1
   return null
-}
-
-function leafSigns(skin: Wall['skin']): number[] {
-  if (skin === 'single') return [0]
-  if (skin === 'double') return [-1, 1]
-  return []
 }
 
 function offsetOutward(ring: Ring, distance: number): Ring {

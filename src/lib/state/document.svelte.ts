@@ -51,6 +51,12 @@ export function redo(): boolean {
   return true
 }
 
+function bind<Args extends unknown[]>(
+  mutate: (document: Document, ...args: Args) => MutationResult,
+): (...args: Args) => MutationResult {
+  return (...args) => applyMutation((doc) => mutate(doc, ...args))
+}
+
 export const documentStore = {
   get document() {
     return document
@@ -58,43 +64,20 @@ export const documentStore = {
   loadDocument,
   undo,
   redo,
-  addCorner: (...args: Parameters<typeof mutations.addCorner> extends [Document, ...infer R] ? R : never) =>
-    applyMutation((doc) => mutations.addCorner(doc, ...args)),
-  addWall: (...args: Parameters<typeof mutations.addWall> extends [Document, ...infer R] ? R : never) =>
-    applyMutation((doc) => mutations.addWall(doc, ...args)),
-  moveCorner: (
-    ...args: Parameters<typeof mutations.moveCorner> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.moveCorner(doc, ...args)),
-  moveCorners: (
-    ...args: Parameters<typeof mutations.moveCorners> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.moveCorners(doc, ...args)),
-  rotateCorners: (
-    ...args: Parameters<typeof mutations.rotateCorners> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.rotateCorners(doc, ...args)),
-  addOpening: (
-    ...args: Parameters<typeof mutations.addOpening> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.addOpening(doc, ...args)),
-  updateOpening: (
-    ...args: Parameters<typeof mutations.updateOpening> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.updateOpening(doc, ...args)),
-  setOpeningAligned: (
-    ...args: Parameters<typeof mutations.setOpeningAligned> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.setOpeningAligned(doc, ...args)),
-  addStorey: (floorId: string, cornerId?: string) =>
-    applyMutation((doc) => mutations.addStorey(doc, floorId, cornerId)),
-  removeTopStorey: (unitId: string) => applyMutation((doc) => mutations.removeTopStorey(doc, unitId)),
-  removeWall: (floorId: string, wallId: string) =>
-    applyMutation((doc) => mutations.removeWall(doc, floorId, wallId)),
-  removeOpening: (floorId: string, wallId: string, openingId: string) =>
-    applyMutation((doc) => mutations.removeOpening(doc, floorId, wallId, openingId)),
-  replacePlot: (plot: Parameters<typeof mutations.replacePlot>[1]) =>
-    applyMutation((doc) => mutations.replacePlot(doc, plot)),
-  replaceHeightfield: (heightfield: Parameters<typeof mutations.replaceHeightfield>[1]) =>
-    applyMutation((doc) => mutations.replaceHeightfield(doc, heightfield)),
-  setRoomFinish: (
-    ...args: Parameters<typeof mutations.setRoomFinish> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.setRoomFinish(doc, ...args)),
-  setRoof: (
-    ...args: Parameters<typeof mutations.setRoof> extends [Document, ...infer R] ? R : never
-  ) => applyMutation((doc) => mutations.setRoof(doc, ...args)),
+  addCorner: bind(mutations.addCorner),
+  addWall: bind(mutations.addWall),
+  moveCorner: bind(mutations.moveCorner),
+  moveCorners: bind(mutations.moveCorners),
+  rotateCorners: bind(mutations.rotateCorners),
+  addOpening: bind(mutations.addOpening),
+  updateOpening: bind(mutations.updateOpening),
+  setOpeningAligned: bind(mutations.setOpeningAligned),
+  addStorey: bind(mutations.addStorey),
+  removeTopStorey: bind(mutations.removeTopStorey),
+  removeWall: bind(mutations.removeWall),
+  removeOpening: bind(mutations.removeOpening),
+  replacePlot: bind(mutations.replacePlot),
+  replaceHeightfield: bind(mutations.replaceHeightfield),
+  setRoomFinish: bind(mutations.setRoomFinish),
+  setRoof: bind(mutations.setRoof),
 }

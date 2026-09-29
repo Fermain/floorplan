@@ -1,4 +1,4 @@
-import { BLOCK_HEIGHT, BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import { BLOCK_HEIGHT, BLOCK_THICKNESS, LEAF_OFFSET } from '../plot/fixture'
 import type { Floor, OpeningKind, Wall } from '../model/types'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -24,8 +24,6 @@ export const GLASS_OPACITY = 0.35
 export const EXTERNAL_DOOR_COLOUR = '#ffffff'
 export const INTERNAL_DOOR_COLOUR = '#d7c4a3'
 export const GARAGE_DOOR_COLOUR = '#e4e7ea'
-
-const LEAF_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
 
 export type OpeningRect = {
   u: number

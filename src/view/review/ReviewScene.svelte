@@ -27,6 +27,7 @@
     FRAME_COLOUR,
     GLASS_COLOUR,
     GLASS_OPACITY,
+    type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { buildRoofGeometry, masonryReach, WALL_HEAD_M } from '../../lib/geometry/roof'
@@ -56,7 +57,7 @@
     lintel: BufferGeometry | null
     frame: BufferGeometry | null
     glass: BufferGeometry | null
-    panels: { color: string; geometry: BufferGeometry }[]
+    panels: OpeningPanelMesh[]
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = { key: string; geometry: BufferGeometry; y: number }

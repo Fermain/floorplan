@@ -1,10 +1,10 @@
 import { cornerById, signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
 import type { Document, Floor, Heightfield, Wall } from '../model/types'
-import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import { BLOCK_THICKNESS, LEAF_OFFSET } from '../plot/fixture'
 import { bilinearHeight } from './terrain'
 
-export const WALL_OUTSTAND_M = CAVITY / 2 + BLOCK_THICKNESS
+export const WALL_OUTSTAND_M = LEAF_OFFSET + BLOCK_THICKNESS / 2
 
 export const SURFACE_BED_TOP_ABOVE_DATUM_M = 0.15
 export const SURFACE_BED_THICKNESS_M = SURFACE_BED_TOP_ABOVE_DATUM_M

@@ -3,6 +3,7 @@ import { BLOCK_HEIGHT, BLOCK_LENGTH } from '../plot/fixture'
 import {
   collectLintelSpans,
   collectWallBlockSpans,
+  leafSigns,
   wallMeshURange,
   type BlockSpan,
   type BottomSample,
@@ -61,12 +62,6 @@ function emptySchedule(): WallSchedule {
     openings: { window: 0, door: 0, external: 0, internal: 0, garage: 0, portal: 0 },
     lintels: [],
   }
-}
-
-function leafSigns(skin: Wall['skin']): number[] {
-  if (skin === 'single') return [0]
-  if (skin === 'double') return [-1, 1]
-  return []
 }
 
 type CutGroup = {

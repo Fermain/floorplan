@@ -11,13 +11,12 @@ import type { Floor, Roof, Wall } from '../model/types'
 import {
   BLOCK_HEIGHT,
   BLOCK_THICKNESS,
-  CAVITY,
   DEFAULT_STOREY_HEIGHT,
+  LEAF_OFFSET,
 } from '../plot/fixture'
 import { unionRings, type DeckPolygon } from './deck'
 import type { Ring } from './pad'
 
-const LEAF_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
 const OUTER_DOUBLE = LEAF_OFFSET + BLOCK_THICKNESS / 2
 const OUTER_SINGLE = BLOCK_THICKNESS / 2
 

@@ -4,6 +4,7 @@ import {
   BLOCK_THICKNESS,
   CAVITY,
   DEFAULT_STOREY_HEIGHT,
+  LEAF_OFFSET,
   LINTEL_BEARING,
 } from '../plot/fixture'
 import type { Floor, Opening, Wall } from '../model/types'
@@ -12,7 +13,6 @@ import { pointInRing, type Ring } from './pad'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const LEAF_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
 const LINTEL_THICKNESS = CAVITY + 2 * BLOCK_THICKNESS
 const MITER_MAX_CORNER_DIST = 1
 const COURSE_COUNT = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)
@@ -73,7 +73,7 @@ function buildFrame(floor: Floor, wall: Wall): WallFrame {
   }
 }
 
-function leafSigns(skin: Wall['skin']): number[] {
+export function leafSigns(skin: Wall['skin']): number[] {
   if (skin === 'single') {
     return [0]
   }

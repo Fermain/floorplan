@@ -1,10 +1,9 @@
-import { wallMeshURange } from '../geometry/walls'
+import { leafSigns, wallMeshURange } from '../geometry/walls'
 import { cornerById, wallLength } from '../model/geom'
 import type { Document, Floor, Opening, Wall } from '../model/types'
-import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
+import { BLOCK_THICKNESS, LEAF_OFFSET } from '../plot/fixture'
 
 const SKIN_HALF = BLOCK_THICKNESS / 2
-const LEAF_CENTERLINE_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
 const PLOT_MARGIN_M = 1
 const NORTH_ARROW_LENGTH_M = 1.2
 const SCALE_BAR_OFFSET_Z_M = 0.6
@@ -70,9 +69,7 @@ function wallFrame(wall: Wall, floor: Floor) {
 }
 
 function leafOffsets(skin: Wall['skin']): number[] {
-  if (skin === 'single') return [0]
-  if (skin === 'double') return [-LEAF_CENTERLINE_OFFSET, LEAF_CENTERLINE_OFFSET]
-  return []
+  return leafSigns(skin).map((sign) => sign * LEAF_OFFSET)
 }
 
 function skinQuad(

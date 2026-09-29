@@ -5,6 +5,7 @@
   buildOpeningFrameGeometry,
   buildOpeningGlassGeometry,
   buildOpeningPanelMeshes,
+  type OpeningPanelMesh,
 } from '../../lib/geometry/frames'
 import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
 import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
@@ -153,7 +154,7 @@ import {
     lintel: BufferGeometry | null
     frame: BufferGeometry | null
     glass: BufferGeometry | null
-    panels: { color: string; geometry: BufferGeometry }[]
+    panels: OpeningPanelMesh[]
   } => {
     const shown = displayWall
     if (!floor || !shown) {
