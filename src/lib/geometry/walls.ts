@@ -7,6 +7,8 @@ import {
   LINTEL_BEARING,
 } from '../plot/fixture'
 import type { Floor, Opening, Wall } from '../model/types'
+import { deriveRooms } from '../model/rooms'
+import { pointInRing, type Ring } from './pad'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
@@ -362,23 +364,71 @@ export function wallMeshURange(
   return { uMin, uMax }
 }
 
+function roomSideSign(floor: Floor, wall: Wall): number | null {
+  const frame = buildFrame(floor, wall)
+  if (frame.length < 1e-9) return null
+  const rings: Ring[] = []
+  for (const room of deriveRooms(floor)) {
+    const ring: Ring = []
+    for (const id of room.cornerIds) {
+      const corner = floor.corners.find((item) => item.id === id)
+      if (!corner) {
+        ring.length = 0
+        break
+      }
+      ring.push({ x: corner.x, z: corner.z })
+    }
+    if (ring.length >= 3) rings.push(ring)
+  }
+  if (rings.length === 0) return null
+  const midX = frame.start.x + frame.dir.x * frame.length * 0.5
+  const midZ = frame.start.z + frame.dir.z * frame.length * 0.5
+  const probe = 0.05
+  const inside = (sign: number) =>
+    rings.some((ring) => pointInRing(ring, midX + frame.normal.x * sign * probe, midZ + frame.normal.z * sign * probe))
+  const pos = inside(1)
+  const neg = inside(-1)
+  if (pos && !neg) return 1
+  if (neg && !pos) return -1
+  return null
+}
+
+function facadeLeafIndexes(floor: Floor, wall: Wall): number[] {
+  const signs = leafSigns(wall.skin)
+  if (wall.skin === 'single') return [0]
+  const side = roomSideSign(floor, wall)
+  if (side === null) return []
+  const outer = -side
+  const indexes: number[] = []
+  signs.forEach((sign, index) => {
+    if (sign === outer) indexes.push(index)
+  })
+  return indexes
+}
+
 export function collectWallBlockSpans(
   floor: Floor,
   wall: Wall,
   bottomSamples?: BottomSample[],
+  facadeHead?: number,
 ): BlockSpan[] {
   if (wall.skin === 'logical') {
     return []
   }
   const spans: BlockSpan[] = []
   const signs = leafSigns(wall.skin)
+  const facing =
+    facadeHead !== undefined && facadeHead > WALL_HEAD + 1e-6
+      ? new Set(facadeLeafIndexes(floor, wall))
+      : new Set<number>()
   for (let leaf = 0; leaf < signs.length; leaf++) {
     const leafSign = signs[leaf]
     const { uMin, uMax } = wallMeshURange(floor, wall, leafSign)
     if (uMax - uMin <= 1e-9) {
       continue
     }
-    for (let course = 0; course < COURSE_COUNT; course++) {
+    const courseLimit = facing.has(leaf) ? Math.ceil((facadeHead! - 1e-9) / BLOCK_HEIGHT) : COURSE_COUNT
+    for (let course = 0; course < courseLimit; course++) {
       let solids = [{ u0: uMin, u1: uMax }]
       for (const opening of wall.openings) {
         const gap = openingGapU(opening)
@@ -397,7 +447,9 @@ export function collectWallBlockSpans(
         for (const block of splitBlockRuns(solid.u0, solid.u1, uShift)) {
           const range = courseVerticalRange(course, block.u0, block.u1, bottomSamples)
           if (!range) continue
-          const { y0, y1 } = range
+          let { y0, y1 } = range
+          if (facing.has(leaf) && facadeHead !== undefined && y1 > facadeHead) y1 = facadeHead
+          if (y1 - y0 <= 1e-4) continue
           spans.push({
             u0: block.u0,
             u1: block.u1,
@@ -473,13 +525,14 @@ export function buildWallGeometries(
   floor: Floor,
   wall: Wall,
   bottomSamples?: BottomSample[],
+  facadeHead?: number,
 ): BufferGeometry[] {
   if (wall.skin === 'logical') {
     return []
   }
   const frame = buildFrame(floor, wall)
   const signs = leafSigns(wall.skin)
-  const spans = collectWallBlockSpans(floor, wall, bottomSamples)
+  const spans = collectWallBlockSpans(floor, wall, bottomSamples, facadeHead)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const out: BufferGeometry[] = []
@@ -542,11 +595,12 @@ export function buildCourseFaceGeometries(
   floor: Floor,
   wall: Wall,
   bottomSamples?: BottomSample[],
+  facadeHead?: number,
 ): BufferGeometry[] {
   if (wall.skin === 'logical') return []
   const frame = buildFrame(floor, wall)
   const signs = leafSigns(wall.skin)
-  const spans = collectWallBlockSpans(floor, wall, bottomSamples)
+  const spans = collectWallBlockSpans(floor, wall, bottomSamples, facadeHead)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const out: BufferGeometry[] = []

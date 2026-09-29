@@ -46,7 +46,7 @@ describe('deckPolygons', () => {
     expect(covers(polygons, 2, 2)).toBe(false)
   })
 
-  it('follows a wall past the plate with an inner-leaf strip and leaves the open plate bare', () => {
+  it('keeps the plate and extends an inner-leaf strip where a wall runs past it', () => {
     const polygons = deckPolygons(
       floor({
         outline: [plate],
@@ -58,10 +58,10 @@ describe('deckPolygons', () => {
       }),
     )
     expect(covers(polygons, 7, 7)).toBe(true)
+    expect(covers(polygons, 7, 5)).toBe(true)
     expect(covers(polygons, 12, 7)).toBe(true)
-    expect(covers(polygons, 7, 7 + BLOCK_THICKNESS / 2 + 0.02)).toBe(false)
-    expect(covers(polygons, 7, 7 + OUTER_FACE_M - 0.01)).toBe(false)
-    expect(covers(polygons, 7, 5)).toBe(false)
+    expect(covers(polygons, 12, 7 + BLOCK_THICKNESS / 2 + 0.02)).toBe(false)
+    expect(covers(polygons, 12, 7 + OUTER_FACE_M - 0.01)).toBe(false)
     expect(covers(polygons, 14 + BLOCK_THICKNESS / 2 + 0.05, 7)).toBe(false)
   })
 

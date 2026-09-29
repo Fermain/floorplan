@@ -150,8 +150,9 @@
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') continue
         const samples = bottomSamplesForWall(floor, wall)
-        const geoms = buildWallGeometries(floor, wall, samples)
-        const courses = buildCourseFaceGeometries(floor, wall, samples)
+        const head = continuingFacadeHead(floor, wall)
+        const geoms = buildWallGeometries(floor, wall, samples, head)
+        const courses = buildCourseFaceGeometries(floor, wall, samples, head)
         const lintel = buildLintelGeometry(floor, wall)
         const frame = buildOpeningFrameGeometry(floor, wall, samples)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
@@ -191,6 +192,18 @@
       for (const roof of roofs) roof.geometry.dispose()
     }
   })
+
+  function continuingFacadeHead(floor: Floor, wall: Wall): number | undefined {
+    const unitId = floor.corners.find((corner) => corner.id === wall.startCornerId)?.unitId ?? floor.unitId
+    if (!unitId) return undefined
+    const above = doc.building.floors.some(
+      (item) =>
+        item.unitId === unitId &&
+        item.index === floor.index + 1 &&
+        item.walls.some((itemWall) => itemWall.skin !== 'logical'),
+    )
+    return above ? FLOOR_TO_FLOOR : undefined
+  }
 
   function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
     const meshes: RoofMesh[] = []

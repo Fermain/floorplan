@@ -93,6 +93,7 @@
   let selectedOutline = $state<{ floorId: string | null; ring: number; edge: number } | null>(null)
   let selectedCornerId = $state<string | null>(null)
   let selectedPlateFloorId = $state<string | null>(null)
+  let selectedPlateRing = $state<number | null>(null)
   let hoverNodeId = $state<string | null>(null)
   let activeStoreyIndex = $state(0)
 
@@ -236,9 +237,9 @@
     return `M ${fmt(first.x)} ${fmt(first.z)} ${rest.map((point) => `L ${fmt(point.x)} ${fmt(point.z)}`).join(' ')} Z`
   }
 
-  function plateFill(floorId: string): string {
+  function plateFill(floorId: string, ring: number): string {
     const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
-    const selected = floorId === selectedPlateFloorId
+    const selected = floorId === selectedPlateFloorId && ring === selectedPlateRing
     if (selected && roofed) return '#d7dbe0'
     if (selected) return '#e7e5e4'
     if (roofed) return '#c5c9ce'
@@ -476,6 +477,22 @@
     cancelDraw()
   }
 
+  function chooseSelection(next: {
+    wallId?: string | null
+    edge?: number | null
+    outline?: { floorId: string | null; ring: number; edge: number } | null
+    cornerId?: string | null
+    plateFloorId?: string | null
+    plateRing?: number | null
+  }) {
+    selectedWallId = next.wallId ?? null
+    selectedEdge = next.edge ?? null
+    selectedOutline = next.outline ?? null
+    selectedCornerId = next.cornerId ?? null
+    selectedPlateFloorId = next.plateFloorId ?? null
+    selectedPlateRing = next.plateRing ?? null
+  }
+
   function onSvgPointerDown(event: PointerEvent) {
     if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
       cancelDraw()
@@ -491,10 +508,7 @@
       if (beginNodeDrag(activeFloor, plan, event)) return
       const id = pickWall(activeFloor, plan.x, plan.z)
       if (id) {
-        selectedWallId = id
-        selectedEdge = null
-        selectedOutline = null
-        selectedCornerId = null
+        chooseSelection({ wallId: id })
         applyResult({ ok: true })
         return
       }
@@ -506,10 +520,7 @@
         return
       }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
-      selectedWallId = null
-      selectedCornerId = null
-      selectedOutline = null
-      selectedEdge = edge ?? null
+      chooseSelection({ edge: edge ?? null })
       return
     }
 
@@ -618,10 +629,7 @@
     const drag = moveDrag
     moveDrag = null
     if (!drag || !activeFloor) return
-    selectedCornerId = drag.nodeId
-    selectedWallId = null
-    selectedEdge = null
-    selectedOutline = null
+    chooseSelection({ cornerId: drag.nodeId })
     if (drag.dx === 0 && drag.dz === 0) return
     const result = documentStore.moveCorners(
       floorIdFor(drag.nodeId) ?? activeFloorId,
@@ -698,10 +706,7 @@
       angle: 0,
       snapped: false,
     }
-    selectedCornerId = pivot.id
-    selectedWallId = null
-    selectedEdge = null
-    selectedOutline = null
+    chooseSelection({ cornerId: pivot.id })
     svgEl.setPointerCapture(event.pointerId)
   }
 
@@ -752,6 +757,7 @@
     selectedOutline = null
     selectedCornerId = null
     selectedPlateFloorId = null
+    selectedPlateRing = null
     hoverNodeId = null
     rotateDrag = null
   }
@@ -844,6 +850,7 @@
     selectedWallId = null
     selectedOutline = null
     selectedPlateFloorId = null
+    selectedPlateRing = null
   }
 
   function outlineRings(): { floorId: string | null; ringIndex: number; ring: { x: number; z: number }[] }[] {
@@ -870,11 +877,11 @@
     }
     const chosen = candidates[hit.ring]
     if (!chosen) return false
-    selectedOutline = { floorId: chosen.floorId, ring: chosen.ringIndex, edge: hit.edge }
-    selectedWallId = null
-    selectedCornerId = null
-    selectedEdge = null
-    selectedPlateFloorId = chosen.floorId
+    chooseSelection({
+      outline: { floorId: chosen.floorId, ring: chosen.ringIndex, edge: hit.edge },
+      plateFloorId: chosen.floorId,
+      plateRing: chosen.ringIndex,
+    })
     return true
   }
 
@@ -1377,11 +1384,6 @@
       <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
     </div>
     <div class="floors">
-      {#each storeyIndexes as index (index)}
-        <button type="button" class:active={index === activeStoreyIndex} onclick={() => selectStorey(index)}>
-          {index === 0 ? 'Ground' : index + 1}
-        </button>
-      {/each}
       <button type="button" disabled={!storeyTarget || atStoreyLimit} onclick={addStorey}>Add storey</button>
       {#if storeyUnitId}
         <button type="button" onclick={removeStorey}>Remove storey</button>
@@ -1423,6 +1425,17 @@
       <p class="hint">{planHint}</p>
     {/if}
   </div>
+  <div class="stage">
+    <nav class="key" aria-label="Storeys">
+      {#each [...storeyIndexes].reverse() as index (index)}
+        <button type="button" class:active={index === activeStoreyIndex} onclick={() => selectStorey(index)}>
+          {#if floors.some((floor) => floor.index === index && floor.roof)}
+            <span class="key-roof"></span>
+          {/if}
+          {index === 0 ? 'Ground' : index + 1}
+        </button>
+      {/each}
+    </nav>
   <svg
     bind:this={svgEl}
     class="canvas"
@@ -1553,7 +1566,7 @@
         {#if plate.ring.length >= 3}
           <polygon
             points={pointsAttr(plate.ring.map((point) => [point.x, point.z]))}
-            fill={plateFill(plate.floorId)}
+            fill={plateFill(plate.floorId, plate.index)}
             stroke="#78716c"
             stroke-width="0.045"
             stroke-dasharray="0.16 0.1"
@@ -1569,19 +1582,15 @@
                   plan.z,
                 )
                 if (edge !== undefined) {
-                  selectedOutline = { floorId: plate.floorId, ring: plate.index, edge }
-                  selectedWallId = null
-                  selectedCornerId = null
-                  selectedEdge = null
-                  selectedPlateFloorId = plate.floorId
+                  chooseSelection({
+                    outline: { floorId: plate.floorId, ring: plate.index, edge },
+                    plateFloorId: plate.floorId,
+                    plateRing: plate.index,
+                  })
                   return
                 }
               }
-              selectedPlateFloorId = plate.floorId
-              selectedWallId = null
-              selectedCornerId = null
-              selectedEdge = null
-              selectedOutline = null
+              chooseSelection({ plateFloorId: plate.floorId, plateRing: plate.index })
             }}
           />
         {/if}
@@ -1682,10 +1691,7 @@
               e.stopPropagation()
               const plan = clientToPlan(svgEl, e.clientX, e.clientY)
               if (plan && beginNodeDrag(activeFloor, plan, e)) return
-              selectedWallId = wall.id
-              selectedEdge = null
-              selectedOutline = null
-              selectedPlateFloorId = null
+              chooseSelection({ wallId: wall.id })
               applyResult({ ok: true })
             }}
           />
@@ -1829,6 +1835,7 @@
       {/if}
     {/if}
   </svg>
+  </div>
 </div>
 
 <style>
@@ -1905,9 +1912,44 @@
     color: #3f3f46;
   }
 
+  .stage {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .key {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    width: 5.75rem;
+    flex-shrink: 0;
+    padding: 0.75rem 0.5rem;
+    background: #fff;
+    border-right: 1px solid #e4e4e7;
+  }
+
+  .key button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    width: 100%;
+  }
+
+  .key-roof {
+    width: 0;
+    height: 0;
+    border-left: 0.45rem solid transparent;
+    border-right: 0.45rem solid transparent;
+    border-bottom: 0.32rem solid #5e666e;
+  }
+
   .canvas {
     flex: 1;
-    width: 100%;
+    width: auto;
+    min-width: 0;
     min-height: 0;
     touch-action: none;
     cursor: crosshair;

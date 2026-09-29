@@ -3,6 +3,8 @@ import type { Floor, Wall } from '../model/types'
 import {
   BLOCK_HEIGHT,
   BLOCK_LENGTH,
+  DEFAULT_STOREY_HEIGHT,
+  FLOOR_TO_FLOOR,
 } from '../plot/fixture'
 import {
   buildCourseFaceGeometries,
@@ -251,6 +253,33 @@ describe('buildWallGeometries', () => {
       )
     expect(endU(0)).toBeCloseTo(4.078, 3)
     expect(endU(1)).toBeCloseTo(3.922, 3)
+  })
+
+  it('carries the outer leaf up to the next storey and leaves the inner leaf at the wall head', () => {
+    const floor: Floor = {
+      id: 'f',
+      index: 0,
+      datumHeight: 0,
+      corners: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 8, z: 0 },
+        { id: 'c', x: 8, z: 6 },
+        { id: 'd', x: 0, z: 6 },
+      ],
+      walls: [
+        { id: 's', startCornerId: 'a', endCornerId: 'b', skin: 'double', openings: [] },
+        { id: 'e', startCornerId: 'b', endCornerId: 'c', skin: 'double', openings: [] },
+        { id: 'n', startCornerId: 'c', endCornerId: 'd', skin: 'double', openings: [] },
+        { id: 'w', startCornerId: 'd', endCornerId: 'a', skin: 'double', openings: [] },
+      ],
+      roomFinishes: {},
+    }
+    const south = floor.walls[0]
+    const wallHead = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT) * BLOCK_HEIGHT
+    const spans = collectWallBlockSpans(floor, south, undefined, FLOOR_TO_FLOOR)
+    const maxY = (leaf: number) => Math.max(...spans.filter((span) => span.leaf === leaf).map((span) => span.y1))
+    expect(maxY(0)).toBeCloseTo(FLOOR_TO_FLOOR, 3)
+    expect(maxY(1)).toBeCloseTo(wallHead, 3)
   })
 })
 

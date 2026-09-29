@@ -24,10 +24,10 @@ export function deckThickness(): number {
 }
 
 export function deckPolygons(floor: Floor): DeckPolygon[] {
-  const pieces =
-    floor.walls.length > 0
-      ? wallPieces(floor)
-      : (floor.outline ?? []).map((ring) => offsetOutward(ring, -CAVITY_FACE_M))
+  const pieces = floor.walls.length > 0 ? wallPieces(floor) : []
+  for (const ring of floor.outline ?? []) {
+    if (ring.length >= 3) pieces.push(offsetOutward(ring, -CAVITY_FACE_M))
+  }
   return unionRings(pieces.filter((ring) => ring.length >= 3))
 }
 
@@ -192,7 +192,12 @@ export function unionRings(rings: Ring[]): DeckPolygon[] {
   const features = rings.filter((ring) => ring.length >= 3).map(toPolygon)
   if (features.length === 0) return []
   if (features.length === 1) return featurePolygons(features[0])
-  const combined = union({ type: 'FeatureCollection', features } as Parameters<typeof union>[0])
+  let combined
+  try {
+    combined = union({ type: 'FeatureCollection', features } as Parameters<typeof union>[0])
+  } catch {
+    return features.flatMap(featurePolygons)
+  }
   if (!combined) return features.flatMap(featurePolygons)
   return featurePolygons(combined)
 }
