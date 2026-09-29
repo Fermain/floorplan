@@ -2,19 +2,21 @@
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
   import {
-    buildOpeningFrameGeometry,
-    buildOpeningGlassGeometry,
-  } from '../../lib/geometry/frames'
-  import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
-  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { doorWidthLimits, maxOpeningWidth, placeOpeningU, windowWidthLimits } from '../../lib/model/openings'
-  import type { Floor, Opening, Wall } from '../../lib/model/types'
-  import {
-    DEFAULT_DOOR_WIDTH,
-    DEFAULT_WINDOW_WIDTH,
-    DOOR_MIN_WIDTH,
-    WINDOW_MIN_WIDTH,
-  } from '../../lib/plot/fixture'
+  buildOpeningFrameGeometry,
+  buildOpeningGlassGeometry,
+  buildOpeningPanelMeshes,
+} from '../../lib/geometry/frames'
+import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
+import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+import { isFloorOpening, maxOpeningWidth, openingMinWidth, openingWidthLimits, placeOpeningU } from '../../lib/model/openings'
+import type { Floor, Opening, OpeningKind, Wall } from '../../lib/model/types'
+import {
+  DEFAULT_DOOR_WIDTH,
+  DEFAULT_EXTERNAL_DOOR_WIDTH,
+  DEFAULT_GARAGE_WIDTH,
+  DEFAULT_INTERNAL_DOOR_WIDTH,
+  DEFAULT_WINDOW_WIDTH,
+} from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
   import { pointerToWallUv } from './elevation'
@@ -30,11 +32,16 @@
   let { wallId, selectedOpeningId = null, onSelectOpening }: Props = $props()
 
   let locked = $state(true)
-  let insertTool = $state<'door' | 'window'>('window')
+  let insertTool = $state<OpeningKind>('window')
   let menuOpen = $state(false)
   let menuEl = $state<HTMLDivElement | undefined>(undefined)
-  let doorWidth = $state(DEFAULT_DOOR_WIDTH)
-  let windowWidth = $state(DEFAULT_WINDOW_WIDTH)
+  let preferredWidth = $state<Record<OpeningKind, number>>({
+    window: DEFAULT_WINDOW_WIDTH,
+    door: DEFAULT_DOOR_WIDTH,
+    'external-door': DEFAULT_EXTERNAL_DOOR_WIDTH,
+    'internal-door': DEFAULT_INTERNAL_DOOR_WIDTH,
+    garage: DEFAULT_GARAGE_WIDTH,
+  })
   let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
   let readout = $state<{ u: number; v: number } | null>(null)
@@ -92,7 +99,7 @@
 
   const widthLimits = $derived.by(() => {
     if (!frame) return null
-    const base = widthKind === 'door' ? doorWidthLimits(frame.length) : windowWidthLimits(frame.length)
+    const base = openingWidthLimits(widthKind, frame.length)
     if (!editingOpening || !wall) return base
     const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
     const centre = editingOpening.u + editingOpening.width / 2
@@ -102,7 +109,7 @@
   const widthAllowed = $derived(widthLimits !== null && widthLimits.max >= widthLimits.min - 1e-9)
 
   const shownWidth = $derived.by(() => {
-    const fallback = widthKind === 'door' ? doorWidth : windowWidth
+    const fallback = preferredWidth[widthKind]
     const raw = widthDraft ?? editingOpening?.width ?? fallback
     if (!widthLimits || !widthAllowed) return raw
     return Math.min(widthLimits.max, Math.max(widthLimits.min, raw))
@@ -144,10 +151,11 @@
     lintel: BufferGeometry | null
     frame: BufferGeometry | null
     glass: BufferGeometry | null
+    panels: { color: string; geometry: BufferGeometry }[]
   } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return { blocks: [], courses: [], lintel: null, frame: null, glass: null }
+      return { blocks: [], courses: [], lintel: null, frame: null, glass: null, panels: [] }
     }
     return {
       blocks: buildWallGeometries(floor, shown),
@@ -155,6 +163,7 @@
       lintel: buildLintelGeometry(floor, shown),
       frame: buildOpeningFrameGeometry(floor, shown),
       glass: buildOpeningGlassGeometry(floor, shown),
+      panels: buildOpeningPanelMeshes(floor, shown),
     }
   })
 
@@ -187,12 +196,14 @@
     const lintel = wallModel.lintel
     const frameGeom = wallModel.frame
     const glass = wallModel.glass
+    const panels = wallModel.panels
     return () => {
       for (const g of geoms) g.dispose()
       for (const g of courses) g.dispose()
       lintel?.dispose()
       frameGeom?.dispose()
       glass?.dispose()
+      for (const panel of panels) panel.geometry.dispose()
     }
   })
 
@@ -258,44 +269,22 @@
       return
     }
 
-    if (insertTool === 'door') {
-      if (!widthAllowed) return
-      const placed = placeSnappedOpeningU(
-        uv.u - shownWidth / 2,
-        shownWidth,
-        frame.length,
-        wall.openings,
-        DOOR_MIN_WIDTH,
-      )
-      if (placed === null) return
-      selectAdded(documentStore.addOpening(floor.id, wall.id, 'door', placed.u, placed.width))
-      return
-    }
-
-    const placed = placeSnappedOpeningU(
-      uv.u - shownWidth / 2,
-      shownWidth,
-      frame.length,
-      wall.openings,
-      WINDOW_MIN_WIDTH,
-    )
+    const min = openingMinWidth(insertTool)
+    const placed = placeSnappedOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings, min)
     if (placed === null) return
-    selectAdded(documentStore.addOpening(floor.id, wall.id, 'window', placed.u, placed.width))
+    selectAdded(documentStore.addOpening(floor.id, wall.id, insertTool, placed.u, placed.width))
   }
 
   function onWidthInput(value: number) {
     if (editingOpening) widthDraft = value
-    else if (insertTool === 'door') doorWidth = value
-    else windowWidth = value
+    else preferredWidth[insertTool] = value
   }
 
   function commitWidth(value: number) {
     widthDraft = null
-    const min = widthKind === 'door' ? DOOR_MIN_WIDTH : WINDOW_MIN_WIDTH
-    const snapped = snapOpeningWidth(value, min)
+    const snapped = snapOpeningWidth(value, openingMinWidth(widthKind))
     if (!editingOpening || !floor || !wall) {
-      if (insertTool === 'door') doorWidth = snapped
-      else windowWidth = snapped
+      preferredWidth[insertTool] = snapped
       return
     }
     const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
@@ -315,9 +304,25 @@
     onSelectOpening?.(null)
   }
 
-  function chooseInsert(tool: 'door' | 'window') {
+  function chooseInsert(tool: OpeningKind) {
     insertTool = tool
     menuOpen = false
+  }
+
+  const insertChoices: { kind: OpeningKind; label: string }[] = [
+    { kind: 'window', label: 'Window' },
+    { kind: 'door', label: 'Sliding door' },
+    { kind: 'external-door', label: 'External door' },
+    { kind: 'internal-door', label: 'Internal door' },
+    { kind: 'garage', label: 'Garage door' },
+  ]
+
+  function insertHint(kind: OpeningKind): string {
+    if (kind === 'window') return 'Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.'
+    if (kind === 'garage') return 'Click the wall to place a garage door. Drag a door to move it. Remove deletes the selected one.'
+    if (kind === 'external-door') return 'Click the wall to place an external door. Drag a door to move it. Remove deletes the selected one.'
+    if (kind === 'internal-door') return 'Click the wall to place an internal door. Drag a door to move it. Remove deletes the selected one.'
+    return 'Click the wall to place a sliding door. Drag a door to move it. Remove deletes the selected one.'
   }
 
   function selectAdded(result: { ok: boolean; document: typeof doc }): void {
@@ -400,22 +405,16 @@
         {#if menuOpen}
           <div class="menu-panel" role="menu">
             <p class="section">Openings</p>
-            <button
-              type="button"
-              role="menuitem"
-              class:active={insertTool === 'door'}
-              onclick={() => chooseInsert('door')}
-            >
-              Door
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class:active={insertTool === 'window'}
-              onclick={() => chooseInsert('window')}
-            >
-              Window
-            </button>
+            {#each insertChoices as choice (choice.kind)}
+              <button
+                type="button"
+                role="menuitem"
+                class:active={insertTool === choice.kind}
+                onclick={() => chooseInsert(choice.kind)}
+              >
+                {choice.label}
+              </button>
+            {/each}
           </div>
         {/if}
       </div>
@@ -445,8 +444,12 @@
           />
           <span>mm</span>
         </label>
-      {:else if widthKind === 'door'}
+      {:else if widthKind === 'garage'}
+        <span class="note">This wall is too short for a garage door.</span>
+      {:else if isFloorOpening(widthKind)}
         <span class="note">This wall is too short for a door.</span>
+      {:else}
+        <span class="note">This wall is too short for a window.</span>
       {/if}
       {#if editingOpening}
         <button type="button" onclick={removeSelected}>Remove</button>
@@ -454,10 +457,8 @@
       <span class="hint">
         {#if !locked}
           Perspective. The fixed view is where this wall is edited.
-        {:else if insertTool === 'door'}
-          Click the wall to place a door. Drag a door to move it. Remove deletes the selected one.
         {:else}
-          Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.
+          {insertHint(insertTool)}
         {/if}
       </span>
       {#if scheduleLine}
@@ -490,6 +491,7 @@
         lintelGeometry={wallModel.lintel}
         frameGeometry={wallModel.frame}
         glassGeometry={wallModel.glass}
+        panelMeshes={wallModel.panels}
         {orthoCamera}
         {onOrthoCamera}
       />

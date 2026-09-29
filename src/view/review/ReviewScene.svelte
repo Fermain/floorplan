@@ -23,6 +23,7 @@
   import {
     buildOpeningFrameGeometry,
     buildOpeningGlassGeometry,
+    buildOpeningPanelMeshes,
     FRAME_COLOUR,
     GLASS_COLOUR,
     GLASS_OPACITY,
@@ -55,6 +56,7 @@
     lintel: BufferGeometry | null
     frame: BufferGeometry | null
     glass: BufferGeometry | null
+    panels: { color: string; geometry: BufferGeometry }[]
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = { key: string; geometry: BufferGeometry; y: number }
@@ -156,7 +158,8 @@
         const lintel = buildLintelGeometry(floor, wall)
         const frame = buildOpeningFrameGeometry(floor, wall, samples)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
-        if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass) continue
+        const panels = buildOpeningPanelMeshes(floor, wall, samples)
+        if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass && panels.length === 0) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
           wallId: wall.id,
@@ -166,6 +169,7 @@
           lintel,
           frame,
           glass,
+          panels,
         })
       }
     }
@@ -187,6 +191,7 @@
         wall.lintel?.dispose()
         wall.frame?.dispose()
         wall.glass?.dispose()
+        for (const panel of wall.panels) panel.geometry.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
       for (const roof of roofs) roof.geometry.dispose()
@@ -467,6 +472,17 @@
             />
           </T.Mesh>
         {/if}
+        {#each wall.panels as panel (`${wall.key}-${panel.geometry.uuid}`)}
+          <T.Mesh geometry={panel.geometry} castShadow receiveShadow>
+            <T.MeshStandardMaterial
+              color={panel.color}
+              emissive={panel.emissive}
+              emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
+              toneMapped={panel.emissive === '#000000'}
+              roughness={0.72}
+            />
+          </T.Mesh>
+        {/each}
       </T.Group>
     {/each}
   </Canvas>

@@ -9,9 +9,21 @@ export const GLASS_THICKNESS = 0.008
 export const GLASS_INSET = 0.01
 export const WINDOW_PANE_MAX = 0.9
 export const DOOR_PANEL_MAX = 1.2
+export const EXTERNAL_LEAF_MAX = 1
+export const INTERNAL_LEAF_MAX = 0.9
+export const GARAGE_PANEL_MAX = 0.5
+const DOOR_STILE = 0.09
+const DOOR_MUNTIN = 0.09
+const DOOR_TOP_RAIL = 0.09
+const DOOR_LOCK_RAIL = 0.14
+const DOOR_BOTTOM_RAIL = 0.18
+const DOOR_PANEL_MIN = 0.05
 export const FRAME_COLOUR = '#4a4f54'
 export const GLASS_COLOUR = '#9eb8c8'
 export const GLASS_OPACITY = 0.35
+export const EXTERNAL_DOOR_COLOUR = '#ffffff'
+export const INTERNAL_DOOR_COLOUR = '#d7c4a3'
+export const GARAGE_DOOR_COLOUR = '#e4e7ea'
 
 const LEAF_OFFSET = CAVITY / 2 + BLOCK_THICKNESS / 2
 
@@ -35,6 +47,7 @@ export type OpeningFrameLayout = {
   inner: FrameMemberSpan
   members: FrameMemberSpan[]
   glass: FrameMemberSpan[]
+  panels: FrameMemberSpan[]
 }
 
 type Vec2 = { x: number; z: number }
@@ -57,6 +70,82 @@ function panelCount(innerWidth: number, maxPane: number): number {
     count += 1
   }
   return count
+}
+
+function splitSpan(
+  span: FrameMemberSpan,
+  count: number,
+  along: 'u' | 'y',
+): { bars: FrameMemberSpan[]; cells: FrameMemberSpan[] } {
+  const bars: FrameMemberSpan[] = []
+  const cells: FrameMemberSpan[] = []
+  const extent = along === 'u' ? span.u1 - span.u0 : span.y1 - span.y0
+  const cell = (extent - (count - 1) * FRAME_SECTION) / count
+  for (let i = 0; i < count; i++) {
+    const start = (along === 'u' ? span.u0 : span.y0) + i * (cell + FRAME_SECTION)
+    const end = start + cell
+    if (i > 0) {
+      bars.push(
+        along === 'u'
+          ? { u0: start - FRAME_SECTION, u1: start, y0: span.y0, y1: span.y1 }
+          : { u0: span.u0, u1: span.u1, y0: start - FRAME_SECTION, y1: start },
+      )
+    }
+    cells.push(
+      along === 'u'
+        ? { u0: start, u1: end, y0: span.y0, y1: span.y1 }
+        : { u0: span.u0, u1: span.u1, y0: start, y1: end },
+    )
+  }
+  return { bars, cells }
+}
+
+function fourPanelLeaf(leaf: FrameMemberSpan): { bars: FrameMemberSpan[]; cells: FrameMemberSpan[] } {
+  const width = leaf.u1 - leaf.u0
+  const height = leaf.y1 - leaf.y0
+  const bars: FrameMemberSpan[] = []
+  const cells: FrameMemberSpan[] = []
+  if (
+    width < DOOR_STILE * 2 + DOOR_MUNTIN + 2 * DOOR_PANEL_MIN ||
+    height < DOOR_TOP_RAIL + DOOR_LOCK_RAIL + DOOR_BOTTOM_RAIL + 2 * DOOR_PANEL_MIN
+  ) {
+    cells.push(leaf)
+    return { bars, cells }
+  }
+  const innerU0 = leaf.u0 + DOOR_STILE
+  const innerU1 = leaf.u1 - DOOR_STILE
+  const upper = (height - DOOR_TOP_RAIL - DOOR_LOCK_RAIL - DOOR_BOTTOM_RAIL) / 3
+  const lockY0 = leaf.y0 + DOOR_BOTTOM_RAIL + upper * 2
+  const lockY1 = lockY0 + DOOR_LOCK_RAIL
+  const topY0 = leaf.y1 - DOOR_TOP_RAIL
+  const midU0 = (leaf.u0 + leaf.u1) / 2 - DOOR_MUNTIN / 2
+  const midU1 = midU0 + DOOR_MUNTIN
+  const bottomY1 = leaf.y0 + DOOR_BOTTOM_RAIL
+  bars.push(
+    { u0: leaf.u0, u1: innerU0, y0: leaf.y0, y1: leaf.y1 },
+    { u0: innerU1, u1: leaf.u1, y0: leaf.y0, y1: leaf.y1 },
+    { u0: innerU0, u1: innerU1, y0: topY0, y1: leaf.y1 },
+    { u0: innerU0, u1: innerU1, y0: lockY0, y1: lockY1 },
+    { u0: innerU0, u1: innerU1, y0: leaf.y0, y1: bottomY1 },
+    { u0: midU0, u1: midU1, y0: lockY1, y1: topY0 },
+    { u0: midU0, u1: midU1, y0: bottomY1, y1: lockY0 },
+  )
+  cells.push(
+    { u0: innerU0, u1: midU0, y0: lockY1, y1: topY0 },
+    { u0: midU1, u1: innerU1, y0: lockY1, y1: topY0 },
+    { u0: innerU0, u1: midU0, y0: bottomY1, y1: lockY0 },
+    { u0: midU1, u1: innerU1, y0: bottomY1, y1: lockY0 },
+  )
+  return { bars, cells }
+}
+
+function insetGlass(cell: FrameMemberSpan): FrameMemberSpan {
+  return {
+    u0: cell.u0 + GLASS_INSET,
+    u1: cell.u1 - GLASS_INSET,
+    y0: cell.y0 + GLASS_INSET,
+    y1: cell.y1 - GLASS_INSET,
+  }
 }
 
 function sillBearingY(openingV: number): number {
@@ -87,29 +176,28 @@ export function openingFrameLayout(opening: OpeningRect): OpeningFrameLayout | n
     { u0, u1: u0 + FRAME_SECTION, y0, y1: y1 - FRAME_SECTION },
     { u0: u1 - FRAME_SECTION, u1, y0, y1: y1 - FRAME_SECTION },
   ]
-  const innerWidth = inner.u1 - inner.u0
-  const count = panelCount(innerWidth, paneLimit(opening.kind))
-  const paneWidth = (innerWidth - (count - 1) * FRAME_SECTION) / count
   const glass: FrameMemberSpan[] = []
-  for (let i = 0; i < count; i++) {
-    const paneU0 = inner.u0 + i * (paneWidth + FRAME_SECTION)
-    const paneU1 = paneU0 + paneWidth
-    if (i > 0) {
-      members.push({
-        u0: paneU0 - FRAME_SECTION,
-        u1: paneU0,
-        y0: inner.y0,
-        y1: inner.y1,
-      })
+  const panels: FrameMemberSpan[] = []
+  const bay = { u0: inner.u0, u1: inner.u1, y0: inner.y0, y1: inner.y1 }
+  if (opening.kind === 'external-door' || opening.kind === 'internal-door') {
+    const maxLeaf = opening.kind === 'internal-door' ? INTERNAL_LEAF_MAX : EXTERNAL_LEAF_MAX
+    const leaves = splitSpan(bay, panelCount(inner.u1 - inner.u0, maxLeaf), 'u')
+    members.push(...leaves.bars)
+    for (const leaf of leaves.cells) {
+      const door = fourPanelLeaf(leaf)
+      members.push(...door.bars)
+      panels.push(...door.cells)
     }
-    glass.push({
-      u0: paneU0 + GLASS_INSET,
-      u1: paneU1 - GLASS_INSET,
-      y0: inner.y0 + GLASS_INSET,
-      y1: inner.y1 - GLASS_INSET,
-    })
+  } else if (opening.kind === 'garage') {
+    const split = splitSpan(bay, panelCount(inner.y1 - inner.y0, GARAGE_PANEL_MAX), 'y')
+    members.push(...split.bars)
+    panels.push(...split.cells)
+  } else {
+    const split = splitSpan(bay, panelCount(inner.u1 - inner.u0, paneLimit(opening.kind)), 'u')
+    members.push(...split.bars)
+    glass.push(...split.cells.map(insetGlass))
   }
-  return { outer, inner, members, glass }
+  return { outer, inner, members, glass, panels }
 }
 
 function gradeAt(u: number, samples: { u: number; y: number }[] | undefined): number {
@@ -291,4 +379,68 @@ export function buildOpeningGlassGeometry(
     }
   }
   return mergeParts(parts, unitBox)
+}
+
+export type OpeningPanelMesh = { color: string; geometry: BufferGeometry; emissive: string }
+
+function panelFinish(kind: OpeningKind | undefined): { color: string; emissive: string } | null {
+  if (kind === 'external-door') return { color: EXTERNAL_DOOR_COLOUR, emissive: '#ffffff' }
+  if (kind === 'internal-door') return { color: INTERNAL_DOOR_COLOUR, emissive: '#000000' }
+  if (kind === 'garage') return { color: GARAGE_DOOR_COLOUR, emissive: '#000000' }
+  return null
+}
+
+function panelDepth(kind: OpeningKind | undefined): number {
+  if (kind === 'internal-door') return 0.028
+  if (kind === 'garage') return 0.032
+  return 0.044
+}
+
+export function buildOpeningPanelMeshes(
+  floor: Floor,
+  wall: Wall,
+  bottomSamples?: { u: number; y: number }[],
+): OpeningPanelMesh[] {
+  if (wall.skin === 'logical') return []
+  const openings = wall.openings
+  if (openings.length === 0) return []
+  const wallFrame = buildWallFrame(floor, wall)
+  const leafSign = outerLeafSign(wall.skin)
+  const groups = new Map<string, { color: string; emissive: string; depth: number; spans: FrameMemberSpan[] }>()
+  for (const opening of openings) {
+    const finish = panelFinish(opening.kind)
+    const layout = openingFrameLayout(opening)
+    if (!finish || !layout) continue
+    const group = groups.get(finish.color) ?? { ...finish, depth: panelDepth(opening.kind), spans: [] }
+    for (const panel of layout.panels) {
+      const visible = clipToWallBottom(panel, bottomSamples)
+      if (visible) group.spans.push(visible)
+    }
+    groups.set(finish.color, group)
+  }
+  const meshes: OpeningPanelMesh[] = []
+  for (const group of groups.values()) {
+    if (group.spans.length === 0) continue
+    const unitBox = new BoxGeometry(1, 1, 1)
+    const matrix = new Matrix4()
+    const parts: BufferGeometry[] = []
+    for (const span of group.spans) {
+      placeBox(
+        wallFrame,
+        span.u0,
+        span.u1,
+        span.y0,
+        span.y1,
+        leafSign,
+        group.depth,
+        0,
+        unitBox,
+        matrix,
+        parts,
+      )
+    }
+    const geometry = mergeParts(parts, unitBox)
+    if (geometry) meshes.push({ color: group.color, emissive: group.emissive, geometry })
+  }
+  return meshes
 }

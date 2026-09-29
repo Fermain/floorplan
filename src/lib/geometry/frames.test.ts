@@ -89,6 +89,41 @@ describe('openingFrameLayout', () => {
     }
   })
 
+  it('sets a solid door out as four panels, two short over two tall', () => {
+    const external = openingFrameLayout({ u: 0, v: 0, width: 1.05, height: 2.1, kind: 'external-door' })
+    expect(external).not.toBeNull()
+    expect(external!.glass).toHaveLength(0)
+    expect(external!.panels).toHaveLength(4)
+    const byHeight = [...external!.panels].sort((a, b) => a.y0 - b.y0 || a.u0 - b.u0)
+    const lower = byHeight.slice(0, 2)
+    const upper = byHeight.slice(2)
+    expect(lower[0].y1 - lower[0].y0).toBeCloseTo((upper[0].y1 - upper[0].y0) * 2, 5)
+    expect(lower[0].y0 - external!.inner.y0).toBeGreaterThan(external!.inner.y1 - upper[0].y1)
+    expect(upper[0].u1).toBeLessThan(upper[1].u0)
+    const internal = openingFrameLayout({ u: 0, v: 0, width: 1.05, height: 2.1, kind: 'internal-door' })
+    expect(internal!.panels).toHaveLength(8)
+    expect(internal!.glass).toHaveLength(0)
+    const pair = openingFrameLayout({ u: 0, v: 0, width: 1.8, height: 2.1, kind: 'external-door' })
+    expect(pair!.panels).toHaveLength(8)
+  })
+
+  it('divides a garage door into horizontal panels', () => {
+    const garage = openingFrameLayout({ u: 0, v: 0, width: 2.4, height: 2.1, kind: 'garage' })
+    expect(garage).not.toBeNull()
+    expect(garage!.glass).toHaveLength(0)
+    expect(garage!.panels.length).toBeGreaterThan(1)
+    for (const panel of garage!.panels) {
+      expect(panel.y1 - panel.y0).toBeLessThanOrEqual(0.5 + 1e-6)
+      expect(panel.u1 - panel.u0).toBeCloseTo(garage!.inner.u1 - garage!.inner.u0, 5)
+    }
+    const rails = garage!.members.slice(4)
+    expect(rails.length).toBe(garage!.panels.length - 1)
+    for (const rail of rails) {
+      expect(rail.y1 - rail.y0).toBeCloseTo(FRAME_SECTION, 5)
+      expect(rail.u0).toBeCloseTo(garage!.inner.u0, 5)
+    }
+  })
+
   it('does not grow a door rail below the floor', () => {
     const door = { u: 1, v: 0, width: 0.9, height: 2.1 }
     const layout = openingFrameLayout(door)

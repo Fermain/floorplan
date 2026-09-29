@@ -1,7 +1,13 @@
 import {
   DEFAULT_DOOR_HEIGHT,
   DEFAULT_DOOR_WIDTH,
+  DEFAULT_EXTERNAL_DOOR_WIDTH,
+  DEFAULT_GARAGE_WIDTH,
+  DEFAULT_INTERNAL_DOOR_WIDTH,
   DOOR_MIN_WIDTH,
+  EXTERNAL_DOOR_MIN_WIDTH,
+  GARAGE_MIN_WIDTH,
+  INTERNAL_DOOR_MIN_WIDTH,
   WINDOW_MIN_WIDTH,
   OPENING_EDGE_PAD,
   OPENING_MIN_GAP,
@@ -11,23 +17,48 @@ import {
 } from '../plot/fixture'
 import type { Opening, OpeningKind } from './types'
 
+export function isFloorOpening(kind: OpeningKind): boolean {
+  return kind !== 'window'
+}
+
+export function openingMinWidth(kind: OpeningKind): number {
+  if (kind === 'garage') return GARAGE_MIN_WIDTH
+  if (kind === 'external-door') return EXTERNAL_DOOR_MIN_WIDTH
+  if (kind === 'internal-door') return INTERNAL_DOOR_MIN_WIDTH
+  if (kind === 'door') return DOOR_MIN_WIDTH
+  return WINDOW_MIN_WIDTH
+}
+
 export function defaultOpeningDimensions(kind: OpeningKind): {
   v: number
   height: number
   width: number
 } {
+  if (kind === 'external-door') {
+    return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_EXTERNAL_DOOR_WIDTH }
+  }
+  if (kind === 'internal-door') {
+    return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_INTERNAL_DOOR_WIDTH }
+  }
+  if (kind === 'garage') {
+    return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_GARAGE_WIDTH }
+  }
   if (kind === 'door') {
     return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_DOOR_WIDTH }
   }
   return { v: DEFAULT_SILL, height: DEFAULT_WINDOW_HEIGHT, width: DEFAULT_WINDOW_WIDTH }
 }
 
+export function openingWidthLimits(kind: OpeningKind, length: number): { min: number; max: number } {
+  return { min: openingMinWidth(kind), max: length - 2 * OPENING_EDGE_PAD }
+}
+
 export function doorWidthLimits(length: number): { min: number; max: number } {
-  return { min: DOOR_MIN_WIDTH, max: length - 2 * OPENING_EDGE_PAD }
+  return openingWidthLimits('door', length)
 }
 
 export function windowWidthLimits(length: number): { min: number; max: number } {
-  return { min: WINDOW_MIN_WIDTH, max: length - 2 * OPENING_EDGE_PAD }
+  return openingWidthLimits('window', length)
 }
 
 export function fitOpeningU(centre: number, width: number, length: number, pad = OPENING_EDGE_PAD): number | null {

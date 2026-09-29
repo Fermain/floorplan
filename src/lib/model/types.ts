@@ -21,7 +21,7 @@ export type Corner = {
   unitId?: string
 }
 
-export type OpeningKind = 'window' | 'door'
+export type OpeningKind = 'window' | 'door' | 'external-door' | 'internal-door' | 'garage'
 
 export type Opening = {
   id: string

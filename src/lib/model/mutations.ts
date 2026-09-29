@@ -5,10 +5,10 @@ import {
   applyAligned,
   createOpening,
   defaultOpeningDimensions,
-  doorWidthLimits,
+  isFloorOpening,
   maxOpeningWidth,
+  openingWidthLimits,
   placeOpeningU,
-  windowWidthLimits,
 } from './openings'
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { roomKey } from './rooms'
@@ -235,6 +235,11 @@ export function rotateCorners(
   return ok(replaceFloor(document, { ...floor, corners: nextCorners }))
 }
 
+function shortWallReason(kind: OpeningKind): string {
+  if (kind === 'garage') return 'wall too short for a garage door'
+  return 'wall too short for a door'
+}
+
 export function addOpening(
   document: Document,
   floorId: string,
@@ -254,9 +259,9 @@ export function addOpening(
     opening.aligned = false
   }
   const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
-  if (kind === 'door') {
-    const limits = doorWidthLimits(length)
-    if (limits.max < limits.min - 1e-9) return fail(document, 'wall too short for a door')
+  if (isFloorOpening(kind)) {
+    const limits = openingWidthLimits(kind, length)
+    if (limits.max < limits.min - 1e-9) return fail(document, shortWallReason(kind))
     opening.width = Math.min(limits.max, Math.max(limits.min, opening.width))
   }
   const placedU = placeOpeningU(opening.u, opening.width, length, wall.openings)
@@ -300,9 +305,9 @@ export function updateOpening(
   }
   const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
   const others = wall.openings.filter((opening) => opening.id !== openingId)
-  if (updated.kind === 'door') {
-    const limits = doorWidthLimits(length)
-    if (limits.max < limits.min - 1e-9) return fail(document, 'wall too short for a door')
+  if (isFloorOpening(updated.kind)) {
+    const limits = openingWidthLimits(updated.kind, length)
+    if (limits.max < limits.min - 1e-9) return fail(document, shortWallReason(updated.kind))
     let nextWidth = Math.min(limits.max, Math.max(limits.min, updated.width))
     let requestedU = updated.u
     if (patch.width !== undefined && patch.u === undefined) {
@@ -319,7 +324,7 @@ export function updateOpening(
     let requestedU = updated.u
     if (patch.width !== undefined && patch.u === undefined) {
       const centre = existing.u + existing.width / 2
-      const limits = windowWidthLimits(length)
+      const limits = openingWidthLimits('window', length)
       nextWidth = Math.min(limits.max, Math.max(limits.min, nextWidth))
       nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others))
       if (nextWidth < limits.min - 1e-9) return fail(document, 'openings too close')

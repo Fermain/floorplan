@@ -45,7 +45,7 @@ describe('scheduleWall', () => {
 
     expect(schedule.wholeBricks).toBe(COURSE_COUNT * modules)
     expect(schedule.cutBricks).toBe(0)
-    expect(schedule.openings).toEqual({ window: 0, door: 0 })
+    expect(schedule.openings).toEqual({ window: 0, door: 0, external: 0, internal: 0, garage: 0 })
     expect(schedule.lintels).toEqual([])
   })
 
@@ -122,7 +122,7 @@ describe('scheduleWall', () => {
     expect(scheduleWall(floor, wall)).toEqual({
       wholeBricks: 0,
       cutBricks: 0,
-      openings: { window: 0, door: 0 },
+      openings: { window: 0, door: 0, external: 0, internal: 0, garage: 0 },
       lintels: [],
     })
   })
@@ -146,7 +146,7 @@ describe('formatSchedule', () => {
       formatSchedule({
         wholeBricks: 42,
         cutBricks: 0,
-        openings: { window: 1, door: 0 },
+        openings: { window: 1, door: 0, external: 0, internal: 0, garage: 0 },
         lintels: [{ length: 1.2 }],
       }),
     ).toBe('42 whole, 1 window, 1 lintel 1.20 m')
@@ -157,7 +157,7 @@ describe('formatSchedule', () => {
       formatSchedule({
         wholeBricks: 42,
         cutBricks: 7,
-        openings: { window: 1, door: 0 },
+        openings: { window: 1, door: 0, external: 0, internal: 0, garage: 0 },
         lintels: [{ length: 1.2 }],
       }),
     ).toBe('42 whole, 7 cut, 1 window, 1 lintel 1.20 m')

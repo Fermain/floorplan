@@ -7,6 +7,7 @@
     FRAME_COLOUR,
     GLASS_COLOUR,
     GLASS_OPACITY,
+    type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import ElevationResize from './ElevationResize.svelte'
   import type { WallElevationFrame } from './wallFrame'
@@ -20,6 +21,7 @@
     lintelGeometry: BufferGeometry | null
     frameGeometry: BufferGeometry | null
     glassGeometry: BufferGeometry | null
+    panelMeshes: OpeningPanelMesh[]
     orthoCamera: OrthographicCamera | undefined
     onOrthoCamera: (camera: OrthographicCamera) => void
   }
@@ -32,6 +34,7 @@
     lintelGeometry,
     frameGeometry,
     glassGeometry,
+    panelMeshes,
     orthoCamera,
     onOrthoCamera,
   }: Props = $props()
@@ -111,4 +114,15 @@
       />
     </T.Mesh>
   {/if}
+  {#each panelMeshes as panel (panel.geometry.uuid)}
+    <T.Mesh geometry={panel.geometry}>
+      <T.MeshStandardMaterial
+        color={panel.color}
+        emissive={panel.emissive}
+        emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
+        toneMapped={panel.emissive === '#000000'}
+        roughness={0.72}
+      />
+    </T.Mesh>
+  {/each}
 </Canvas>

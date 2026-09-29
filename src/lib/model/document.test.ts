@@ -16,7 +16,7 @@ import {
   updateOpening,
 } from './mutations'
 import { deriveRooms } from './rooms'
-import { DEFAULT_SILL, DEFAULT_WINDOW_HEAD, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
+import { DEFAULT_DOOR_HEIGHT, DEFAULT_SILL, DEFAULT_WINDOW_HEAD, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
 import { loadDocument, undo, documentStore, getDocument } from '../state/document.svelte'
 
 function floorId(doc: ReturnType<typeof fixtureDocument>) {
@@ -363,6 +363,28 @@ describe('door width', () => {
     const slim = narrow.document.building.floors[0].walls[0].openings[0]
     expect(slim.width).toBeCloseTo(0.6, 5)
     expect(slim.u).toBeCloseTo(2, 5)
+  })
+
+  it('keeps an external door wider than an internal door and a garage door at its own minimum', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const external = addOpening(d, floor.id, wall.id, 'external-door', 2, 0.2)
+    expect(external.ok).toBe(true)
+    if (!external.ok) return
+    expect(external.document.building.floors[0].walls[0].openings[0].width).toBeCloseTo(0.8, 5)
+    expect(external.document.building.floors[0].walls[0].openings[0].v).toBe(0)
+    const internal = addOpening(d, floor.id, wall.id, 'internal-door', 2, 0.2)
+    expect(internal.ok).toBe(true)
+    if (!internal.ok) return
+    expect(internal.document.building.floors[0].walls[0].openings[0].width).toBeCloseTo(0.6, 5)
+    const garage = addOpening(d, floor.id, wall.id, 'garage', 1, 1)
+    expect(garage.ok).toBe(true)
+    if (!garage.ok) return
+    const door = garage.document.building.floors[0].walls[0].openings[0]
+    expect(door.width).toBeCloseTo(2.4, 5)
+    expect(door.v).toBe(0)
+    expect(door.height).toBeCloseTo(DEFAULT_DOOR_HEIGHT, 5)
   })
 
   it('keeps the centre when a door is widened', () => {
