@@ -5,6 +5,7 @@
   import ElevationView from '../elevation/index.svelte'
   import PlanView from '../plan/index.svelte'
   import ReviewView from '../review/index.svelte'
+  import Projects from './Projects.svelte'
 
   type Mode = 'plan' | 'elevation' | 'review'
 
@@ -218,9 +219,10 @@
             >
               Export SVG
             </button>
-          </div>
-        {/if}
+        </div>
+      {/if}
       </div>
+      <Projects />
     </nav>
     {#if importError}
       <p class="error">{importError}</p>
