@@ -195,6 +195,16 @@ function openingAffectsCourse(
 
 const WALL_HEAD = COURSE_COUNT * BLOCK_HEIGHT
 
+function moduleBearing(edge: number, direction: -1 | 1): number {
+  const step = BLOCK_LENGTH / 2
+  const limit = edge + direction * LINTEL_BEARING
+  const n =
+    direction > 0
+      ? Math.ceil((limit - 1e-9) / step)
+      : Math.floor((limit + 1e-9) / step)
+  return n * step
+}
+
 function lintelBox(
   opening: Opening,
   others: Opening[],
@@ -206,8 +216,8 @@ function lintelBox(
   const y0 = head
   const y1 = Math.min(WALL_HEAD, head + BLOCK_HEIGHT)
   if (y1 - y0 <= 1e-4) return null
-  let u0 = Math.max(uMin, opening.u - LINTEL_BEARING)
-  let u1 = Math.min(uMax, opening.u + opening.width + LINTEL_BEARING)
+  let u0 = Math.max(uMin, moduleBearing(opening.u, -1))
+  let u1 = Math.min(uMax, moduleBearing(opening.u + opening.width, 1))
   const openingEnd = opening.u + opening.width
   for (const other of others) {
     const otherEnd = other.u + other.width

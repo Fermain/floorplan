@@ -18,7 +18,7 @@
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
   import { pointerToWallUv } from './elevation'
-  import { placeSnappedOpeningU, snapOpeningU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
+  import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame } from './wallFrame'
 
   interface Props {
@@ -298,7 +298,15 @@
       else windowWidth = snapped
       return
     }
-    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { width: snapped })
+    const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
+    const centre = editingOpening.u + editingOpening.width / 2
+    const u = frame
+      ? snapLegalModuleU(centre - snapped / 2, snapped, frame.length, others)
+      : null
+    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, {
+      width: snapped,
+      ...(u === null ? {} : { u }),
+    })
   }
 
   function removeSelected() {
@@ -344,12 +352,7 @@
       const moving = wall.openings.find((opening) => opening.id === current.id)
       if (moving) {
         const others = wall.openings.filter((opening) => opening.id !== current.id)
-        const u = placeOpeningU(
-          snapOpeningU(current.u),
-          moving.width,
-          frame.length,
-          others,
-        )
+        const u = snapLegalModuleU(current.u, moving.width, frame.length, others)
         if (u !== null) {
           const moved =
             u !== current.originU || (!current.aligned && current.v !== current.originV)

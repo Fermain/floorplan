@@ -20,6 +20,18 @@ describe('placeSnappedOpeningU', () => {
     expect(placed!.u).toBeCloseTo(BLOCK_LENGTH, 5)
   })
 
+  it('moves a half-brick inside the 150 mm end out to the next whole brick', () => {
+    const length = 8
+    const width = snapOpeningWidth(0.9, WINDOW_MIN_WIDTH)
+    const placed = placeSnappedOpeningU(BLOCK_LENGTH / 2, width, length, [], WINDOW_MIN_WIDTH)
+    expect(placed).not.toBeNull()
+    expect(placed!.u).toBeCloseTo(BLOCK_LENGTH, 5)
+    expect(placed!.u + placed!.width).toBeCloseTo(
+      BLOCK_LENGTH + Math.round(placed!.width / (BLOCK_LENGTH / 2)) * (BLOCK_LENGTH / 2),
+      5,
+    )
+  })
+
   it('snaps width 1.00 to the nearest half-module at or above the minimum', () => {
     const snapped = snapOpeningWidth(1, WINDOW_MIN_WIDTH)
     expect(snapped).toBeGreaterThanOrEqual(WINDOW_MIN_WIDTH - 1e-9)

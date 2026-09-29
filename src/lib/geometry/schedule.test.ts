@@ -103,7 +103,9 @@ describe('scheduleWall', () => {
 
     expect(lintels).toHaveLength(1)
     expect(schedule.lintels).toHaveLength(1)
-    expect(schedule.lintels[0].length).toBeCloseTo(opening.width + 2 * LINTEL_BEARING, 5)
+    expect(opening.u - lintels[0].u0).toBeGreaterThanOrEqual(LINTEL_BEARING - 1e-6)
+    expect(lintels[0].u1 - (opening.u + opening.width)).toBeGreaterThanOrEqual(LINTEL_BEARING - 1e-6)
+    expect(schedule.lintels[0].length).toBeCloseTo(lintels[0].u1 - lintels[0].u0, 5)
     expect(schedule.openings.window).toBe(1)
 
     const plain = straightWall()

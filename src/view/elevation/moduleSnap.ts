@@ -18,6 +18,30 @@ export function snapOpeningU(u: number): number {
   return snapToStep(u, HALF_MODULE)
 }
 
+export function snapLegalModuleU(
+  target: number,
+  width: number,
+  length: number,
+  others: { u: number; width: number }[],
+): number | null {
+  const snapped = snapOpeningU(target)
+  const limit = Math.ceil(length / HALF_MODULE)
+  let best: number | null = null
+  let bestDist = Infinity
+  for (let n = 0; n <= limit; n++) {
+    const candidate = n * HALF_MODULE
+    if (candidate > length - width + 1e-9) break
+    const placed = placeOpeningU(candidate, width, length, others)
+    if (placed === null || Math.abs(placed - candidate) > 1e-6) continue
+    const dist = Math.abs(candidate - snapped)
+    if (dist < bestDist - 1e-9) {
+      best = candidate
+      bestDist = dist
+    }
+  }
+  return best
+}
+
 export function placeSnappedOpeningU(
   requestedU: number,
   width: number,
@@ -26,7 +50,7 @@ export function placeSnappedOpeningU(
   minWidth: number,
 ): { u: number; width: number } | null {
   const nextWidth = snapOpeningWidth(width, minWidth)
-  const u = placeOpeningU(snapOpeningU(requestedU), nextWidth, length, others)
+  const u = snapLegalModuleU(requestedU, nextWidth, length, others)
   if (u === null) return null
   return { u, width: nextWidth }
 }
