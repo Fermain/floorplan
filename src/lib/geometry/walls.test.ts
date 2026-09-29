@@ -3,6 +3,8 @@ import type { Floor, Wall } from '../model/types'
 import {
   BLOCK_HEIGHT,
   BLOCK_LENGTH,
+  BLOCK_THICKNESS,
+  CAVITY,
   DEFAULT_STOREY_HEIGHT,
   FLOOR_TO_FLOOR,
 } from '../plot/fixture'
@@ -15,6 +17,9 @@ import {
   geometryTriangleCount,
   wallSolidContains,
 } from './walls'
+
+const OUTER_FACE = CAVITY / 2 + BLOCK_THICKNESS
+const LEAF_BUTT = CAVITY / 2
 
 function floorWithWall(wall: Wall, extraCorners: Floor['corners'] = []): Floor {
   const start = extraCorners.find((c) => c.id === wall.startCornerId)
@@ -208,14 +213,22 @@ describe('buildWallGeometries', () => {
       walls: [along, up],
       roomFinishes: {},
     }
-    const outer = collectWallBlockSpans(floor, along)
-      .filter((s) => s.leaf === 0 && s.course === 0)
-      .sort((a, b) => a.u0 - b.u0)
-    const inner = collectWallBlockSpans(floor, along)
-      .filter((s) => s.leaf === 1 && s.course === 0)
-      .sort((a, b) => a.u0 - b.u0)
-    expect(outer[0].u0).toBeCloseTo(-0.078, 3)
-    expect(inner[0].u0).toBeCloseTo(0.078, 3)
+    const endAt = (wall: Wall, leaf: number, course: number) =>
+      Math.min(
+        ...collectWallBlockSpans(floor, wall)
+          .filter((s) => s.leaf === leaf && s.course === course)
+          .map((s) => s.u0),
+      )
+    expect(endAt(along, 0, 0)).toBeCloseTo(-OUTER_FACE, 3)
+    expect(endAt(along, 1, 0)).toBeCloseTo(OUTER_FACE, 3)
+    expect(endAt(along, 0, 1)).toBeCloseTo(-LEAF_BUTT, 3)
+    expect(endAt(along, 1, 1)).toBeCloseTo(LEAF_BUTT, 3)
+    const y = BLOCK_HEIGHT / 2
+    expect(wallSolidContains(floor, along, -0.1, y, 0)).toBe(true)
+    expect(wallSolidContains(floor, up, -0.1, y, 1)).toBe(false)
+    expect(wallSolidContains(floor, up, -0.1, y + BLOCK_HEIGHT, 1)).toBe(true)
+    expect(wallSolidContains(floor, along, -0.15, y, 0)).toBe(false)
+    expect(wallSolidContains(floor, up, -0.15, y + BLOCK_HEIGHT, 1)).toBe(false)
   })
 
   it('miters an end-to-start corner so the outer leaf extends and the inner leaf shortens', () => {
@@ -245,14 +258,16 @@ describe('buildWallGeometries', () => {
       walls: [south, east],
       roomFinishes: {},
     }
-    const endU = (leaf: number) =>
+    const endU = (leaf: number, course: number) =>
       Math.max(
         ...collectWallBlockSpans(floor, south)
-          .filter((s) => s.leaf === leaf && s.course === 0)
+          .filter((s) => s.leaf === leaf && s.course === course)
           .map((s) => s.u1),
       )
-    expect(endU(0)).toBeCloseTo(4.078, 3)
-    expect(endU(1)).toBeCloseTo(3.922, 3)
+    expect(endU(0, 0)).toBeCloseTo(4 + LEAF_BUTT, 3)
+    expect(endU(1, 0)).toBeCloseTo(4 - LEAF_BUTT, 3)
+    expect(endU(0, 1)).toBeCloseTo(4 + OUTER_FACE, 3)
+    expect(endU(1, 1)).toBeCloseTo(4 - OUTER_FACE, 3)
   })
 
   it('carries the outer leaf up to the next storey and leaves the inner leaf at the wall head', () => {

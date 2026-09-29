@@ -79,7 +79,7 @@ type CutGroup = {
 
 function countBricks(
   spans: BlockSpan[],
-  leafRanges: { uMin: number, uMax: number }[],
+  rangeAt: (leaf: number, course: number) => { uMin: number, uMax: number },
 ): { wholeBricks: number, cutBricks: number } {
   let wholeBricks = 0
   const groups = new Map<string, CutGroup>()
@@ -112,7 +112,7 @@ function countBricks(
   let cutBricks = 0
 
   for (const group of groups.values()) {
-    const range = leafRanges[group.leaf]
+    const range = rangeAt(group.leaf, group.course)
     const natural = moduleNaturalLength(
       group.course,
       group.module,
@@ -158,9 +158,10 @@ export function scheduleWall(
   }
 
   const signs = leafSigns(wall.skin)
-  const leafRanges = signs.map((sign) => wallMeshURange(floor, wall, sign))
   const spans = collectWallBlockSpans(floor, wall, bottomSamples)
-  const { wholeBricks, cutBricks } = countBricks(spans, leafRanges)
+  const { wholeBricks, cutBricks } = countBricks(spans, (leaf, course) =>
+    wallMeshURange(floor, wall, signs[leaf], course),
+  )
 
   const openings = { window: 0, door: 0, external: 0, internal: 0, garage: 0, portal: 0 }
   for (const opening of wall.openings) tallyOpening(openings, opening.kind)

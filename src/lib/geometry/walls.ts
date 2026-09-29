@@ -304,12 +304,28 @@ function wallsAtCorner(floor: Floor, cornerId: string, exceptWallId: string): Wa
   )
 }
 
+type LeafFace = 'center' | 'far' | 'near'
+
+function bondFace(wallId: string, otherId: string, course: number): LeafFace {
+  const through = course % 2 === 0 ? wallId < otherId : wallId > otherId
+  return through ? 'far' : 'near'
+}
+
+function faceOffset(skin: Wall['skin'], mateSide: number, face: LeafFace): number {
+  if (skin === 'single' || face === 'center') {
+    return skin === 'single' ? 0 : mateSide * LEAF_OFFSET
+  }
+  const half = face === 'far' ? BLOCK_THICKNESS / 2 : -BLOCK_THICKNESS / 2
+  return mateSide * (LEAF_OFFSET + half)
+}
+
 function miterUAtCorner(
   floor: Floor,
   wall: Wall,
   frame: WallFrame,
   cornerId: string,
   leafSign: number,
+  faceFor: (otherId: string) => LeafFace,
 ): number | null {
   const cornerIsStart = wall.startCornerId === cornerId
   const cornerIsEnd = wall.endCornerId === cornerId
@@ -322,7 +338,13 @@ function miterUAtCorner(
     x: corner.x + side * LEAF_OFFSET * selfLeft.x,
     z: corner.z + side * LEAF_OFFSET * selfLeft.z,
   }
-  let best: { dist: number; u: number } | null = null
+  let best: {
+    dist: number
+    other: Wall
+    otherAway: Vec2
+    otherLeft: Vec2
+    mateSide: number
+  } | null = null
   for (const other of wallsAtCorner(floor, cornerId, wall.id)) {
     if (other.skin === 'logical') continue
     const otherFrame = buildFrame(floor, other)
@@ -332,7 +354,7 @@ function miterUAtCorner(
     const cross = away.x * otherAway.z - away.z * otherAway.x
     if (Math.abs(cross) < 1e-8) continue
     const mateSide = -side
-    const mateOffset = other.skin === 'single' ? 0 : mateSide * LEAF_OFFSET
+    const mateOffset = faceOffset(other.skin, mateSide, 'center')
     const otherOrigin = {
       x: corner.x + mateOffset * otherLeft.x,
       z: corner.z + mateOffset * otherLeft.z,
@@ -343,25 +365,48 @@ function miterUAtCorner(
     const pz = selfOrigin.z + hit.t1 * away.z
     const dist = Math.hypot(px - corner.x, pz - corner.z)
     if (dist > MITER_MAX_CORNER_DIST) continue
-    const u = cornerIsStart ? hit.t1 : frame.length - hit.t1
-    if (!best || dist < best.dist) best = { dist, u }
+    if (!best || dist < best.dist) best = { dist, other, otherAway, otherLeft, mateSide }
   }
-  return best?.u ?? null
+  if (!best) return null
+  const mateOffset = faceOffset(best.other.skin, best.mateSide, faceFor(best.other.id))
+  const otherOrigin = {
+    x: corner.x + mateOffset * best.otherLeft.x,
+    z: corner.z + mateOffset * best.otherLeft.z,
+  }
+  const hit = intersectLines(selfOrigin, away, otherOrigin, best.otherAway)
+  if (!hit) return null
+  const px = selfOrigin.x + hit.t1 * away.x
+  const pz = selfOrigin.z + hit.t1 * away.z
+  if (Math.hypot(px - corner.x, pz - corner.z) > MITER_MAX_CORNER_DIST) return null
+  return cornerIsStart ? hit.t1 : frame.length - hit.t1
 }
 
 export function wallMeshURange(
   floor: Floor,
   wall: Wall,
   leafSign: number,
+  course?: number,
 ): { uMin: number; uMax: number } {
   const frame = buildFrame(floor, wall)
-  let uMin = 0
-  let uMax = frame.length
-  const startMiter = miterUAtCorner(floor, wall, frame, wall.startCornerId, leafSign)
-  if (startMiter !== null) uMin = startMiter
-  const endMiter = miterUAtCorner(floor, wall, frame, wall.endCornerId, leafSign)
-  if (endMiter !== null) uMax = endMiter
-  return { uMin, uMax }
+  const at = (cornerId: string, faceFor: (otherId: string) => LeafFace) =>
+    miterUAtCorner(floor, wall, frame, cornerId, leafSign, faceFor)
+  const resolve = (cornerId: string, pick: 'min' | 'max') => {
+    if (leafSign === 0) {
+      return at(cornerId, () => 'center')
+    }
+    if (course !== undefined) {
+      return at(cornerId, (otherId) => bondFace(wall.id, otherId, course))
+    }
+    const values = [at(cornerId, () => 'far'), at(cornerId, () => 'near')].filter(
+      (value): value is number => value !== null,
+    )
+    if (values.length === 0) return null
+    return pick === 'min' ? Math.min(...values) : Math.max(...values)
+  }
+  return {
+    uMin: resolve(wall.startCornerId, 'min') ?? 0,
+    uMax: resolve(wall.endCornerId, 'max') ?? frame.length,
+  }
 }
 
 function roomSideSign(floor: Floor, wall: Wall): number | null {
@@ -423,13 +468,13 @@ export function collectWallBlockSpans(
       : new Set<number>()
   for (let leaf = 0; leaf < signs.length; leaf++) {
     const leafSign = signs[leaf]
-    const { uMin, uMax } = wallMeshURange(floor, wall, leafSign)
-    if (uMax - uMin <= 1e-9) {
-      continue
-    }
     const head = facadeHead === undefined ? undefined : Math.ceil((facadeHead - 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
     const courseLimit = facing.has(leaf) && head !== undefined ? Math.ceil((head - 1e-9) / BLOCK_HEIGHT) : COURSE_COUNT
     for (let course = 0; course < courseLimit; course++) {
+      const { uMin, uMax } = wallMeshURange(floor, wall, leafSign, course)
+      if (uMax - uMin <= 1e-9) {
+        continue
+      }
       let solids = [{ u0: uMin, u1: uMax }]
       for (const opening of wall.openings) {
         const gap = openingGapU(opening)

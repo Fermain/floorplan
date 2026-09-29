@@ -137,6 +137,8 @@ describe('exportFloorSvg', () => {
     const polygons = solidWallPolygons(d, fid)
     expect(pointInAnyPolygon([10.05, 3.92], polygons)).toBe(true)
     expect(pointInAnyPolygon([9.9, 4.08], polygons)).toBe(true)
+    expect(pointInAnyPolygon([10.1, 3.9], polygons)).toBe(true)
+    expect(pointInAnyPolygon([10.2, 3.8], polygons)).toBe(false)
   })
 
   it('scale bar spans one metre in user units', () => {
