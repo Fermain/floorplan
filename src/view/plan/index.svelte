@@ -62,12 +62,15 @@
   let {
     selectedWallId = $bindable<string | null>(null),
     activeFloorId = $bindable(''),
+    onStatus,
   }: {
     selectedWallId?: string | null
     activeFloorId?: string
+    onStatus?: (status: { text: string; error: boolean }) => void
   } = $props()
 
   let tool = $state<Tool>('select')
+  let toolBeforeRect = $state<Exclude<Tool, 'draw-rect'>>('select')
   let pendingDraw = $state<PendingDraw | null>(null)
   let chainOriginId = $state<string | null>(null)
   let errorMessage = $state<string | null>(null)
@@ -380,6 +383,25 @@
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     if (!plan) return
 
+    if (event.shiftKey && !pendingDraw) {
+      const corner = nearestCorner(activeFloor.corners, plan.x, plan.z, NODE_HIT_M)
+      if (corner) {
+        armRectangle()
+        pendingDraw = { startCornerId: corner.id }
+        pointerPlan = plan
+        errorMessage = null
+        return
+      }
+      const below = nearestNode(belowNodes(), plan.x, plan.z, NODE_HIT_M)
+      if (below) {
+        armRectangle()
+        pendingDraw = { startPoint: { x: below.x, z: below.z } }
+        pointerPlan = plan
+        errorMessage = null
+        return
+      }
+    }
+
     if (tool === 'select') {
       if (beginNodeDrag(activeFloor, plan, event)) return
       const id = pickWall(activeFloor, plan.x, plan.z)
@@ -411,7 +433,7 @@
   }
 
   function beginDraw(floor: Floor, plan: { x: number; z: number }) {
-    const hit = nearestCorner(floor.corners, plan.x, plan.z)
+    const hit = nearestCorner(floor.corners, plan.x, plan.z, NODE_HIT_M)
     const below = hit ? undefined : nearestNode(belowNodes(), plan.x, plan.z)
     const wallHit = hit || below ? undefined : nearestWallPoint(floor.corners, floor.walls, plan.x, plan.z)
     if (!hit && !below && !wallHit && activeStoreyIndex > 0 && !floorIdForPoint(plan.x, plan.z)) {
@@ -604,6 +626,37 @@
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  })
+
+  function typingTarget(event: Event): boolean {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return false
+    const tag = target.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable
+  }
+
+  function armRectangle() {
+    if (tool === 'draw-rect') return
+    toolBeforeRect = tool
+    tool = 'draw-rect'
+    moveDrag = null
+    rotateDrag = null
+  }
+
+  function toggleRectangle() {
+    if (tool === 'draw-rect') tool = toolBeforeRect
+    else armRectangle()
+  }
+
+  function onShiftKey(event: KeyboardEvent) {
+    if (event.key !== 'Shift' || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
+    if (typingTarget(event)) return
+    toggleRectangle()
+  }
+
+  $effect(() => {
+    window.addEventListener('keydown', onShiftKey)
+    return () => window.removeEventListener('keydown', onShiftKey)
   })
 
   function setTool(next: Tool) {
@@ -897,7 +950,7 @@
       activeFloor.corners,
       pointerPlan.x,
       pointerPlan.z,
-      CORNER_SNAP_M,
+      NODE_HIT_M,
       pendingDraw?.startCornerId,
     )
   })
@@ -956,11 +1009,11 @@
       }
       return moveDrag
         ? 'Release to place the building.'
-        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building.'
+        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building. Shift draws a rectangle.'
     }
     if (tool === 'draw-rect') {
       if (!pendingDraw) {
-        return 'Click inside the plot to start a rectangle, then click the opposite corner. Right-click or Escape stops.'
+        return 'Click inside the plot to start a rectangle, then click the opposite corner. Shift leaves the rectangle. Right-click or Escape stops.'
       }
       if (!rectanglePreview) return 'Click the opposite corner. Right-click or Escape stops.'
       const size = `${rectanglePreview.width.toFixed(2)} m by ${rectanglePreview.depth.toFixed(2)} m`
@@ -978,7 +1031,9 @@
       return `Click to place the rectangle, ${size}.${snap} Right-click or Escape stops.`
     }
     if (tool !== 'draw-double' && tool !== 'draw-logical') return ''
-    if (!previewLine) return 'Click inside the plot to start a wall, then click each corner. Right-click or Escape stops.'
+    if (!previewLine) {
+      return 'Click inside the plot to start a wall, then click each corner. Shift draws a rectangle. Right-click or Escape stops.'
+    }
     if (previewLine.length <= 0.05) return 'Click the next corner. Right-click or Escape stops.'
     const angle = previewLine.angle ? `, ${previewLine.angle.label}` : ''
     if (!previewLine.allowed) return `That end leaves the plot. ${previewLine.length.toFixed(2)} m${angle}`
@@ -995,7 +1050,7 @@
           : previewLine.minTurn
             ? ` Minimum angle is ${MIN_TURN_DEG}°.`
             : ''
-    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Right-click or Escape stops.`
+    return `Click to place the end, ${previewLine.length.toFixed(2)} m${angle}.${snap} Shift turns it into a rectangle. Right-click or Escape stops.`
   })
 
   const planHint = $derived.by(() => {
@@ -1013,6 +1068,11 @@
     return main ? `${main} ${tail}` : tail
   })
 
+  $effect(() => {
+    onStatus?.({ text: errorMessage ?? planHint, error: errorMessage !== null })
+    return () => onStatus?.({ text: '', error: false })
+  })
+
   function roomFill(finishId: string): string {
     if (finishId === 'timber') return 'rgba(139, 90, 43, 0.12)'
     return 'rgba(120, 120, 120, 0.08)'
@@ -1022,61 +1082,31 @@
 <div class="root" oncontextmenu={onPlanContextMenu}>
   <div class="bar">
     <div class="tools">
-      <button type="button" class:active={tool === 'draw-double'} onclick={() => setTool('draw-double')}>
-        Draw wall
-      </button>
-      <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
-        Logical wall
-      </button>
-      <button type="button" class:active={tool === 'draw-rect'} onclick={() => setTool('draw-rect')}>
-        Rectangle
-      </button>
       <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
+      <button type="button" class:active={tool === 'draw-double'} onclick={() => setTool('draw-double')}>Wall</button>
+      <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
+        Logical
+      </button>
     </div>
-    <div class="floors">
-      <button type="button" disabled={!storeyTarget || atStoreyLimit} onclick={addStorey}>Add storey</button>
-      {#if storeyUnitId}
-        <button type="button" onclick={removeStorey}>Remove storey</button>
-      {/if}
-      {#if roofFloor}
-        {#if roofFloor.roof}
-          <label class="roof">
-            Pitch
-            <input
-              type="number"
-              min="1"
-              max="89"
-              step="1"
-              value={roofFloor.roof.pitchDeg}
-              onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
-            />
-            °
-          </label>
-          <label class="roof">
-            Eaves
-            <input
-              type="number"
-              min="0"
-              step="10"
-              value={Math.round(roofFloor.roof.eaves * 1000)}
-              onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
-            />
-            mm
-          </label>
-          <button type="button" onclick={removeRoof}>Remove roof</button>
-        {:else}
-          <button type="button" onclick={addRoof}>Add roof</button>
-        {/if}
-      {/if}
-    </div>
-    {#if errorMessage}
-      <p class="error">{errorMessage}</p>
-    {:else if planHint}
-      <p class="hint">{planHint}</p>
-    {/if}
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">
+      <button
+        type="button"
+        class="action"
+        disabled={!storeyTarget || atStoreyLimit}
+        title={!storeyTarget
+          ? 'Select a closed building first.'
+          : atStoreyLimit
+            ? 'Four storeys is the limit.'
+            : 'Lay a floor on the selected building.'}
+        onclick={addStorey}
+      >
+        Add storey
+      </button>
+      {#if storeyUnitId}
+        <button type="button" class="action" onclick={removeStorey}>Remove storey</button>
+      {/if}
       {#each [...storeyIndexes].reverse() as index (index)}
         <button type="button" class:active={index === activeStoreyIndex} onclick={() => selectStorey(index)}>
           {#if floors.some((floor) => floor.index === index && floor.roof)}
@@ -1538,6 +1568,38 @@
       {/if}
     {/if}
   </svg>
+    {#if roofFloor}
+      <aside class="inspector" aria-label="Roof">
+        {#if roofFloor.roof}
+          <label>
+            Pitch
+            <input
+              type="number"
+              min="1"
+              max="89"
+              step="1"
+              value={roofFloor.roof.pitchDeg}
+              onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
+            />
+            °
+          </label>
+          <label>
+            Eaves
+            <input
+              type="number"
+              min="0"
+              step="10"
+              value={Math.round(roofFloor.roof.eaves * 1000)}
+              onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
+            />
+            mm
+          </label>
+          <button type="button" onclick={removeRoof}>Remove roof</button>
+        {:else}
+          <button type="button" onclick={addRoof}>Add roof</button>
+        {/if}
+      </aside>
+    {/if}
   </div>
 </div>
 
@@ -1563,24 +1625,11 @@
     font-size: 0.875rem;
   }
 
-  .tools,
-  .floors {
+  .tools {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.35rem;
-  }
-
-  .roof {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .roof input {
-    width: 4.5rem;
-    font: inherit;
-    padding: 0.2rem 0.35rem;
   }
 
   button {
@@ -1601,20 +1650,6 @@
     opacity: 0.45;
   }
 
-  .error,
-  .hint {
-    margin: 0;
-    flex: 1 1 100%;
-  }
-
-  .error {
-    color: #b91c1c;
-  }
-
-  .hint {
-    color: #3f3f46;
-  }
-
   .stage {
     display: flex;
     flex: 1;
@@ -1626,7 +1661,7 @@
     flex-direction: column;
     justify-content: flex-end;
     gap: 0.35rem;
-    width: 5.75rem;
+    width: 6.5rem;
     flex-shrink: 0;
     padding: 0.75rem 0.5rem;
     background: #fff;
@@ -1639,6 +1674,11 @@
     align-items: center;
     gap: 0.2rem;
     width: 100%;
+  }
+
+  .key .action {
+    font-size: 0.75rem;
+    line-height: 1.2;
   }
 
   .key-roof {
@@ -1656,6 +1696,30 @@
     min-height: 0;
     touch-action: none;
     cursor: crosshair;
+  }
+
+  .inspector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    width: 9.5rem;
+    flex-shrink: 0;
+    padding: 0.75rem;
+    background: #fff;
+    border-left: 1px solid #e4e4e7;
+    font-size: 0.875rem;
+  }
+
+  .inspector label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .inspector input {
+    width: 100%;
+    font: inherit;
+    padding: 0.2rem 0.35rem;
   }
 
   .rotate {

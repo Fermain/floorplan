@@ -1,21 +1,31 @@
 <script lang="ts">
-  import { exportFloorSvg } from '../../lib/export/svg'
-  import { loadHeightfield, loadPlot } from '../../lib/plot/load'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationView from '../elevation/index.svelte'
   import PlanView from '../plan/index.svelte'
   import ReviewView from '../review/index.svelte'
-  import Projects from './Projects.svelte'
+  import FileMenu from './FileMenu.svelte'
 
-  type Mode = 'plan' | 'elevation' | 'review'
+  type Mode = 'plan' | 'focus' | 'review'
+  type Status = { text: string; error: boolean }
 
   let mode = $state<Mode>('plan')
   let selectedWallId = $state<string | null>(null)
   let selectedOpeningId = $state<string | null>(null)
   let activeFloorId = $state('')
   let importError = $state('')
-  let importOpen = $state(false)
-  let importMenuEl = $state<HTMLDivElement | undefined>(undefined)
+  let viewStatus = $state<Status>({ text: '', error: false })
+  let focusHint = $state('')
+
+  const statusText = $derived(focusHint || importError || viewStatus.text)
+  const statusError = $derived(focusHint ? false : Boolean(importError) || viewStatus.error)
+
+  $effect(() => {
+    if (selectedWallId) focusHint = ''
+  })
+
+  function setViewStatus(status: Status) {
+    viewStatus = status
+  }
 
   $effect(() => {
     const doc = documentStore.document
@@ -25,7 +35,7 @@
     if (selectedWallId && !wall) {
       selectedWallId = null
       selectedOpeningId = null
-      if (mode === 'elevation') mode = 'plan'
+      if (mode === 'focus') mode = 'plan'
       return
     }
     if (selectedOpeningId && wall && !wall.openings.some((o) => o.id === selectedOpeningId)) {
@@ -37,14 +47,7 @@
     const currentMode = mode
     const wallId = selectedWallId
     const openingId = selectedOpeningId
-    const menuOpen = importOpen
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && menuOpen) {
-        event.preventDefault()
-        event.stopImmediatePropagation()
-        importOpen = false
-        return
-      }
       const target = event.target
       if (target instanceof HTMLElement) {
         const tag = target.tagName
@@ -62,13 +65,13 @@
         documentStore.redo()
         return
       }
-      if (event.key === 'Escape' && currentMode === 'elevation') {
+      if (event.key === 'Escape' && currentMode === 'focus') {
         event.preventDefault()
         mode = 'plan'
         return
       }
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
-      if (currentMode === 'elevation' && wallId && openingId) {
+      if (currentMode === 'focus' && wallId && openingId) {
         const floorId = floorContaining(wallId)
         if (!floorId) return
         event.preventDefault()
@@ -92,155 +95,55 @@
     )?.id
   }
 
-  function downloadSvg() {
-    const floorId = activeFloorId || documentStore.document.building.floors[0]?.id
-    if (!floorId) return
-    const svg = exportFloorSvg(documentStore.document, floorId)
-    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'floor.svg'
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  $effect(() => {
-    if (!importOpen) return
-    const menu = importMenuEl
-    const onPointer = (event: PointerEvent) => {
-      const target = event.target
-      if (menu && target instanceof Node && menu.contains(target)) return
-      importOpen = false
-      if (target instanceof Element && target.closest('header')) return
-      event.stopPropagation()
-    }
-    window.addEventListener('pointerdown', onPointer, true)
-    return () => window.removeEventListener('pointerdown', onPointer, true)
-  })
-
-  function showElevation() {
+  function showFocus() {
     if (!selectedWallId) return
-    mode = 'elevation'
+    mode = 'focus'
   }
 
   function selectWallFromReview(wallId: string) {
     selectedWallId = wallId
     selectedOpeningId = null
-    mode = 'elevation'
-  }
-
-  function explainImport(reason: string): string {
-    if (reason === 'existing walls leave the new plot') {
-      return 'Those walls sit outside the new plot. Remove them, or import a ring that contains them.'
-    }
-    return reason
-  }
-
-  async function readFile(event: Event): Promise<string | undefined> {
-    const input = event.currentTarget
-    if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
-    const text = await input.files[0].text()
-    input.value = ''
-    return text
-  }
-
-  async function onPlotFile(event: Event) {
-    const text = await readFile(event)
-    if (!text) return
-    try {
-      const result = documentStore.replacePlot(loadPlot(text))
-      importError = result.ok ? '' : explainImport(result.reason)
-    } catch (err) {
-      importError = err instanceof Error ? err.message : 'Could not read the plot.'
-    }
-  }
-
-  async function onHeightFile(event: Event) {
-    const text = await readFile(event)
-    if (!text) return
-    try {
-      const result = documentStore.replaceHeightfield(loadHeightfield(text))
-      importError = result.ok ? '' : explainImport(result.reason)
-    } catch (err) {
-      importError = err instanceof Error ? err.message : 'Could not read the heightfield.'
-    }
+    mode = 'focus'
   }
 </script>
 
 <div class="shell">
   <header>
-    <nav>
+    <FileMenu {activeFloorId} onError={(message) => (importError = message)} />
+    <nav class="modes">
       <button type="button" class:active={mode === 'plan'} onclick={() => (mode = 'plan')}>Plan</button>
-      <button type="button" class:active={mode === 'elevation'} disabled={!selectedWallId} onclick={showElevation}>
-        Elevation
+      <button
+        type="button"
+        class:active={mode === 'focus'}
+        class:unavailable={!selectedWallId}
+        aria-disabled={!selectedWallId}
+        title={selectedWallId ? 'Focus' : 'Select a wall'}
+        onpointerenter={() => {
+          if (!selectedWallId) focusHint = 'Select a wall to open Focus.'
+        }}
+        onpointerleave={() => (focusHint = '')}
+        onclick={showFocus}
+      >
+        Focus
       </button>
       <button type="button" class:active={mode === 'review'} onclick={() => (mode = 'review')}>Review</button>
-      <div class="menu" bind:this={importMenuEl}>
-        <button
-          type="button"
-          class:active={importOpen}
-          aria-expanded={importOpen}
-          aria-haspopup="menu"
-          onclick={() => (importOpen = !importOpen)}
-        >
-          Import
-        </button>
-        {#if importOpen}
-          <div class="menu-panel" role="menu">
-            <label class="file">
-              Import plot
-              <input
-                type="file"
-                accept=".geojson,.json,.kml,application/geo+json"
-                onchange={(event) => {
-                  importOpen = false
-                  onPlotFile(event)
-                }}
-              />
-            </label>
-            <label class="file">
-              Import height
-              <input
-                type="file"
-                accept=".json,application/json"
-                onchange={(event) => {
-                  importOpen = false
-                  onHeightFile(event)
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              role="menuitem"
-              onclick={() => {
-                importOpen = false
-                downloadSvg()
-              }}
-            >
-              Export SVG
-            </button>
-        </div>
-      {/if}
-      </div>
-      <Projects />
     </nav>
-    {#if importError}
-      <p class="error">{importError}</p>
-    {/if}
   </header>
   <div class="stage">
     {#if mode === 'plan'}
-      <PlanView bind:selectedWallId bind:activeFloorId />
-    {:else if mode === 'elevation' && selectedWallId}
+      <PlanView bind:selectedWallId bind:activeFloorId onStatus={setViewStatus} />
+    {:else if mode === 'focus' && selectedWallId}
       <ElevationView
         wallId={selectedWallId}
         {selectedOpeningId}
         onSelectOpening={(id) => (selectedOpeningId = id)}
+        onStatus={setViewStatus}
       />
     {:else if mode === 'review'}
-      <ReviewView onSelectWall={selectWallFromReview} />
+      <ReviewView onSelectWall={selectWallFromReview} onStatus={setViewStatus} />
     {/if}
   </div>
+  <p class="status" class:error={statusError}>{statusText}</p>
 </div>
 
 <style>
@@ -252,10 +155,9 @@
   }
 
   header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
     padding: 0.45rem 0.75rem;
     border-bottom: 1px solid #e4e4e7;
     background: #fff;
@@ -264,44 +166,10 @@
     z-index: 2;
   }
 
-  nav {
+  .modes {
     display: flex;
     gap: 0.35rem;
-  }
-
-  .menu {
-    position: relative;
-    margin-left: 0.65rem;
-  }
-
-  .menu-panel {
-    position: absolute;
-    top: calc(100% + 0.35rem);
-    left: 0;
-    z-index: 3;
-    display: flex;
-    flex-direction: column;
-    min-width: 11rem;
-    padding: 0.25rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-  }
-
-  .menu-panel button,
-  .menu-panel label.file {
-    display: block;
-    width: 100%;
-    border: none;
-    border-radius: 3px;
-    background: transparent;
-    text-align: left;
-  }
-
-  .menu-panel button:hover,
-  .menu-panel label.file:hover {
-    background: #f4f4f5;
+    justify-self: center;
   }
 
   button {
@@ -318,30 +186,28 @@
     background: #eff6ff;
   }
 
-  button:disabled {
+  button:disabled,
+  button.unavailable {
     color: #a1a1aa;
     cursor: default;
-  }
-
-  label.file {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  label.file input {
-    display: none;
-  }
-
-  .error {
-    margin: 0;
-    color: #b91c1c;
   }
 
   .stage {
     flex: 1;
     min-height: 0;
+  }
+
+  .status {
+    margin: 0;
+    min-height: 1.25rem;
+    padding: 0.4rem 0.75rem;
+    border-top: 1px solid #e4e4e7;
+    background: #fff;
+    color: #3f3f46;
+    font: 0.8125rem system-ui, sans-serif;
+  }
+
+  .status.error {
+    color: #b91c1c;
   }
 </style>

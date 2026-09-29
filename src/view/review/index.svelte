@@ -57,9 +57,14 @@
 
   interface Props {
     onSelectWall?: (wallId: string) => void
+    onStatus?: (status: { text: string; error: boolean }) => void
   }
 
-  let { onSelectWall }: Props = $props()
+  let { onSelectWall, onStatus }: Props = $props()
+
+  $effect(() => {
+    onStatus?.({ text: '', error: false })
+  })
 
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
   const summerLabel = $derived(solsticeLabel('summer'))

@@ -29,9 +29,10 @@ import {
     wallId?: string
     selectedOpeningId?: string | null
     onSelectOpening?: (id: string | null) => void
+    onStatus?: (status: { text: string; error: boolean }) => void
   }
 
-  let { wallId, selectedOpeningId = null, onSelectOpening }: Props = $props()
+  let { wallId, selectedOpeningId = null, onSelectOpening, onStatus }: Props = $props()
 
   let locked = $state(true)
   let insertTool = $state<OpeningKind>('window')
@@ -321,6 +322,17 @@ import {
     { kind: 'portal', label: 'Portal' },
   ]
 
+  $effect(() => {
+    const text =
+      !wall || !frame
+        ? ''
+        : !locked
+          ? 'Perspective. The fixed view is where this wall is edited.'
+          : insertHint(insertTool)
+    onStatus?.({ text, error: false })
+    return () => onStatus?.({ text: '', error: false })
+  })
+
   function insertHint(kind: OpeningKind): string {
     if (kind === 'window') return 'Click the wall to place a window. Drag an opening to move it. Remove deletes the selected one.'
     if (kind === 'garage') return 'Click the wall to place a garage door. Drag a door to move it. Remove deletes the selected one.'
@@ -394,9 +406,6 @@ import {
     <p class="empty">No wall selected</p>
   {:else}
     <div class="bar">
-      <button type="button" onclick={() => (locked = !locked)}>
-        {locked ? 'Perspective' : 'Fixed view'}
-      </button>
       <div class="menu" bind:this={menuEl}>
         <button
           type="button"
@@ -461,13 +470,6 @@ import {
       {#if editingOpening}
         <button type="button" onclick={removeSelected}>Remove</button>
       {/if}
-      <span class="hint">
-        {#if !locked}
-          Perspective. The fixed view is where this wall is edited.
-        {:else}
-          {insertHint(insertTool)}
-        {/if}
-      </span>
       {#if scheduleLine}
         <span class="schedule">{scheduleLine}</span>
       {/if}
@@ -481,15 +483,19 @@ import {
         </span>
       {/if}
     </div>
-    <div
-      class="viewport"
-      class:elevation={locked}
-      onpointerdown={onViewportPointerDown}
-      onpointermove={onViewportPointerMove}
-      onpointerup={onViewportPointerUp}
-      onpointercancel={onViewportPointerUp}
-      role="presentation"
-    >
+    <div class="scene">
+      <button type="button" class="lock" onclick={() => (locked = !locked)}>
+        {locked ? 'Perspective' : 'Fixed view'}
+      </button>
+      <div
+        class="viewport"
+        class:elevation={locked}
+        onpointerdown={onViewportPointerDown}
+        onpointermove={onViewportPointerMove}
+        onpointerup={onViewportPointerUp}
+        onpointercancel={onViewportPointerUp}
+        role="presentation"
+      >
       <ElevationScene
         {locked}
         {frame}
@@ -502,6 +508,7 @@ import {
         {orthoCamera}
         {onOrthoCamera}
       />
+      </div>
     </div>
   {/if}
 </div>
@@ -598,7 +605,6 @@ import {
   }
 
   .note,
-  .hint,
   .schedule {
     color: #3f3f46;
   }
@@ -606,6 +612,27 @@ import {
   .schedule,
   .readout {
     font-variant-numeric: tabular-nums;
+  }
+
+  .scene {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .lock {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 1;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
+    font: 0.875rem system-ui, sans-serif;
+    cursor: pointer;
   }
 
   .viewport {
