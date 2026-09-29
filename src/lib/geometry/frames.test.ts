@@ -36,14 +36,14 @@ describe('openingFrameLayout', () => {
   it('makes the glass smaller than the frame inner opening', () => {
     const layout = openingFrameLayout(opening)
     expect(layout).not.toBeNull()
-    expect(layout!.glass.u0).toBeCloseTo(layout!.inner.u0 + GLASS_INSET, 5)
-    expect(layout!.glass.u1).toBeCloseTo(layout!.inner.u1 - GLASS_INSET, 5)
-    expect(layout!.glass.y0).toBeCloseTo(layout!.inner.y0 + GLASS_INSET, 5)
-    expect(layout!.glass.y1).toBeCloseTo(layout!.inner.y1 - GLASS_INSET, 5)
-    expect(layout!.glass.u0).toBeGreaterThan(layout!.inner.u0)
-    expect(layout!.glass.u1).toBeLessThan(layout!.inner.u1)
-    expect(layout!.glass.y0).toBeGreaterThan(layout!.inner.y0)
-    expect(layout!.glass.y1).toBeLessThan(layout!.inner.y1)
+    expect(layout!.glass[0].u0).toBeCloseTo(layout!.inner.u0 + GLASS_INSET, 5)
+    expect(layout!.glass[0].u1).toBeCloseTo(layout!.inner.u1 - GLASS_INSET, 5)
+    expect(layout!.glass[0].y0).toBeCloseTo(layout!.inner.y0 + GLASS_INSET, 5)
+    expect(layout!.glass[0].y1).toBeCloseTo(layout!.inner.y1 - GLASS_INSET, 5)
+    expect(layout!.glass[0].u0).toBeGreaterThan(layout!.inner.u0)
+    expect(layout!.glass[0].u1).toBeLessThan(layout!.inner.u1)
+    expect(layout!.glass[0].y0).toBeGreaterThan(layout!.inner.y0)
+    expect(layout!.glass[0].y1).toBeLessThan(layout!.inner.y1)
   })
 
   it('drops the outer bottom to the course joint below a window sill', () => {
@@ -53,7 +53,40 @@ describe('openingFrameLayout', () => {
     expect(sillJoint).toBeLessThan(opening.v)
     const lowest = Math.min(...layout!.members.map((m) => m.y0))
     expect(lowest).toBeCloseTo(sillJoint, 5)
-    expect(layout!.glass.y0).toBeGreaterThan(opening.v)
+    expect(layout!.glass[0].y0).toBeGreaterThan(opening.v)
+  })
+
+  it('splits a wide window sooner than a door of the same width', () => {
+    const wide = { u: 0, v: 0.9, width: 1.3, height: 1.2 }
+    const windowLayout = openingFrameLayout({ ...wide, kind: 'window' })
+    const doorLayout = openingFrameLayout({ ...wide, v: 0, height: 2.1, kind: 'door' })
+    expect(windowLayout).not.toBeNull()
+    expect(doorLayout).not.toBeNull()
+    expect(windowLayout!.glass).toHaveLength(2)
+    expect(doorLayout!.glass).toHaveLength(1)
+    expect(windowLayout!.members).toHaveLength(5)
+    const pillar = windowLayout!.members[4]
+    expect(pillar.u1 - pillar.u0).toBeCloseTo(FRAME_SECTION, 5)
+    expect(pillar.y0).toBeCloseTo(windowLayout!.inner.y0, 5)
+    expect(pillar.y1).toBeCloseTo(windowLayout!.inner.y1, 5)
+    expect(pillar.u0).toBeGreaterThan(windowLayout!.inner.u0)
+    expect(pillar.u1).toBeLessThan(windowLayout!.inner.u1)
+    expect(windowLayout!.glass[0].u1).toBeLessThanOrEqual(pillar.u0 + 1e-9)
+    expect(windowLayout!.glass[1].u0).toBeGreaterThanOrEqual(pillar.u1 - 1e-9)
+  })
+
+  it('turns a very wide door into three sliding panels', () => {
+    const door = { u: 0, v: 0, width: 2.6, height: 2.1, kind: 'door' as const }
+    const layout = openingFrameLayout(door)
+    expect(layout).not.toBeNull()
+    expect(layout!.glass).toHaveLength(3)
+    expect(layout!.members).toHaveLength(6)
+    const pillars = layout!.members.slice(4)
+    expect(pillars[0].u1).toBeLessThanOrEqual(pillars[1].u0)
+    for (const pane of layout!.glass) {
+      expect(pane.u1 - pane.u0).toBeGreaterThan(0)
+      expect(pane.u1 - pane.u0).toBeLessThanOrEqual(1.2 + 1e-6)
+    }
   })
 
   it('does not grow a door rail below the floor', () => {
