@@ -20,6 +20,13 @@
     SURFACE_BED_TOP_ABOVE_DATUM_M,
     wallDatum,
   } from '../../lib/geometry/pad'
+  import {
+    buildOpeningFrameGeometry,
+    buildOpeningGlassGeometry,
+    FRAME_COLOUR,
+    GLASS_COLOUR,
+    GLASS_OPACITY,
+  } from '../../lib/geometry/frames'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -41,6 +48,8 @@
     datumY: number
     geoms: BufferGeometry[]
     lintel: BufferGeometry | null
+    frame: BufferGeometry | null
+    glass: BufferGeometry | null
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
 
@@ -109,13 +118,17 @@
         const samples = bottomSamplesForWall(floor, wall)
         const geoms = buildWallGeometries(floor, wall, samples)
         const lintel = buildLintelGeometry(floor, wall)
-        if (geoms.length === 0 && !lintel) continue
+        const frame = buildOpeningFrameGeometry(floor, wall, samples)
+        const glass = buildOpeningGlassGeometry(floor, wall, samples)
+        if (geoms.length === 0 && !lintel && !frame && !glass) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
           wallId: wall.id,
           datumY: floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0),
           geoms,
           lintel,
+          frame,
+          glass,
         })
       }
     }
@@ -132,6 +145,8 @@
       for (const wall of built) {
         for (const g of wall.geoms) g.dispose()
         wall.lintel?.dispose()
+        wall.frame?.dispose()
+        wall.glass?.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
     }
@@ -320,6 +335,22 @@
       {#if wall.lintel}
         <T.Mesh geometry={wall.lintel} castShadow receiveShadow>
           <T.MeshStandardMaterial color="#8a8680" />
+        </T.Mesh>
+      {/if}
+      {#if wall.frame}
+        <T.Mesh geometry={wall.frame} castShadow receiveShadow>
+          <T.MeshStandardMaterial color={FRAME_COLOUR} />
+        </T.Mesh>
+      {/if}
+      {#if wall.glass}
+        <T.Mesh geometry={wall.glass}>
+          <T.MeshStandardMaterial
+            color={GLASS_COLOUR}
+            transparent
+            opacity={GLASS_OPACITY}
+            depthWrite={false}
+            side={DoubleSide}
+          />
         </T.Mesh>
       {/if}
     </T.Group>

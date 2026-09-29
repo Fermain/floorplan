@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
+  import {
+    buildOpeningFrameGeometry,
+    buildOpeningGlassGeometry,
+  } from '../../lib/geometry/frames'
   import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU, windowWidthLimits } from '../../lib/model/openings'
@@ -132,15 +136,19 @@
     blocks: BufferGeometry[]
     courses: BufferGeometry[]
     lintel: BufferGeometry | null
+    frame: BufferGeometry | null
+    glass: BufferGeometry | null
   } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return { blocks: [], courses: [], lintel: null }
+      return { blocks: [], courses: [], lintel: null, frame: null, glass: null }
     }
     return {
       blocks: buildWallGeometries(floor, shown),
       courses: buildCourseFaceGeometries(floor, shown),
       lintel: buildLintelGeometry(floor, shown),
+      frame: buildOpeningFrameGeometry(floor, shown),
+      glass: buildOpeningGlassGeometry(floor, shown),
     }
   })
 
@@ -171,10 +179,14 @@
     const geoms = wallModel.blocks
     const courses = wallModel.courses
     const lintel = wallModel.lintel
+    const frameGeom = wallModel.frame
+    const glass = wallModel.glass
     return () => {
       for (const g of geoms) g.dispose()
       for (const g of courses) g.dispose()
       lintel?.dispose()
+      frameGeom?.dispose()
+      glass?.dispose()
     }
   })
 
@@ -436,6 +448,8 @@
         wallGeometries={wallModel.blocks}
         courseGeometries={wallModel.courses}
         lintelGeometry={wallModel.lintel}
+        frameGeometry={wallModel.frame}
+        glassGeometry={wallModel.glass}
         {orthoCamera}
         {onOrthoCamera}
       />

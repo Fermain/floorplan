@@ -2,6 +2,12 @@
   import { Canvas, T } from '@threlte/core'
   import { OrbitControls } from '@threlte/extras'
   import type { BufferGeometry, OrthographicCamera } from 'three'
+  import { DoubleSide } from 'three'
+  import {
+    FRAME_COLOUR,
+    GLASS_COLOUR,
+    GLASS_OPACITY,
+  } from '../../lib/geometry/frames'
   import ElevationResize from './ElevationResize.svelte'
   import type { WallElevationFrame } from './wallFrame'
   import { wallCenterWorld } from './wallFrame'
@@ -12,12 +18,23 @@
     wallGeometries: BufferGeometry[]
     courseGeometries: BufferGeometry[]
     lintelGeometry: BufferGeometry | null
+    frameGeometry: BufferGeometry | null
+    glassGeometry: BufferGeometry | null
     orthoCamera: OrthographicCamera | undefined
     onOrthoCamera: (camera: OrthographicCamera) => void
   }
 
-  let { locked, frame, wallGeometries, courseGeometries, lintelGeometry, orthoCamera, onOrthoCamera }: Props =
-    $props()
+  let {
+    locked,
+    frame,
+    wallGeometries,
+    courseGeometries,
+    lintelGeometry,
+    frameGeometry,
+    glassGeometry,
+    orthoCamera,
+    onOrthoCamera,
+  }: Props = $props()
 
   const center = $derived(wallCenterWorld(frame))
   const orbitTarget = $derived<[number, number, number]>([
@@ -78,6 +95,22 @@
   {#if lintelGeometry}
     <T.Mesh geometry={lintelGeometry}>
       <T.MeshStandardMaterial color="#8a8680" />
+    </T.Mesh>
+  {/if}
+  {#if frameGeometry}
+    <T.Mesh geometry={frameGeometry}>
+      <T.MeshStandardMaterial color={FRAME_COLOUR} />
+    </T.Mesh>
+  {/if}
+  {#if glassGeometry}
+    <T.Mesh geometry={glassGeometry}>
+      <T.MeshStandardMaterial
+        color={GLASS_COLOUR}
+        transparent
+        opacity={GLASS_OPACITY}
+        depthWrite={false}
+        side={DoubleSide}
+      />
     </T.Mesh>
   {/if}
 </Canvas>
