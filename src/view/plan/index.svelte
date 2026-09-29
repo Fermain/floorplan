@@ -52,7 +52,7 @@
 
   type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'select'
 
-  const PLOT_MARGIN_M = 1
+  const PLOT_MARGIN_M = 2.4
 
   type PendingDraw = {
     startCornerId?: string
@@ -63,10 +63,12 @@
     selectedWallId = $bindable<string | null>(null),
     activeFloorId = $bindable(''),
     onStatus,
+    onFocus,
   }: {
     selectedWallId?: string | null
     activeFloorId?: string
     onStatus?: (status: { text: string; error: boolean }) => void
+    onFocus?: (wallId: string) => void
   } = $props()
 
   let tool = $state<Tool>('select')
@@ -349,6 +351,23 @@
     chainOriginId = null
     pointerPlan = null
     errorMessage = null
+  }
+
+  function onSvgDoubleClick(event: MouseEvent) {
+    if (tool !== 'select' || event.button !== 0) return
+    const svg = svgEl
+    if (!svg || !activeFloor) return
+    const plan = clientToPlan(svg, event.clientX, event.clientY)
+    if (!plan) return
+    const id = pickWall(activeFloor, plan.x, plan.z)
+    if (!id) return
+    chooseSelection({ wallId: id })
+    onFocus?.(id)
+  }
+
+  function alignToCompass(event: PointerEvent) {
+    event.stopPropagation()
+    chooseSelection({})
   }
 
   function onPlanContextMenu(event: MouseEvent) {
@@ -987,12 +1006,22 @@
     }
     const outline = outlineReference
     if (outline) return gridFromSegment(outline.ax, outline.az, outline.bx, outline.bz, bounds)
-    if (selectedEdge === null) return []
-    const ring = plotRing
-    const a = ring[selectedEdge]
-    const b = ring[(selectedEdge + 1) % ring.length]
-    if (!a || !b) return []
-    return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
+    if (selectedEdge !== null) {
+      const ring = plotRing
+      const a = ring[selectedEdge]
+      const b = ring[(selectedEdge + 1) % ring.length]
+      if (a && b) return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
+    }
+    return gridFromSegment(0, 0, 0, 1, bounds)
+  })
+
+  const compassAligned = $derived(
+    selectedWallId === null && selectedOutline === null && selectedEdge === null,
+  )
+
+  const compassAt = $derived({
+    x: bounds.minX + 1.15,
+    z: bounds.maxZ - 1.15,
   })
 
   const snapTraces = $derived(
@@ -1009,7 +1038,7 @@
       }
       return moveDrag
         ? 'Release to place the building.'
-        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. Add storey lays a floor on the selected building. Shift draws a rectangle.'
+        : 'Drag a corner to move that building. Drag the rotate handle to turn it. Click a room to toggle timber finish. Click a dashed floor edge for a grid. The compass is north-south, and it is the default. Double-click a wall for Focus. Add storey lays a floor on the selected building. Shift draws a rectangle.'
     }
     if (tool === 'draw-rect') {
       if (!pendingDraw) {
@@ -1125,6 +1154,7 @@
     onpointermove={onSvgPointerMove}
     onpointerup={onSvgPointerUp}
     onpointercancel={onSvgPointerUp}
+    ondblclick={onSvgDoubleClick}
   >
     <defs>
       <clipPath id="plan-plot-clip">
@@ -1567,6 +1597,46 @@
         />
       {/if}
     {/if}
+    <g
+      class="compass"
+      transform={`translate(${compassAt.x} ${compassAt.z})`}
+      onpointerdown={alignToCompass}
+    >
+      <title>North-south</title>
+      <circle r="1.05" fill="transparent" />
+      <line
+        x1="-0.7"
+        y1="0"
+        x2="0.7"
+        y2="0"
+        stroke={compassAligned ? '#2563eb' : '#71717a'}
+        stroke-width="0.045"
+        stroke-linecap="round"
+      />
+      <line
+        x1="0"
+        y1="-0.7"
+        x2="0"
+        y2="0.7"
+        stroke={compassAligned ? '#2563eb' : '#71717a'}
+        stroke-width={compassAligned ? '0.08' : '0.05'}
+        stroke-linecap="round"
+      />
+      <polygon
+        points="0,0.98 -0.16,0.68 0.16,0.68"
+        fill={compassAligned ? '#2563eb' : '#71717a'}
+      />
+      <text
+        x="0"
+        y="1.35"
+        fill={compassAligned ? '#2563eb' : '#71717a'}
+        font-size="0.42"
+        text-anchor="middle"
+        dominant-baseline="middle"
+      >
+        N
+      </text>
+    </g>
   </svg>
     {#if roofFloor}
       <aside class="inspector" aria-label="Roof">
@@ -1724,6 +1794,10 @@
 
   .rotate {
     cursor: grab;
+  }
+
+  .compass {
+    cursor: pointer;
   }
 
 </style>

@@ -60,6 +60,12 @@ Import replaces the fixture with a metre GeoJSON or KML polygon, or a heightfiel
 
 The plan says a walkthrough fits "3D is for looking" and is not a wave. Review orbits a camera above the model. It does not put the eye at standing height on a slab, and it does not move from one storey to the next. The slabs and the bare plates are the floors that walk would stand on.
 
+## Turning the plan
+
+The compass in the corner of the plan is a cross on north. Clicking it restores the north-south grid, which is the default when no wall or plot edge is selected. It does not turn the sheet.
+
+Later it becomes the rotation tool. The building stays in world coordinates. The view and the grid the user draws on turn together, so a direction that is not north-south can sit square on the screen. North stays marked on the compass.
+
 ## Left on purpose, still open
 
 These were declined or deferred while the storey work was happening. They are still unexplored.

@@ -131,7 +131,16 @@
   </header>
   <div class="stage">
     {#if mode === 'plan'}
-      <PlanView bind:selectedWallId bind:activeFloorId onStatus={setViewStatus} />
+      <PlanView
+        bind:selectedWallId
+        bind:activeFloorId
+        onStatus={setViewStatus}
+        onFocus={(wallId) => {
+          selectedWallId = wallId
+          selectedOpeningId = null
+          mode = 'focus'
+        }}
+      />
     {:else if mode === 'focus' && selectedWallId}
       <ElevationView
         wallId={selectedWallId}
