@@ -1,5 +1,4 @@
 <script lang="ts">
-  import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
@@ -7,11 +6,8 @@
   import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
-  import { rotateOffset } from '../../lib/model/mutations'
   import { deriveRooms } from '../../lib/model/rooms'
   import {
-    componentHasRoom,
-    cornerComponents,
     pointInsideRings,
     storeyFootprint,
     storeyUnderlay,
@@ -25,10 +21,6 @@
   import {
     nearestCorner,
     nearestWallPoint,
-    snapEndToModule,
-    snapEndToMinTurn,
-    snapEndToOrthogonal,
-    alignToNodes,
     alignTranslation,
     nearestPlotEdge,
     nearestRingEdge,
@@ -36,23 +28,31 @@
     segmentDistance,
     CORNER_SNAP_M,
     MIN_TURN_DEG,
-    ORTHOGONAL_SNAP_DEG,
-    headingFromNorthDeg,
-    smallerAngleDeg,
     type SnapTrace,
   } from './snap'
+  import { angleReadout, lengthReadout, resolveWallEnd } from './draw'
+  import {
+    cornerIdAt,
+    gridFromSegment,
+    NODE_HIT_M,
+    pickWall,
+    previewFloor,
+    roomAtPoint,
+    roomPolygonPoints,
+    ROTATE_HIT_M,
+    ROTATE_ICON,
+    ROTATE_OFFSET_M,
+    rotationStaysInPlot,
+    snapTurn,
+    translationStaysInPlot,
+    turnLabel,
+  } from './gesture'
+  import { roofableFloor, storeyAddTarget } from './storey'
+  import { plotBounds, pointsAttr, ringPath } from './svg'
 
   type Tool = 'draw-double' | 'draw-logical' | 'select'
 
   const PLOT_MARGIN_M = 1
-  const WALL_HIT_M = 0.12
-  const CORNER_MATCH_M = 0.002
-  const NODE_HIT_M = 0.35
-  const GRID_STEP_M = 1
-  const ROTATE_OFFSET_M = 0.95
-  const ROTATE_HIT_M = 0.52
-  const ROTATE_ICON =
-    'M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11a7.906 7.906 0 0 0-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z'
 
   type PendingDraw = {
     startCornerId?: string
@@ -155,32 +155,7 @@
     `${bounds.minX} ${bounds.minZ} ${bounds.maxX - bounds.minX} ${bounds.maxZ - bounds.minZ}`,
   )
 
-  const displayFloor = $derived.by(() => {
-    if (!activeFloor) return undefined
-    const turning = rotateDrag
-    if (turning && Math.abs(turning.angle) > 1e-8) {
-      const pivot = cornerById(activeFloor.corners, turning.pivotId)
-      if (!pivot) return activeFloor
-      const moving = new Set(turning.cornerIds)
-      return {
-        ...activeFloor,
-        corners: activeFloor.corners.map((corner) => {
-          if (!moving.has(corner.id)) return corner
-          const next = rotateOffset(corner.x - pivot.x, corner.z - pivot.z, turning.angle)
-          return { ...corner, x: pivot.x + next.x, z: pivot.z + next.z }
-        }),
-      }
-    }
-    const drag = moveDrag
-    if (!drag || (drag.dx === 0 && drag.dz === 0)) return activeFloor
-    const moving = new Set(drag.cornerIds)
-    return {
-      ...activeFloor,
-      corners: activeFloor.corners.map((corner) =>
-        moving.has(corner.id) ? { ...corner, x: corner.x + drag.dx, z: corner.z + drag.dz } : corner,
-      ),
-    }
-  })
+  const displayFloor = $derived(activeFloor ? previewFloor(activeFloor, rotateDrag, moveDrag) : undefined)
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
   const rooms = $derived(displayFloor ? deriveRooms(displayFloor) : [])
   const logicalWalls = $derived(displayFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
@@ -203,40 +178,6 @@
     return contourPlanPaths(field)
   })
 
-  function plotBounds(ring: [number, number][], margin: number) {
-    let minX = Infinity
-    let maxX = -Infinity
-    let minZ = Infinity
-    let maxZ = -Infinity
-    for (const [x, z] of ring) {
-      minX = Math.min(minX, x)
-      maxX = Math.max(maxX, x)
-      minZ = Math.min(minZ, z)
-      maxZ = Math.max(maxZ, z)
-    }
-    return {
-      minX: minX - margin,
-      maxX: maxX + margin,
-      minZ: minZ - margin,
-      maxZ: maxZ + margin,
-    }
-  }
-
-  function fmt(n: number): string {
-    const r = Math.round(n * 1000) / 1000
-    return Number.isInteger(r) ? String(r) : String(r)
-  }
-
-  function pointsAttr(points: SvgPoint[]): string {
-    return points.map(([x, y]) => `${fmt(x)},${fmt(y)}`).join(' ')
-  }
-
-  function ringPath(ring: { x: number; z: number }[]): string {
-    if (ring.length < 3) return ''
-    const [first, ...rest] = ring
-    return `M ${fmt(first.x)} ${fmt(first.z)} ${rest.map((point) => `L ${fmt(point.x)} ${fmt(point.z)}`).join(' ')} Z`
-  }
-
   function plateFill(floorId: string, ring: number): string {
     const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
     const selected = floorId === selectedPlateFloorId && ring === selectedPlateRing
@@ -244,13 +185,6 @@
     if (selected) return '#e7e5e4'
     if (roofed) return '#c5c9ce'
     return '#d6d3d1'
-  }
-
-  function roomPolygonPoints(cornerIds: string[], floor: Floor): SvgPoint[] {
-    return cornerIds
-      .map((id) => cornerById(floor.corners, id))
-      .filter((c): c is NonNullable<typeof c> => c !== undefined)
-      .map((c) => [c.x, c.z] as SvgPoint)
   }
 
   function clientToPlan(svg: SVGSVGElement, clientX: number, clientY: number) {
@@ -261,73 +195,6 @@
     if (!ctm) return null
     const local = pt.matrixTransform(ctm.inverse())
     return { x: local.x, z: local.y }
-  }
-
-  function distToSegment(
-    px: number,
-    pz: number,
-    ax: number,
-    az: number,
-    bx: number,
-    bz: number,
-  ): number {
-    const dx = bx - ax
-    const dz = bz - az
-    const lenSq = dx * dx + dz * dz
-    if (lenSq === 0) return Math.hypot(px - ax, pz - az)
-    let t = ((px - ax) * dx + (pz - az) * dz) / lenSq
-    t = Math.max(0, Math.min(1, t))
-    const qx = ax + t * dx
-    const qz = az + t * dz
-    return Math.hypot(px - qx, pz - qz)
-  }
-
-  function pickWall(floor: Floor, x: number, z: number): string | null {
-    let bestId: string | null = null
-    let bestD = WALL_HIT_M
-    for (const wall of floor.walls) {
-      const a = cornerById(floor.corners, wall.startCornerId)
-      const b = cornerById(floor.corners, wall.endCornerId)
-      if (!a || !b) continue
-      const d = distToSegment(x, z, a.x, a.z, b.x, b.z)
-      if (d < bestD) {
-        bestD = d
-        bestId = wall.id
-      }
-    }
-    return bestId
-  }
-
-  function roomAtPoint(floor: Floor, x: number, z: number) {
-    const derived = deriveRooms(floor)
-    let best: (typeof derived)[0] | null = null
-    for (const room of derived) {
-      const ring = roomPolygonPoints(room.cornerIds, floor)
-      if (ring.length < 3) continue
-      const closed = [...ring, ring[0]]
-      const poly = {
-        type: 'Feature' as const,
-        properties: {},
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [closed.map(([px, pz]) => [px, pz])],
-        },
-      }
-      const pt = {
-        type: 'Feature' as const,
-        properties: {},
-        geometry: { type: 'Point' as const, coordinates: [x, z] },
-      }
-      if (!booleanPointInPolygon(pt, poly)) continue
-      if (!best || room.signedArea < best.signedArea) {
-        best = room
-      }
-    }
-    return best
-  }
-
-  function cornerIdAt(floor: Floor, x: number, z: number): string | undefined {
-    return floor.corners.find((c) => Math.hypot(c.x - x, c.z - z) <= CORNER_MATCH_M)?.id
   }
 
   function explain(reason: string): string {
@@ -406,7 +273,16 @@
       return
     }
 
-    const resolved = resolveEnd(floor, start, startId, endX, endZ)
+    const resolved = resolveWallEnd(
+      document.plot,
+      floor,
+      belowNodes(),
+      start,
+      startId,
+      endX,
+      endZ,
+      highlightedDirection(floor),
+    )
     const endCornerHit = resolved.cornerId
       ? floor.corners.find((c) => c.id === resolved.cornerId)
       : undefined
@@ -580,7 +456,8 @@
       while (raw - rotateDrag.angle > Math.PI) raw -= 2 * Math.PI
       while (rotateDrag.angle - raw > Math.PI) raw += 2 * Math.PI
       const snapped = snapTurn(raw)
-      if (!rotationStaysInPlot(activeFloor, rotateDrag.cornerIds, rotateDrag.pivotId, snapped.angle)) return
+      if (!rotationStaysInPlot(document.plot, activeFloor, rotateDrag.cornerIds, rotateDrag.pivotId, snapped.angle))
+        return
       rotateDrag = { ...rotateDrag, angle: snapped.angle, snapped: snapped.snapped }
       return
     }
@@ -595,14 +472,14 @@
     const moving = activeFloor.corners.filter((corner) => movingIds.has(corner.id))
     const fixed = activeFloor.corners.filter((corner) => !movingIds.has(corner.id))
     const aligned = alignTranslation(rawDx, rawDz, moving, fixed)
-    const dx = translationStaysInPlot(activeFloor, drag.cornerIds, aligned.dx, aligned.dz)
+    const dx = translationStaysInPlot(document.plot, activeFloor, drag.cornerIds, aligned.dx, aligned.dz)
       ? aligned.dx
       : rawDx
-    const dz = translationStaysInPlot(activeFloor, drag.cornerIds, aligned.dx, aligned.dz)
+    const dz = translationStaysInPlot(document.plot, activeFloor, drag.cornerIds, aligned.dx, aligned.dz)
       ? aligned.dz
       : rawDz
     const traces = dx === aligned.dx && dz === aligned.dz ? aligned.traces : []
-    if (!translationStaysInPlot(activeFloor, drag.cornerIds, dx, dz)) return
+    if (!translationStaysInPlot(document.plot, activeFloor, drag.cornerIds, dx, dz)) return
     moveDrag = { ...drag, dx, dz, traces }
   }
 
@@ -657,42 +534,6 @@
     if (!corner || Math.hypot(plan.x - corner.x, plan.z - corner.z) > keep) hoverNodeId = null
   }
 
-  function snapTurn(angle: number): { angle: number; snapped: boolean } {
-    const deg = (angle * 180) / Math.PI
-    const target = Math.round(deg / 90) * 90
-    if (Math.abs(deg - target) <= ORTHOGONAL_SNAP_DEG) {
-      return { angle: (target * Math.PI) / 180, snapped: true }
-    }
-    return { angle, snapped: false }
-  }
-
-  function turnLabel(angle: number): number {
-    let deg = Math.round((angle * 180) / Math.PI)
-    while (deg > 180) deg -= 360
-    while (deg <= -180) deg += 360
-    return deg
-  }
-
-  function rotationStaysInPlot(floor: Floor, cornerIds: string[], pivotId: string, angle: number): boolean {
-    const pivot = cornerById(floor.corners, pivotId)
-    if (!pivot) return false
-    const moving = new Set(cornerIds)
-    const at = (id: string) => {
-      const corner = cornerById(floor.corners, id)
-      if (!corner) return null
-      if (!moving.has(id)) return corner
-      const next = rotateOffset(corner.x - pivot.x, corner.z - pivot.z, angle)
-      return { x: pivot.x + next.x, z: pivot.z + next.z }
-    }
-    for (const wall of floor.walls) {
-      if (!moving.has(wall.startCornerId) && !moving.has(wall.endCornerId)) continue
-      const a = at(wall.startCornerId)
-      const b = at(wall.endCornerId)
-      if (!a || !b || !segmentAllowedInPlot(document.plot, a.x, a.z, b.x, b.z)) return false
-    }
-    return true
-  }
-
   function beginRotate(event: PointerEvent) {
     if (!activeFloor || !svgEl || !rotateHandle) return
     event.stopPropagation()
@@ -708,22 +549,6 @@
     }
     chooseSelection({ cornerId: pivot.id })
     svgEl.setPointerCapture(event.pointerId)
-  }
-
-  function translationStaysInPlot(floor: Floor, cornerIds: string[], dx: number, dz: number): boolean {
-    const moving = new Set(cornerIds)
-    for (const wall of floor.walls) {
-      if (!moving.has(wall.startCornerId) && !moving.has(wall.endCornerId)) continue
-      const a = cornerById(floor.corners, wall.startCornerId)
-      const b = cornerById(floor.corners, wall.endCornerId)
-      if (!a || !b) return false
-      const ax = a.x + (moving.has(a.id) ? dx : 0)
-      const az = a.z + (moving.has(a.id) ? dz : 0)
-      const bx = b.x + (moving.has(b.id) ? dx : 0)
-      const bz = b.z + (moving.has(b.id) ? dz : 0)
-      if (!segmentAllowedInPlot(document.plot, ax, az, bx, bz)) return false
-    }
-    return true
   }
 
   $effect(() => {
@@ -762,31 +587,9 @@
     rotateDrag = null
   }
 
-  const storeyTarget = $derived.by((): { floorId: string; cornerId?: string } | null => {
-    const selectedFloor = levelFloors.find(
-      (floor) =>
-        (selectedCornerId !== null && floor.corners.some((corner) => corner.id === selectedCornerId)) ||
-        (selectedWallId !== null && floor.walls.some((wall) => wall.id === selectedWallId)),
-    )
-    if (selectedFloor) {
-      const cornerId =
-        selectedCornerId && selectedFloor.corners.some((corner) => corner.id === selectedCornerId)
-          ? selectedCornerId
-          : selectedFloor.walls.find((wall) => wall.id === selectedWallId)?.startCornerId
-      if (cornerId) return { floorId: selectedFloor.id, cornerId }
-    }
-    if (selectedPlateFloorId && levelFloors.some((floor) => floor.id === selectedPlateFloorId)) {
-      return { floorId: selectedPlateFloorId }
-    }
-    if (levelFloors.length !== 1) return null
-    const only = levelFloors[0]
-    if (only.index === 0) {
-      const enclosed = cornerComponents(only).filter((ids) => componentHasRoom(only, ids))
-      if (enclosed.length !== 1) return null
-      return { floorId: only.id, cornerId: enclosed[0][0] }
-    }
-    return { floorId: only.id, cornerId: only.corners[0]?.id }
-  })
+  const storeyTarget = $derived(
+    storeyAddTarget(levelFloors, selectedCornerId, selectedWallId, selectedPlateFloorId),
+  )
 
   const storeyUnitId = $derived.by(() => {
     const target = storeyTarget
@@ -801,13 +604,7 @@
     storeyUnitId !== undefined && topStoreyIndex(document, storeyUnitId) + 1 >= MAX_STOREYS,
   )
 
-  const roofFloor = $derived.by(() => {
-    if (!selectedPlateFloorId) return undefined
-    const floor = floors.find((item) => item.id === selectedPlateFloorId)
-    if (!floor || floor.index === 0 || floor.walls.length > 0) return undefined
-    if (!(floor.outline ?? []).some((ring) => ring.length >= 3)) return undefined
-    return floor
-  })
+  const roofFloor = $derived(roofableFloor(floors, selectedPlateFloorId))
 
   function addRoof() {
     const floor = roofFloor
@@ -957,181 +754,21 @@
     return { dx, dz }
   }
 
-  function referenceAway(
-    floor: Floor,
-    cornerId: string | undefined,
-    start: { x: number; z: number },
-    dx: number,
-    dz: number,
-  ): { dx: number; dz: number } | null {
-    if (!cornerId) return null
-    let best: { dx: number; dz: number; deg: number } | null = null
-    for (const wall of floor.walls) {
-      const atStart = wall.startCornerId === cornerId
-      const atEnd = wall.endCornerId === cornerId
-      if (!atStart && !atEnd) continue
-      const other = cornerById(floor.corners, atStart ? wall.endCornerId : wall.startCornerId)
-      if (!other) continue
-      const wx = other.x - start.x
-      const wz = other.z - start.z
-      const deg = smallerAngleDeg(wx, wz, dx, dz)
-      if (deg === null) continue
-      if (!best || deg < best.deg) best = { dx: wx, dz: wz, deg }
-    }
-    return best ? { dx: best.dx, dz: best.dz } : null
-  }
-
-  function resolveEnd(
-    floor: Floor,
-    start: { x: number; z: number },
-    startCornerId: string | undefined,
-    x: number,
-    z: number,
-  ): {
-    x: number
-    z: number
-    cornerId?: string
-    wallSnap: boolean
-    nodeSnap: boolean
-    minTurn: boolean
-    angleSnap: boolean
-    traces: SnapTrace[]
-  } {
-    const none = { wallSnap: false, minTurn: false, angleSnap: false, nodeSnap: false, traces: [] as SnapTrace[] }
-    const hit = nearestCorner(floor.corners, x, z, CORNER_SNAP_M, startCornerId)
-    if (hit) return { x: hit.x, z: hit.z, cornerId: hit.id, ...none }
-    const below = nearestNode(belowNodes(), x, z, CORNER_SNAP_M, start)
-    if (below) return { x: below.x, z: below.z, ...none, nodeSnap: true }
-    const wallHit = nearestWallPoint(floor.corners, floor.walls, x, z, CORNER_SNAP_M, startCornerId)
-    if (wallHit) return { x: wallHit.x, z: wallHit.z, ...none, wallSnap: true }
-    let end = { x, z }
-    let minTurn = false
-    let angleSnap = false
-    const ref = referenceAway(floor, startCornerId, start, x - start.x, z - start.z) ?? highlightedDirection(floor)
-    const ortho = snapEndToOrthogonal(
-      document.plot,
-      start.x,
-      start.z,
-      end.x,
-      end.z,
-      ref?.dx ?? null,
-      ref?.dz ?? null,
-    )
-    if (ortho.applied) {
-      end = ortho
-      angleSnap = true
-    } else if (ref) {
-      const turned = snapEndToMinTurn(document.plot, start.x, start.z, end.x, end.z, ref.dx, ref.dz)
-      end = turned
-      minTurn = turned.applied
-    }
-    const snapped = snapEndToModule(document.plot, start.x, start.z, end.x, end.z, false)
-    const aligned = alignToNodes(snapped.x, snapped.z, [...floor.corners, ...belowNodes()], start)
-    const onStart = Math.hypot(aligned.x - start.x, aligned.z - start.z) <= 1e-4
-    const useAlign =
-      aligned.traces.length > 0 &&
-      !onStart &&
-      pointInPlot(document.plot, aligned.x, aligned.z) &&
-      segmentAllowedInPlot(document.plot, start.x, start.z, aligned.x, aligned.z)
-    const endX = useAlign ? aligned.x : snapped.x
-    const endZ = useAlign ? aligned.z : snapped.z
-    const landed = floor.corners.find(
-      (corner) => corner.id !== startCornerId && Math.hypot(corner.x - endX, corner.z - endZ) <= 1e-4,
-    )
-    return {
-      x: endX,
-      z: endZ,
-      cornerId: landed?.id,
-      wallSnap: false,
-      nodeSnap: false,
-      minTurn,
-      angleSnap,
-      traces: useAlign ? aligned.traces : [],
-    }
-  }
-
-  function angleReadout(
-    floor: Floor,
-    startCornerId: string | undefined,
-    start: { x: number; z: number },
-    dx: number,
-    dz: number,
-    length: number,
-  ): { label: string; path: string | null; x: number; z: number } | null {
-    if (length <= 0.05) return null
-    const ref = referenceAway(floor, startCornerId, start, dx, dz) ?? highlightedDirection(floor)
-    if (ref) {
-      const deg = smallerAngleDeg(ref.dx, ref.dz, dx, dz)
-      if (deg === null) return null
-      const a0 = Math.atan2(ref.dz, ref.dx)
-      const a1 = Math.atan2(dz, dx)
-      let delta = a1 - a0
-      while (delta > Math.PI) delta -= 2 * Math.PI
-      while (delta < -Math.PI) delta += 2 * Math.PI
-      const mid = a0 + delta / 2
-      const square = Math.abs(deg - 90) < 0.05
-      return {
-        label: `${Math.round(deg)}°`,
-        path: square
-          ? squarePath(start.x, start.z, ref.dx, ref.dz, dx, dz, 0.5)
-          : arcPath(start.x, start.z, 0.75, a0, delta),
-        x: start.x + Math.cos(mid) * 1.15,
-        z: start.z + Math.sin(mid) * 1.15,
-      }
-    }
-    const heading = headingFromNorthDeg(dx, dz)
-    if (heading === null) return null
-    const len = Math.hypot(dx, dz)
-    return {
-      label: `${Math.round(heading)}° from N`,
-      path: null,
-      x: start.x + (dx / len) * 0.9 + (-dz / len) * 0.55,
-      z: start.z + (dz / len) * 0.9 + (dx / len) * 0.55,
-    }
-  }
-
-  function squarePath(
-    cx: number,
-    cz: number,
-    refDx: number,
-    refDz: number,
-    dx: number,
-    dz: number,
-    size: number,
-  ): string {
-    const rl = Math.hypot(refDx, refDz)
-    const nl = Math.hypot(dx, dz)
-    const rx = refDx / rl
-    const rz = refDz / rl
-    const nx = dx / nl
-    const nz = dz / nl
-    const ax = cx + rx * size
-    const az = cz + rz * size
-    const bx = ax + nx * size
-    const bz = az + nz * size
-    const cx2 = cx + nx * size
-    const cz2 = cz + nz * size
-    return `M${fmt(ax)} ${fmt(az)} L${fmt(bx)} ${fmt(bz)} L${fmt(cx2)} ${fmt(cz2)}`
-  }
-
-  function arcPath(cx: number, cz: number, radius: number, a0: number, delta: number): string | null {
-    if (Math.abs(delta) < 0.02) return null
-    const steps = 12
-    let d = ''
-    for (let i = 0; i <= steps; i++) {
-      const a = a0 + (delta * i) / steps
-      const x = cx + radius * Math.cos(a)
-      const z = cz + radius * Math.sin(a)
-      d += `${i === 0 ? 'M' : 'L'}${fmt(x)} ${fmt(z)} `
-    }
-    return d.trim()
-  }
-
   const previewLine = $derived.by(() => {
     if (!pendingDraw || !pointerPlan || !activeFloor) return null
     const start = startCoords(activeFloor, pendingDraw)
     if (!start) return null
-    const resolved = resolveEnd(activeFloor, start, pendingDraw.startCornerId, pointerPlan.x, pointerPlan.z)
+    const highlighted = highlightedDirection(activeFloor)
+    const resolved = resolveWallEnd(
+      document.plot,
+      activeFloor,
+      belowNodes(),
+      start,
+      pendingDraw.startCornerId,
+      pointerPlan.x,
+      pointerPlan.z,
+      highlighted,
+    )
     const dx = resolved.x - start.x
     const dz = resolved.z - start.z
     const length = Math.hypot(dx, dz)
@@ -1149,37 +786,11 @@
       nodeSnap: resolved.nodeSnap,
       minTurn: resolved.minTurn,
       angleSnap: resolved.angleSnap,
-      angle: angleReadout(activeFloor, pendingDraw.startCornerId, start, dx, dz, length),
+      angle: angleReadout(activeFloor, pendingDraw.startCornerId, start, dx, dz, length, highlighted),
       lengthLabel: lengthReadout(start.x, start.z, resolved.x, resolved.z, length),
       traces: resolved.traces,
     }
   })
-
-  function lengthReadout(
-    x1: number,
-    z1: number,
-    x2: number,
-    z2: number,
-    length: number,
-  ): { x: number; z: number; rotate: number; text: string } | null {
-    if (length <= 0.05) return null
-    const dx = x2 - x1
-    const dz = z2 - z1
-    let deg = (Math.atan2(dz, dx) * 180) / Math.PI
-    let nx = -dz / length
-    let nz = dx / length
-    if (deg > 90 || deg <= -90) {
-      deg += deg > 0 ? -180 : 180
-      nx = -nx
-      nz = -nz
-    }
-    return {
-      x: (x1 + x2) / 2 + nx * 0.4,
-      z: (z1 + z2) / 2 + nz * 0.4,
-      rotate: deg,
-      text: `${length.toFixed(2)} m`,
-    }
-  }
 
   const rotateHandle = $derived.by(() => {
     if (tool !== 'select' || !activeFloor || moveDrag) return null
@@ -1268,55 +879,6 @@
   })
 
   const snapTraces = $derived(moveDrag?.traces.length ? moveDrag.traces : (previewLine?.traces ?? []))
-
-  function gridFromSegment(
-    ax: number,
-    az: number,
-    bx: number,
-    bz: number,
-    box: { minX: number; maxX: number; minZ: number; maxZ: number },
-  ): { x1: number; z1: number; x2: number; z2: number }[] {
-    const len = Math.hypot(bx - ax, bz - az)
-    if (len < 1e-9) return []
-    const dx = (bx - ax) / len
-    const dz = (bz - az) / len
-    const nx = -dz
-    const nz = dx
-    const samples = [
-      [box.minX, box.minZ],
-      [box.maxX, box.minZ],
-      [box.maxX, box.maxZ],
-      [box.minX, box.maxZ],
-    ]
-    let minU = Infinity
-    let maxU = -Infinity
-    let minV = Infinity
-    let maxV = -Infinity
-    for (const [x, z] of samples) {
-      const u = (x - ax) * dx + (z - az) * dz
-      const v = (x - ax) * nx + (z - az) * nz
-      minU = Math.min(minU, u)
-      maxU = Math.max(maxU, u)
-      minV = Math.min(minV, v)
-      maxV = Math.max(maxV, v)
-    }
-    const lines: { x1: number; z1: number; x2: number; z2: number }[] = []
-    const at = (u: number, v: number) => ({
-      x: ax + dx * u + nx * v,
-      z: az + dz * u + nz * v,
-    })
-    for (let v = Math.ceil(minV / GRID_STEP_M) * GRID_STEP_M; v <= maxV; v += GRID_STEP_M) {
-      const p = at(minU, v)
-      const q = at(maxU, v)
-      lines.push({ x1: p.x, z1: p.z, x2: q.x, z2: q.z })
-    }
-    for (let u = Math.ceil(minU / GRID_STEP_M) * GRID_STEP_M; u <= maxU; u += GRID_STEP_M) {
-      const p = at(u, minV)
-      const q = at(u, maxV)
-      lines.push({ x1: p.x, z1: p.z, x2: q.x, z2: q.z })
-    }
-    return lines
-  }
 
   const drawHintBody = $derived.by(() => {
     if (tool === 'select') {
