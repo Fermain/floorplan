@@ -336,8 +336,8 @@ describe('door width', () => {
     expect(wide.ok).toBe(true)
     if (!wide.ok) return
     const opening = wide.document.building.floors[0].walls[0].openings[0]
-    expect(opening.width).toBeCloseTo(5.8, 5)
-    expect(opening.u).toBeCloseTo(0.1, 5)
+    expect(opening.width).toBeCloseTo(5.7, 5)
+    expect(opening.u).toBeCloseTo(0.15, 5)
 
     const narrow = addOpening(d, floor.id, wall.id, 'door', 2, 0.2)
     expect(narrow.ok).toBe(true)
@@ -389,6 +389,41 @@ describe('door width', () => {
     const held = widened.document.building.floors[0].walls[0].openings[0]
     expect(held.width).toBeCloseTo(0.9, 5)
     expect(held.u).toBeCloseTo(1, 5)
+  })
+
+  it('holds a window 150 mm from a free end', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const floor = d.building.floors[0]
+    const wall = floor.walls[0]
+    const placed = addOpening(d, floor.id, wall.id, 'window', 0.02)
+    expect(placed.ok).toBe(true)
+    if (!placed.ok) return
+    const opening = placed.document.building.floors[0].walls[0].openings[0]
+    expect(opening.u).toBeCloseTo(0.15, 5)
+  })
+
+  it('refuses a window that cannot leave 150 mm at both ends', () => {
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    const first = addCorner(d, fid, 5, 8)
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    d = first.document
+    const second = addCorner(d, fid, 6.15, 8)
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    d = second.document
+    const corners = d.building.floors[0].corners
+    const walled = addWall(d, fid, corners[0].id, corners[1].id, 'double')
+    expect(walled.ok).toBe(true)
+    if (!walled.ok) return
+    d = walled.document
+    const wall = d.building.floors[0].walls[0]
+    const window = addOpening(d, fid, wall.id, 'window', 0.1)
+    expect(window.ok).toBe(false)
+    if (window.ok) return
+    expect(window.reason).toBe('openings too close')
+    expect(window.document).toBe(d)
   })
 
   it('refuses a door on a wall that cannot hold the minimum', () => {

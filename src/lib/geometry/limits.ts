@@ -1,7 +1,8 @@
 import { wallLength } from '../model/geom'
 import type { Floor, Opening, Wall } from '../model/types'
+import { OPENING_EDGE_PAD } from '../plot/fixture'
 
-export const MIN_SOLID_MASONRY_AT_FREE_END_M = 0.15
+export const MIN_SOLID_MASONRY_AT_FREE_END_M = OPENING_EDGE_PAD
 export const MOVEMENT_JOINT_WALL_LENGTH_M = 8
 
 export function openingNearFreeWallEnd(length: number, openings: Opening[]): boolean {

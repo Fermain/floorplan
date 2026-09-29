@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
-  import { openingNearFreeWallEnd } from '../../lib/geometry/limits'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { groundPad, wallDatum } from '../../lib/geometry/pad'
   import { bottomSamplesAlong } from '../../lib/geometry/terrain'
@@ -127,18 +126,13 @@
     return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
-  const elevationHint = $derived.by(() => {
-    let text = !locked
+  const elevationHint = $derived(
+    !locked
       ? 'Perspective. The fixed view is where this wall is edited.'
       : insertTool === 'door'
         ? 'Click the wall to place a door. Drag a door to move it.'
-        : 'Click the wall to place a window. Drag an opening to move it.'
-    const shown = displayWall
-    if (frame && shown && openingNearFreeWallEnd(frame.length, shown.openings)) {
-      text += ' An opening has less than 150 mm to the end of the wall.'
-    }
-    return text
-  })
+        : 'Click the wall to place a window. Drag an opening to move it.',
+  )
 
   const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
     const shown = displayWall
