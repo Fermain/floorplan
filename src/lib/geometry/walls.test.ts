@@ -280,6 +280,9 @@ describe('buildWallGeometries', () => {
     const maxY = (leaf: number) => Math.max(...spans.filter((span) => span.leaf === leaf).map((span) => span.y1))
     expect(maxY(0)).toBeCloseTo(FLOOR_TO_FLOOR, 3)
     expect(maxY(1)).toBeCloseTo(wallHead, 3)
+    const carried = spans.filter((span) => span.leaf === 0 && span.y0 >= wallHead - 1e-6)
+    expect(carried.length).toBeGreaterThan(0)
+    for (const span of carried) expect(span.y1 - span.y0).toBeCloseTo(BLOCK_HEIGHT, 6)
   })
 })
 

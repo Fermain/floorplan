@@ -427,7 +427,8 @@ export function collectWallBlockSpans(
     if (uMax - uMin <= 1e-9) {
       continue
     }
-    const courseLimit = facing.has(leaf) ? Math.ceil((facadeHead! - 1e-9) / BLOCK_HEIGHT) : COURSE_COUNT
+    const head = facadeHead === undefined ? undefined : Math.ceil((facadeHead - 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
+    const courseLimit = facing.has(leaf) && head !== undefined ? Math.ceil((head - 1e-9) / BLOCK_HEIGHT) : COURSE_COUNT
     for (let course = 0; course < courseLimit; course++) {
       let solids = [{ u0: uMin, u1: uMax }]
       for (const opening of wall.openings) {
@@ -448,7 +449,7 @@ export function collectWallBlockSpans(
           const range = courseVerticalRange(course, block.u0, block.u1, bottomSamples)
           if (!range) continue
           let { y0, y1 } = range
-          if (facing.has(leaf) && facadeHead !== undefined && y1 > facadeHead) y1 = facadeHead
+          if (facing.has(leaf) && head !== undefined && y1 > head) y1 = head
           if (y1 - y0 <= 1e-4) continue
           spans.push({
             u0: block.u0,
