@@ -15,7 +15,7 @@ import {
   updateOpening,
 } from './mutations'
 import { deriveRooms } from './rooms'
-import { DEFAULT_SILL, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
+import { DEFAULT_SILL, DEFAULT_WINDOW_HEAD, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
 import { loadDocument, undo, documentStore, getDocument } from '../state/document.svelte'
 
 function floorId(doc: ReturnType<typeof fixtureDocument>) {
@@ -196,6 +196,23 @@ describe('aligned openings', () => {
     opening = realign.document.building.floors[0].walls[0].openings[0]
     expect(opening.v).toBe(DEFAULT_SILL)
     expect(opening.aligned).toBe(true)
+  })
+
+  it('sets a door head on the same line as a window head', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const wallId = d.building.floors[0].walls[0].id
+    const door = addOpening(d, fid, wallId, 'door', 0.5)
+    expect(door.ok).toBe(true)
+    if (!door.ok) return
+    const window = addOpening(door.document, fid, wallId, 'window', 2)
+    expect(window.ok).toBe(true)
+    if (!window.ok) return
+    const openings = window.document.building.floors[0].walls[0].openings
+    const doorHead = openings[0].v + openings[0].height
+    const windowHead = openings[1].v + openings[1].height
+    expect(doorHead).toBeCloseTo(DEFAULT_WINDOW_HEAD, 5)
+    expect(windowHead).toBeCloseTo(doorHead, 5)
   })
 })
 

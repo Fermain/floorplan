@@ -2,9 +2,7 @@
   import type { OrthographicCamera } from 'three'
   import type { BufferGeometry } from 'three'
   import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
-  import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { groundPad, wallDatum } from '../../lib/geometry/pad'
-  import { bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
   import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
@@ -127,33 +125,18 @@
     return shown?.openings.find((item) => item.id === selectedOpeningId)
   })
 
-  const bottomSamples = $derived.by((): { u: number; y: number }[] | undefined => {
-    const shown = displayWall
-    if (!floor || !shown) return undefined
-    if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
-      const start = floor.corners.find((c) => c.id === shown.startCornerId)
-      const end = floor.corners.find((c) => c.id === shown.endCornerId)
-      if (start && end) {
-        const raw = bottomSamplesAlong(
-          doc.heightfield,
-          start.x,
-          start.z,
-          end.x,
-          end.z,
-        )
-        return raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
-      }
-    }
-    return undefined
-  })
-
-  const wallModel = $derived.by((): { blocks: BufferGeometry[]; lintel: BufferGeometry | null } => {
+  const wallModel = $derived.by((): {
+    blocks: BufferGeometry[]
+    courses: BufferGeometry[]
+    lintel: BufferGeometry | null
+  } => {
     const shown = displayWall
     if (!floor || !shown) {
-      return { blocks: [], lintel: null }
+      return { blocks: [], courses: [], lintel: null }
     }
     return {
-      blocks: buildWallGeometries(floor, shown, bottomSamples),
+      blocks: buildWallGeometries(floor, shown),
+      courses: buildCourseFaceGeometries(floor, shown),
       lintel: buildLintelGeometry(floor, shown),
     }
   })
@@ -161,7 +144,7 @@
   const scheduleLine = $derived.by(() => {
     const shown = displayWall
     if (!floor || !shown) return ''
-    return formatSchedule(scheduleWall(floor, shown, bottomSamples))
+    return formatSchedule(scheduleWall(floor, shown))
   })
 
   $effect(() => {
@@ -183,11 +166,11 @@
 
   $effect(() => {
     const geoms = wallModel.blocks
+    const courses = wallModel.courses
     const lintel = wallModel.lintel
     return () => {
-      for (const g of geoms) {
-        g.dispose()
-      }
+      for (const g of geoms) g.dispose()
+      for (const g of courses) g.dispose()
       lintel?.dispose()
     }
   })
@@ -439,6 +422,7 @@
         {locked}
         {frame}
         wallGeometries={wallModel.blocks}
+        courseGeometries={wallModel.courses}
         lintelGeometry={wallModel.lintel}
         {orthoCamera}
         {onOrthoCamera}

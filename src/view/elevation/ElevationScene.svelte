@@ -10,12 +10,14 @@
     locked: boolean
     frame: WallElevationFrame
     wallGeometries: BufferGeometry[]
+    courseGeometries: BufferGeometry[]
     lintelGeometry: BufferGeometry | null
     orthoCamera: OrthographicCamera | undefined
     onOrthoCamera: (camera: OrthographicCamera) => void
   }
 
-  let { locked, frame, wallGeometries, lintelGeometry, orthoCamera, onOrthoCamera }: Props = $props()
+  let { locked, frame, wallGeometries, courseGeometries, lintelGeometry, orthoCamera, onOrthoCamera }: Props =
+    $props()
 
   const center = $derived(wallCenterWorld(frame))
   const orbitTarget = $derived<[number, number, number]>([
@@ -65,7 +67,12 @@
 
   {#each wallGeometries as geometry (geometry.uuid)}
     <T.Mesh {geometry}>
-      <T.MeshStandardMaterial color="#c4b5a0" />
+      <T.MeshStandardMaterial color="#6e6256" />
+    </T.Mesh>
+  {/each}
+  {#each courseGeometries as geometry (geometry.uuid)}
+    <T.Mesh {geometry}>
+      <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
     </T.Mesh>
   {/each}
   {#if lintelGeometry}
