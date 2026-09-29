@@ -71,6 +71,32 @@ export function openingFrameLayout(opening: OpeningRect): OpeningFrameLayout | n
   return { outer, inner, members, glass }
 }
 
+function gradeAt(u: number, samples: { u: number; y: number }[] | undefined): number {
+  if (!samples || samples.length === 0) return -Infinity
+  const sorted = [...samples].sort((a, b) => a.u - b.u)
+  if (u <= sorted[0].u) return sorted[0].y
+  const last = sorted[sorted.length - 1]
+  if (u >= last.u) return last.y
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i]
+    const b = sorted[i + 1]
+    if (u >= a.u && u <= b.u) {
+      const t = (u - a.u) / (b.u - a.u)
+      return a.y + t * (b.y - a.y)
+    }
+  }
+  return sorted[0].y
+}
+
+function clipToWallBottom(
+  span: FrameMemberSpan,
+  samples: { u: number; y: number }[] | undefined,
+): FrameMemberSpan | null {
+  const y0 = Math.max(span.y0, gradeAt((span.u0 + span.u1) / 2, samples))
+  if (span.y1 - y0 <= 1e-4) return null
+  return { ...span, y0 }
+}
+
 function cornerById(floor: Floor, id: string): Vec2 {
   const c = floor.corners.find((x) => x.id === id)
   if (!c) {
@@ -154,6 +180,7 @@ function mergeParts(parts: BufferGeometry[], unitBox: BoxGeometry): BufferGeomet
 export function buildOpeningFrameGeometry(
   floor: Floor,
   wall: Wall,
+  bottomSamples?: { u: number; y: number }[],
 ): BufferGeometry | null {
   if (wall.skin === 'logical') return null
   const openings = wall.openings
@@ -167,12 +194,14 @@ export function buildOpeningFrameGeometry(
     const layout = openingFrameLayout(opening)
     if (!layout) continue
     for (const member of layout.members) {
+      const visible = clipToWallBottom(member, bottomSamples)
+      if (!visible) continue
       placeBox(
         wallFrame,
-        member.u0,
-        member.u1,
-        member.y0,
-        member.y1,
+        visible.u0,
+        visible.u1,
+        visible.y0,
+        visible.y1,
         leafSign,
         FRAME_DEPTH,
         0,
@@ -188,6 +217,7 @@ export function buildOpeningFrameGeometry(
 export function buildOpeningGlassGeometry(
   floor: Floor,
   wall: Wall,
+  bottomSamples?: { u: number; y: number }[],
 ): BufferGeometry | null {
   if (wall.skin === 'logical') return null
   const openings = wall.openings
@@ -201,12 +231,14 @@ export function buildOpeningGlassGeometry(
   for (const opening of openings) {
     const layout = openingFrameLayout(opening)
     if (!layout) continue
+    const glass = clipToWallBottom(layout.glass, bottomSamples)
+    if (!glass) continue
     placeBox(
       wallFrame,
-      layout.glass.u0,
-      layout.glass.u1,
-      layout.glass.y0,
-      layout.glass.y1,
+      glass.u0,
+      glass.u1,
+      glass.y0,
+      glass.y1,
       leafSign,
       GLASS_THICKNESS,
       depthBias,

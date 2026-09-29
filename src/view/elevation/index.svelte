@@ -6,8 +6,6 @@
     buildOpeningGlassGeometry,
   } from '../../lib/geometry/frames'
   import { buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { groundPad, wallDatum } from '../../lib/geometry/pad'
-  import { bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { doorWidthLimits, maxOpeningWidth, placeOpeningU } from '../../lib/model/openings'
   import type { Floor, Opening, Wall } from '../../lib/model/types'
   import { DEFAULT_DOOR_WIDTH, DEFAULT_WINDOW_WIDTH } from '../../lib/plot/fixture'
@@ -140,23 +138,8 @@
     if (!floor || !shown) {
       return { blocks: [], lintel: null, frame: null, glass: null }
     }
-    let samples: { u: number; y: number }[] | undefined
-    if (floor.index === 0 && wallDatum(floor, shown, groundPad(doc)) === null) {
-      const start = floor.corners.find((c) => c.id === shown.startCornerId)
-      const end = floor.corners.find((c) => c.id === shown.endCornerId)
-      if (start && end) {
-        const raw = bottomSamplesAlong(
-          doc.heightfield,
-          start.x,
-          start.z,
-          end.x,
-          end.z,
-        )
-        samples = raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
-      }
-    }
     return {
-      blocks: buildWallGeometries(floor, shown, samples),
+      blocks: buildWallGeometries(floor, shown),
       lintel: buildLintelGeometry(floor, shown),
       frame: buildOpeningFrameGeometry(floor, shown),
       glass: buildOpeningGlassGeometry(floor, shown),

@@ -11,12 +11,12 @@ export const DEFAULT_SILL = 0.9
 export const DEFAULT_WINDOW_HEIGHT = 1.2
 export const DEFAULT_WINDOW_WIDTH = 0.9
 export const DEFAULT_DOOR_WIDTH = 0.813
-export const DEFAULT_DOOR_HEIGHT = 2.032
+export const DEFAULT_WINDOW_HEAD = DEFAULT_SILL + DEFAULT_WINDOW_HEIGHT
+export const DEFAULT_DOOR_HEIGHT = DEFAULT_WINDOW_HEAD
 export const DOOR_MIN_WIDTH = 0.6
 export const OPENING_EDGE_PAD = 0.1
 export const OPENING_MIN_GAP = BLOCK_LENGTH
 export const LINTEL_BEARING = 0.15
-export const DEFAULT_WINDOW_HEAD = DEFAULT_SILL + DEFAULT_WINDOW_HEIGHT
 
 export const PLOT_RING: [number, number][] = [
   [0, 0],

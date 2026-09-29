@@ -122,8 +122,8 @@
         const samples = bottomSamplesForWall(floor, wall)
         const geoms = buildWallGeometries(floor, wall, samples)
         const lintel = buildLintelGeometry(floor, wall)
-        const frame = buildOpeningFrameGeometry(floor, wall)
-        const glass = buildOpeningGlassGeometry(floor, wall)
+        const frame = buildOpeningFrameGeometry(floor, wall, samples)
+        const glass = buildOpeningGlassGeometry(floor, wall, samples)
         if (geoms.length === 0 && !lintel && !frame && !glass) continue
         built.push({
           key: `${floor.id}:${wall.id}`,

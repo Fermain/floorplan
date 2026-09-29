@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import type { Floor, Wall } from '../model/types'
 import {
   FRAME_SECTION,
   GLASS_INSET,
+  buildOpeningFrameGeometry,
   openingFrameLayout,
 } from './frames'
 
@@ -40,5 +42,47 @@ describe('openingFrameLayout', () => {
     expect(layout!.glass.u1).toBeLessThan(layout!.inner.u1)
     expect(layout!.glass.y0).toBeGreaterThan(layout!.inner.y0)
     expect(layout!.glass.y1).toBeLessThan(layout!.inner.y1)
+  })
+})
+
+describe('buildOpeningFrameGeometry', () => {
+  it('stops a door frame at the wall bottom instead of running below it', () => {
+    const wall: Wall = {
+      id: 'w1',
+      startCornerId: 'a',
+      endCornerId: 'b',
+      skin: 'double',
+      openings: [
+        {
+          id: 'd',
+          u: 1,
+          v: 0,
+          width: 0.9,
+          height: 2.1,
+          kind: 'door',
+          aligned: true,
+        },
+      ],
+    }
+    const floor: Floor = {
+      id: 'f0',
+      index: 0,
+      datumHeight: 0,
+      corners: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 4, z: 0 },
+      ],
+      walls: [wall],
+      roomFinishes: {},
+    }
+    const geometry = buildOpeningFrameGeometry(floor, wall, [
+      { u: 0, y: 0.45 },
+      { u: 4, y: 0.45 },
+    ])
+    expect(geometry).not.toBeNull()
+    const positions = geometry!.getAttribute('position')
+    let minY = Infinity
+    for (let i = 0; i < positions.count; i++) minY = Math.min(minY, positions.getY(i))
+    expect(minY).toBeGreaterThanOrEqual(0.45 - 1e-6)
   })
 })
