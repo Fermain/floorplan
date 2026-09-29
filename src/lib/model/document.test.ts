@@ -12,6 +12,7 @@ import {
   removeWall,
   replacePlot,
   setOpeningAligned,
+  setRoof,
   updateOpening,
 } from './mutations'
 import { deriveRooms } from './rooms'
@@ -584,6 +585,30 @@ describe('storeys', () => {
     expect(upper.outline?.[0].some((point) => point.x === 4)).toBe(true)
     expect(added.document.building.floors[0].corners.some((corner) => corner.unitId)).toBe(true)
     expect(added.document.building.floors[0].corners.find((corner) => corner.id === 'd0')?.unitId).toBeUndefined()
+  })
+
+  it('roofs a flat upper storey and leaves the ground alone', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const ground = d.building.floors[0]
+    const refused = setRoof(d, ground.id, { pitchDeg: 30, eaves: 0.3 })
+    expect(refused.ok).toBe(false)
+    expect(refused.document).toBe(d)
+    const added = addStorey(d, ground.id, ground.corners[0]?.id)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    const upper = added.document.building.floors.find((floor) => floor.index === 1)
+    if (!upper) throw new Error('missing upper storey')
+    const roofed = setRoof(added.document, upper.id, { pitchDeg: 30, eaves: 0.3 })
+    expect(roofed.ok).toBe(true)
+    if (!roofed.ok) return
+    expect(roofed.document.building.floors.find((floor) => floor.id === upper.id)?.roof).toEqual({
+      pitchDeg: 30,
+      eaves: 0.3,
+    })
+    const cleared = setRoof(roofed.document, upper.id, null)
+    expect(cleared.ok).toBe(true)
+    if (!cleared.ok) return
+    expect(cleared.document.building.floors.find((floor) => floor.id === upper.id)?.roof).toBeUndefined()
   })
 })
 

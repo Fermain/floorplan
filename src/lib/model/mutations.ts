@@ -26,6 +26,7 @@ import type {
   Opening,
   OpeningKind,
   Plot,
+  Roof,
   WallSkin,
 } from './types'
 
@@ -45,6 +46,7 @@ function replaceFloor(document: Document, floor: Floor): Document {
   return {
     ...document,
     building: {
+      ...document.building,
       floors: document.building.floors.map((f) => (f.id === floor.id ? floor : f)),
     },
   }
@@ -376,7 +378,7 @@ export function addStorey(document: Document, floorId: string, cornerId?: string
   const storey = blankStorey(prepared.outline, prepared.unitId, nextIndex)
   return ok({
     ...prepared.document,
-    building: { floors: [...prepared.document.building.floors, storey] },
+    building: { ...prepared.document.building, floors: [...prepared.document.building.floors, storey] },
   })
 }
 
@@ -399,7 +401,22 @@ export function removeTopStorey(document: Document, unitId: string): MutationRes
         : floor,
     )
   }
-  return ok({ ...document, building: { floors } })
+  return ok({ ...document, building: { ...document.building, floors } })
+}
+
+export function setRoof(document: Document, floorId: string, roof: Roof | null): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  if (roof === null) {
+    const { roof: _removed, ...rest } = floor
+    return ok(replaceFloor(document, rest))
+  }
+  if (floor.index === 0) return fail(document, 'ground storey cannot take a roof')
+  if (floor.walls.length > 0) return fail(document, 'only a flat storey can take a roof')
+  if (!(floor.outline ?? []).some((ring) => ring.length >= 3)) return fail(document, 'storey has no plate')
+  if (!(roof.pitchDeg > 0 && roof.pitchDeg < 90)) return fail(document, 'pitch out of range')
+  if (!(roof.eaves >= 0)) return fail(document, 'eaves out of range')
+  return ok(replaceFloor(document, { ...floor, roof }))
 }
 
 export function removeWall(document: Document, floorId: string, wallId: string): MutationResult {

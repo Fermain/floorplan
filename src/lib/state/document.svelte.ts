@@ -94,4 +94,7 @@ export const documentStore = {
   setRoomFinish: (
     ...args: Parameters<typeof mutations.setRoomFinish> extends [Document, ...infer R] ? R : never
   ) => applyMutation((doc) => mutations.setRoomFinish(doc, ...args)),
+  setRoof: (
+    ...args: Parameters<typeof mutations.setRoof> extends [Document, ...infer R] ? R : never
+  ) => applyMutation((doc) => mutations.setRoof(doc, ...args)),
 }

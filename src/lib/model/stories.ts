@@ -117,6 +117,7 @@ function replaceFloorIn(document: Document, floor: Floor): Document {
   return {
     ...document,
     building: {
+      ...document.building,
       floors: document.building.floors.map((item) => (item.id === floor.id ? floor : item)),
     },
   }
@@ -185,7 +186,10 @@ function mergeUnits(document: Document, keep: string, drop: string): Document {
   }
   return {
     ...document,
-    building: { floors: [...groundFloors, ...others, ...[...byIndex.values()].map((list) => combineFloors(list))] },
+    building: {
+      ...document.building,
+      floors: [...groundFloors, ...others, ...[...byIndex.values()].map((list) => combineFloors(list))],
+    },
   }
 }
 
@@ -221,6 +225,7 @@ function splitUnit(document: Document, unitId: string, comps: string[][]): Docum
     next = {
       ...next,
       building: {
+        ...next.building,
         floors: next.building.floors.map((item) =>
           mine.some((kept) => kept.id === item.id) ? { ...item, unitId: nextId } : item,
         ),
@@ -271,6 +276,7 @@ export function syncGroundUnits(document: Document): Document {
   return {
     ...doc,
     building: {
+      ...doc.building,
       floors: doc.building.floors.filter(
         (item) => item.index === 0 || (item.unitId !== undefined && live.has(item.unitId)),
       ),

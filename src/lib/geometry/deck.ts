@@ -188,7 +188,7 @@ function cleanRing(ring: Ring): Ring {
   return points
 }
 
-function unionRings(rings: Ring[]): DeckPolygon[] {
+export function unionRings(rings: Ring[]): DeckPolygon[] {
   const features = rings.filter((ring) => ring.length >= 3).map(toPolygon)
   if (features.length === 0) return []
   if (features.length === 1) return featurePolygons(features[0])

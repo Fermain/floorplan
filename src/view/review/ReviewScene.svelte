@@ -28,6 +28,8 @@
     GLASS_OPACITY,
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildRoofGeometry, masonryReach, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
@@ -55,6 +57,7 @@
     glass: BufferGeometry | null
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
+  type RoofMesh = { key: string; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
 
@@ -64,6 +67,7 @@
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
   let floorSlabs = $state<FloorSlab[]>([])
+  let roofMeshes = $state<RoofMesh[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -77,7 +81,26 @@
     return { x: sx / n, y: 2, z: sz / n }
   })
 
-  const orbitTarget = $derived<[number, number, number]>([plotCenter.x, plotCenter.y, plotCenter.z])
+  let stableTarget: [number, number, number] = [0, 2, 0]
+  let stableCamera: [number, number, number] = [14, 12, 14]
+
+  function sameTriple(a: [number, number, number], b: [number, number, number]) {
+    return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+  }
+
+  const orbitTarget = $derived.by(() => {
+    const next: [number, number, number] = [plotCenter.x, plotCenter.y, plotCenter.z]
+    if (sameTriple(stableTarget, next)) return stableTarget
+    stableTarget = next
+    return stableTarget
+  })
+
+  const cameraPosition = $derived.by(() => {
+    const next: [number, number, number] = [plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]
+    if (sameTriple(stableCamera, next)) return stableCamera
+    stableCamera = next
+    return stableCamera
+  })
 
   const sun = $derived(
     sunDirection(
@@ -146,11 +169,13 @@
       }
     }
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
+    const roofs = roofsFor(pad)
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
     floorSlabs = slabs
+    roofMeshes = roofs
     return () => {
       ground.dispose()
       minor?.dispose()
@@ -163,8 +188,48 @@
         wall.glass?.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
+      for (const roof of roofs) roof.geometry.dispose()
     }
   })
+
+  function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
+    const meshes: RoofMesh[] = []
+    for (const floor of doc.building.floors) {
+      const roof = floor.roof
+      if (!roof || floor.index === 0) continue
+      const below = doc.building.floors.find(
+        (item) => item.unitId === floor.unitId && item.index === floor.index - 1,
+      )
+      const geometry = buildRoofGeometry(floor, roof, masonryReach(below?.walls ?? []))
+      if (!geometry) continue
+      const grade = below ? supportGrade(below, pad) : outlineGrade(floor, pad)
+      const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
+      meshes.push({
+        key: floor.id,
+        geometry,
+        y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
+      })
+    }
+    return meshes
+  }
+
+  function supportGrade(floor: Floor, pad: ReturnType<typeof groundPad>): number {
+    if (!pad) return 0
+    for (const wall of floor.walls) {
+      const datum = wallDatum(floor, wall, pad)
+      if (datum !== null) return datum
+    }
+    return 0
+  }
+
+  function outlineGrade(floor: Floor, pad: ReturnType<typeof groundPad>): number {
+    if (!pad) return 0
+    const ring = floor.outline?.[0] ?? []
+    if (ring.length === 0) return 0
+    const x = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
+    const z = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
+    return pad.structures.find((structure) => structure.rings.some((item) => pointInRing(item, x, z)))?.datum ?? 0
+  }
 
   function slabsFor(structures: { datum: number; rings: Ring[] }[]): FloorSlab[] {
     const slabs: FloorSlab[] = []
@@ -194,7 +259,7 @@
   ): FloorSlab[] {
     const decks: FloorSlab[] = []
     for (const floor of floors) {
-      if (floor.index === 0) continue
+      if (floor.index === 0 || floor.roof) continue
       const polygons = deckPolygons(floor)
       const grade = deckGrade(floor, pad, polygons)
       polygons.forEach((polygon, index) => {
@@ -294,7 +359,7 @@
     <ReviewInteractivity />
     <T.PerspectiveCamera
       makeDefault
-      position={[plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]}
+      position={cameraPosition}
       oncreate={(ref) => {
         ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
       }}
@@ -342,6 +407,12 @@
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}
         />
+      </T.Mesh>
+    {/each}
+
+    {#each roofMeshes as roof (roof.key)}
+      <T.Mesh geometry={roof.geometry} position.y={roof.y} castShadow>
+        <T.MeshStandardMaterial color="#5e666e" roughness={0.84} side={DoubleSide} />
       </T.Mesh>
     {/each}
 

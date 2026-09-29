@@ -1,6 +1,7 @@
 <script lang="ts">
   import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
   import { contourPlanPaths } from '../../lib/geometry/contours'
+  import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
   import { isUnlandedWall } from '../../lib/geometry/support'
   import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
@@ -19,6 +20,7 @@
   } from '../../lib/model/stories'
   import type { Floor, WallSkin } from '../../lib/model/types'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
+  import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
   import {
     nearestCorner,
@@ -122,6 +124,18 @@
       (floor.outline ?? []).map((ring, index) => ({ floorId: floor.id, index, ring })),
     ),
   )
+  const roofDrawings = $derived(
+    levelFloors.flatMap((floor) => {
+      if (!floor.roof) return []
+      const below = floors.find((item) => item.unitId === floor.unitId && item.index === floor.index - 1)
+      return [
+        {
+          floorId: floor.id,
+          plan: roofPlan(floor, floor.roof, masonryReach(below?.walls ?? [])),
+        },
+      ]
+    }),
+  )
   const activeFloor = $derived.by((): Floor | undefined => {
     if (levelFloors.length === 0) return undefined
     if (levelFloors.length === 1) return levelFloors[0]
@@ -214,6 +228,21 @@
 
   function pointsAttr(points: SvgPoint[]): string {
     return points.map(([x, y]) => `${fmt(x)},${fmt(y)}`).join(' ')
+  }
+
+  function ringPath(ring: { x: number; z: number }[]): string {
+    if (ring.length < 3) return ''
+    const [first, ...rest] = ring
+    return `M ${fmt(first.x)} ${fmt(first.z)} ${rest.map((point) => `L ${fmt(point.x)} ${fmt(point.z)}`).join(' ')} Z`
+  }
+
+  function plateFill(floorId: string): string {
+    const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
+    const selected = floorId === selectedPlateFloorId
+    if (selected && roofed) return '#d7dbe0'
+    if (selected) return '#e7e5e4'
+    if (roofed) return '#c5c9ce'
+    return '#d6d3d1'
   }
 
   function roomPolygonPoints(cornerIds: string[], floor: Floor): SvgPoint[] {
@@ -765,6 +794,38 @@
   const atStoreyLimit = $derived(
     storeyUnitId !== undefined && topStoreyIndex(document, storeyUnitId) + 1 >= MAX_STOREYS,
   )
+
+  const roofFloor = $derived.by(() => {
+    if (!selectedPlateFloorId) return undefined
+    const floor = floors.find((item) => item.id === selectedPlateFloorId)
+    if (!floor || floor.index === 0 || floor.walls.length > 0) return undefined
+    if (!(floor.outline ?? []).some((ring) => ring.length >= 3)) return undefined
+    return floor
+  })
+
+  function addRoof() {
+    const floor = roofFloor
+    if (!floor || floor.roof) return
+    applyResult(documentStore.setRoof(floor.id, { pitchDeg: DEFAULT_ROOF_PITCH_DEG, eaves: DEFAULT_ROOF_EAVES }))
+  }
+
+  function setRoofPitch(value: number) {
+    const floor = roofFloor
+    if (!floor?.roof || !Number.isFinite(value)) return
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, pitchDeg: value }))
+  }
+
+  function setRoofEavesMm(value: number) {
+    const floor = roofFloor
+    if (!floor?.roof || !Number.isFinite(value)) return
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, eaves: value / 1000 }))
+  }
+
+  function removeRoof() {
+    const floor = roofFloor
+    if (!floor?.roof) return
+    applyResult(documentStore.setRoof(floor.id, null))
+  }
 
   function addStorey() {
     const target = storeyTarget
@@ -1325,6 +1386,36 @@
       {#if storeyUnitId}
         <button type="button" onclick={removeStorey}>Remove storey</button>
       {/if}
+      {#if roofFloor}
+        {#if roofFloor.roof}
+          <label class="roof">
+            Pitch
+            <input
+              type="number"
+              min="1"
+              max="89"
+              step="1"
+              value={roofFloor.roof.pitchDeg}
+              onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
+            />
+            °
+          </label>
+          <label class="roof">
+            Eaves
+            <input
+              type="number"
+              min="0"
+              step="10"
+              value={Math.round(roofFloor.roof.eaves * 1000)}
+              onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
+            />
+            mm
+          </label>
+          <button type="button" onclick={removeRoof}>Remove roof</button>
+        {:else}
+          <button type="button" onclick={addRoof}>Add roof</button>
+        {/if}
+      {/if}
     </div>
     {#if errorMessage}
       <p class="error">{errorMessage}</p>
@@ -1444,11 +1535,25 @@
           />
         {/if}
       {/each}
+      {#each roofDrawings as drawing (drawing.floorId)}
+        <g pointer-events="none">
+          {#each drawing.plan.footprints as footprint, i (i)}
+            <path
+              d={`${ringPath(footprint.outer)}${footprint.holes.map((hole) => ringPath(hole)).join('')}`}
+              fill="#5e666e"
+              fill-opacity="0.28"
+              fill-rule="evenodd"
+              stroke="#5e666e"
+              stroke-width="0.04"
+            />
+          {/each}
+        </g>
+      {/each}
       {#each plates as plate (`${plate.floorId}-${plate.index}`)}
         {#if plate.ring.length >= 3}
           <polygon
             points={pointsAttr(plate.ring.map((point) => [point.x, point.z]))}
-            fill={plate.floorId === selectedPlateFloorId ? '#e7e5e4' : '#d6d3d1'}
+            fill={plateFill(plate.floorId)}
             stroke="#78716c"
             stroke-width="0.045"
             stroke-dasharray="0.16 0.1"
@@ -1480,6 +1585,21 @@
             }}
           />
         {/if}
+      {/each}
+      {#each roofDrawings as drawing (`hips-${drawing.floorId}`)}
+        <g pointer-events="none">
+          {#each drawing.plan.hips as hip, i (i)}
+            <line
+              x1={hip.a.x}
+              y1={hip.a.z}
+              x2={hip.b.x}
+              y2={hip.b.z}
+              stroke="#3d4450"
+              stroke-width="0.035"
+              stroke-linecap="round"
+            />
+          {/each}
+        </g>
       {/each}
       {#if outlineReference && localGrid.length > 0}
         <g clip-path="url(#plan-storey-clip)" pointer-events="none">
@@ -1737,7 +1857,20 @@
   .floors {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.35rem;
+  }
+
+  .roof {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .roof input {
+    width: 4.5rem;
+    font: inherit;
+    padding: 0.2rem 0.35rem;
   }
 
   button {

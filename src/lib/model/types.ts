@@ -52,6 +52,12 @@ export type Floor = {
   walls: Wall[]
   roomFinishes: Record<string, string>
   outline?: { x: number; z: number }[][]
+  roof?: Roof
+}
+
+export type Roof = {
+  pitchDeg: number
+  eaves: number
 }
 
 export type Building = {

@@ -18,6 +18,8 @@ export const WINDOW_MIN_WIDTH = 0.4
 export const OPENING_EDGE_PAD = 0.15
 export const OPENING_MIN_GAP = BLOCK_LENGTH
 export const LINTEL_BEARING = 0.15
+export const DEFAULT_ROOF_PITCH_DEG = 30
+export const DEFAULT_ROOF_EAVES = 0.3
 
 export const PLOT_RING: [number, number][] = [
   [0, 0],
