@@ -8,10 +8,24 @@
   import { loadHeightfield, loadPlot } from '$lib/plot/load'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
+  import OpeningFields from '$lib/components/project/OpeningFields.svelte'
+  import RoofPicker from '$lib/components/project/RoofPicker.svelte'
+  import WallPicker from '$lib/components/project/WallPicker.svelte'
+  import { projectDefaults } from '$lib/model/defaults'
+  import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
+  import type { ProjectDefaults, WallSystemId } from '$lib/model/types'
 
   const plot = $derived(documentStore.document.plot)
   const field = $derived(documentStore.document.heightfield)
   let message = $state<{ text: string; error: boolean } | null>(null)
+  let defaultsMessage = $state<string | null>(null)
+  const defaults = $derived(projectDefaults(documentStore.document))
+  const systemId = $derived<WallSystemId>(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID)
+
+  function setDefault<K extends keyof ProjectDefaults>(key: K, value: ProjectDefaults[K]) {
+    const result = documentStore.setProjectDefaults({ [key]: value } as Partial<ProjectDefaults>)
+    defaultsMessage = result.ok ? null : `That would not fit: ${result.reason}.`
+  }
 
   const area = $derived(Math.abs(signedPolygonArea(plot.ring.map(([x, z]) => ({ x, z })))))
   const perimeter = $derived(
@@ -83,8 +97,8 @@
 <div class="h-full overflow-auto">
   <div class="mx-auto flex max-w-3xl flex-col gap-4 p-6">
     <div>
-      <h1 class="text-lg font-semibold">Site</h1>
-      <p class="text-sm text-muted-foreground">Where the plot is, which way it faces, and the shape of the ground.</p>
+      <h1 class="text-lg font-semibold">Project</h1>
+      <p class="text-sm text-muted-foreground">The site, and the defaults new work starts from.</p>
     </div>
 
     <div class="grid gap-4 sm:grid-cols-3">
@@ -193,6 +207,51 @@
 
     {#if message}
       <p class="text-sm {message.error ? 'text-destructive' : 'text-muted-foreground'}">{message.text}</p>
+    {/if}
+
+    <div class="mt-4">
+      <h2 class="text-lg font-semibold">Defaults</h2>
+      <p class="text-sm text-muted-foreground">
+        Used for new walls, openings and roofs. Anything already drawn keeps its own settings.
+      </p>
+    </div>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Walls</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <WallPicker bind:value={() => systemId, (next) => documentStore.setDefaultWallSystem(next)} />
+      </Card.Content>
+    </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Roof</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <RoofPicker
+          bind:form={() => defaults.roofForm, (next) => setDefault('roofForm', next)}
+          bind:covering={() => defaults.roofCovering, (next) => setDefault('roofCovering', next)}
+          bind:pitchDeg={() => defaults.roofPitchDeg, (next) => setDefault('roofPitchDeg', next)}
+          bind:eaves={() => defaults.roofEaves, (next) => setDefault('roofEaves', next)}
+        />
+      </Card.Content>
+    </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Openings</Card.Title>
+      </Card.Header>
+      <Card.Content>
+        <OpeningFields
+          {systemId}
+          bind:windowWidth={() => defaults.windowWidth, (next) => setDefault('windowWidth', next)}
+          bind:windowHeight={() => defaults.windowHeight, (next) => setDefault('windowHeight', next)}
+          bind:sill={() => defaults.sill, (next) => setDefault('sill', next)}
+          bind:doorHeight={() => defaults.doorHeight, (next) => setDefault('doorHeight', next)}
+        />
+      </Card.Content>
+    </Card.Root>
+    {#if defaultsMessage}
+      <p class="text-sm text-destructive">{defaultsMessage}</p>
     {/if}
   </div>
 </div>

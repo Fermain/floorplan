@@ -20,7 +20,7 @@ import {
   DEFAULT_WINDOW_WIDTH,
 } from '../plot/fixture'
 import { snapToCourse, snapToHalfModule, type WallSystem } from './systems'
-import type { Opening, OpeningKind } from './types'
+import type { Opening, OpeningKind, ProjectDefaults } from './types'
 
 export function isFloorOpening(kind: OpeningKind): boolean {
   return kind !== 'window'
@@ -38,19 +38,41 @@ export function openingMinWidth(kind: OpeningKind): number {
 export function defaultOpeningDimensions(
   kind: OpeningKind,
   system?: WallSystem,
+  defaults?: Partial<ProjectDefaults>,
 ): {
   v: number
   height: number
   width: number
 } {
-  const base = clayOpeningDimensions(kind)
+  const custom = defaults !== undefined && Object.keys(defaults).length > 0
+  const base = withDefaults(kind, clayOpeningDimensions(kind), defaults)
   if (!system) return base
-  if (Math.abs(system.courseHeight - BLOCK_HEIGHT) < 1e-9 && Math.abs(system.moduleLength - BLOCK_LENGTH) < 1e-9) {
+  if (
+    !custom &&
+    Math.abs(system.courseHeight - BLOCK_HEIGHT) < 1e-9 &&
+    Math.abs(system.moduleLength - BLOCK_LENGTH) < 1e-9
+  ) {
     return base
   }
   const v = snapToCourse(system, base.v)
   const head = snapToCourse(system, base.v + base.height, 'ceil')
   return { v, height: head - v, width: snapToHalfModule(system, base.width, 'ceil') }
+}
+
+function withDefaults(
+  kind: OpeningKind,
+  base: { v: number; height: number; width: number },
+  defaults: Partial<ProjectDefaults> | undefined,
+): { v: number; height: number; width: number } {
+  if (!defaults) return base
+  if (kind === 'window') {
+    return {
+      v: defaults.sill ?? base.v,
+      height: defaults.windowHeight ?? base.height,
+      width: defaults.windowWidth ?? base.width,
+    }
+  }
+  return { ...base, height: defaults.doorHeight ?? base.height }
 }
 
 function clayOpeningDimensions(kind: OpeningKind): { v: number; height: number; width: number } {
@@ -158,8 +180,12 @@ export function fitDoor(centre: number, width: number, length: number): { u: num
   return { u, width: nextWidth }
 }
 
-export function applyAligned(opening: Opening, system?: WallSystem): Opening {
-  const d = defaultOpeningDimensions(opening.kind, system)
+export function applyAligned(
+  opening: Opening,
+  system?: WallSystem,
+  defaults?: Partial<ProjectDefaults>,
+): Opening {
+  const d = defaultOpeningDimensions(opening.kind, system, defaults)
   return { ...opening, v: d.v, height: d.height, aligned: true }
 }
 
@@ -169,8 +195,9 @@ export function createOpening(
   u: number,
   width?: number,
   system?: WallSystem,
+  defaults?: Partial<ProjectDefaults>,
 ): Opening {
-  const d = defaultOpeningDimensions(kind, system)
+  const d = defaultOpeningDimensions(kind, system, defaults)
   return {
     id,
     kind,

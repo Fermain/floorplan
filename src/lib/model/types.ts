@@ -105,9 +105,21 @@ export type Roof = {
   covering?: RoofCovering
 }
 
+export type ProjectDefaults = {
+  roofForm: RoofForm
+  roofCovering: RoofCovering
+  roofPitchDeg: number
+  roofEaves: number
+  windowWidth: number
+  windowHeight: number
+  sill: number
+  doorHeight: number
+}
+
 export type Building = {
   floors: Floor[]
   wallSystemId?: WallSystemId
+  defaults?: Partial<ProjectDefaults>
 }
 
 export type CostAssumptions = {

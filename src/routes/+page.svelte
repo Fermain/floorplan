@@ -13,7 +13,8 @@
   import * as Select from '$lib/components/ui/select'
   import { WALL_SYSTEMS, DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
   import type { Document, WallSystemId } from '$lib/model/types'
-  import { fixtureDocument } from '$lib/plot/fixture'
+  import { DEFAULT_SAMPLE_ID, documentFromSample, SAMPLE_PLOTS, samplePlot, type SamplePlotId } from '$lib/plot/samples'
+  import { resolve } from '$app/paths'
   import { sectionHref } from '$lib/routes/links'
   import {
     deleteProject,
@@ -32,6 +33,7 @@
   let creating = $state(false)
   let name = $state('')
   let system = $state<WallSystemId>(DEFAULT_WALL_SYSTEM_ID)
+  let site = $state<SamplePlotId>(DEFAULT_SAMPLE_ID)
   let problem = $state('')
 
   async function refresh() {
@@ -50,8 +52,7 @@
 
   async function create(event: SubmitEvent) {
     event.preventDefault()
-    const document = fixtureDocument()
-    document.building.wallSystemId = system
+    const document = documentFromSample(site, system, {})
     const saved = await saveProject(null, name || 'Untitled house', document)
     if (!saved.ok) {
       problem = saved.reason
@@ -186,11 +187,27 @@
     <form class="grid gap-4" onsubmit={create}>
       <Dialog.Header>
         <Dialog.Title>New project</Dialog.Title>
-        <Dialog.Description>Starts on the sample plot. You can import your own on the Site page.</Dialog.Description>
+        <Dialog.Description>Sensible defaults for a small house. Change any of them later on the Project page.</Dialog.Description>
       </Dialog.Header>
       <div class="grid gap-1.5">
         <Label for="project-name">Name</Label>
         <Input id="project-name" placeholder="Untitled house" bind:value={name} autofocus />
+      </div>
+      <div class="grid gap-1.5">
+        <Label>Plot</Label>
+        <Select.Root type="single" bind:value={site}>
+          <Select.Trigger class="w-full">{samplePlot(site).name}</Select.Trigger>
+          <Select.Content>
+            {#each SAMPLE_PLOTS as item (item.id)}
+              <Select.Item value={item.id} label={item.name}>
+                <div>
+                  <div>{item.name}</div>
+                  <div class="text-xs text-muted-foreground">{item.place}</div>
+                </div>
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
       </div>
       <div class="grid gap-1.5">
         <Label>Walls</Label>
@@ -208,9 +225,14 @@
       {#if problem}
         <p class="text-sm text-destructive">{problem}</p>
       {/if}
-      <Dialog.Footer>
-        <Button type="button" variant="outline" onclick={() => (creating = false)}>Cancel</Button>
-        <Button type="submit">Create</Button>
+      <Dialog.Footer class="sm:justify-between">
+        <Button type="button" variant="link" class="px-0" href={`${resolve('/new')}?step=site`}>
+          Step through every option…
+        </Button>
+        <div class="flex gap-2">
+          <Button type="button" variant="outline" onclick={() => (creating = false)}>Cancel</Button>
+          <Button type="submit">Create</Button>
+        </div>
       </Dialog.Footer>
     </form>
   </Dialog.Content>

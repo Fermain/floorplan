@@ -52,7 +52,8 @@
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
-  import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
+  import { DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
+  import { projectDefaults } from '../../lib/model/defaults'
   import { documentStore } from '../../lib/state/document.svelte'
   import {
     nearestCorner,
@@ -902,7 +903,15 @@
   function addRoof() {
     const floor = roofFloor
     if (!floor || floor.roof) return
-    applyResult(documentStore.setRoof(floor.id, { pitchDeg: DEFAULT_ROOF_PITCH_DEG, eaves: DEFAULT_ROOF_EAVES }))
+    const defaults = projectDefaults(documentStore.document)
+    applyResult(
+      documentStore.setRoof(floor.id, {
+        pitchDeg: defaults.roofPitchDeg,
+        eaves: defaults.roofEaves,
+        form: defaults.roofForm,
+        covering: defaults.roofCovering,
+      }),
+    )
   }
 
   function setRoofForm(form: RoofForm) {

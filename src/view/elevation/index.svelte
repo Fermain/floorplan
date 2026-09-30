@@ -113,7 +113,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   const widthAllowed = $derived(widthLimits !== null && widthLimits.max >= widthLimits.min - 1e-9)
 
   const shownWidth = $derived.by(() => {
-    const fallback = preferredWidth[widthKind] ?? defaultOpeningDimensions(widthKind, system).width
+    const fallback =
+      preferredWidth[widthKind] ?? defaultOpeningDimensions(widthKind, system, doc.building.defaults).width
     const raw = widthDraft ?? editingOpening?.width ?? fallback
     if (!widthLimits || !widthAllowed) return raw
     return Math.min(widthLimits.max, Math.max(widthLimits.min, raw))

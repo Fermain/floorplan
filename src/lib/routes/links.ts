@@ -1,6 +1,6 @@
 import { resolve } from '$app/paths'
 
-export type ProjectSection = 'plan' | 'review' | 'quantities' | 'checks' | 'site'
+export type ProjectSection = 'plan' | 'review' | 'quantities' | 'checks' | 'project'
 
 export function homeHref(): string {
   return resolve('/')
@@ -23,5 +23,5 @@ export function sectionHref(id: string, section: ProjectSection): string {
   if (section === 'review') return resolve('/p/[id]/review', { id })
   if (section === 'quantities') return resolve('/p/[id]/quantities', { id })
   if (section === 'checks') return resolve('/p/[id]/checks', { id })
-  return resolve('/p/[id]/site', { id })
+  return resolve('/p/[id]/project', { id })
 }

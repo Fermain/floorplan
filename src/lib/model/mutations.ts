@@ -15,6 +15,7 @@ import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
 import { COVERINGS } from '../geometry/coverings'
+import { defaultsProblem, projectDefaults } from './defaults'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -31,6 +32,7 @@ import type {
   Opening,
   OpeningKind,
   Plot,
+  ProjectDefaults,
   Roof,
   RoomType,
   Space,
@@ -205,7 +207,7 @@ export function setWallSystem(
   if (wall.skin === 'logical') return fail(document, 'logical walls have no blocks')
   const system = wallSystem(systemId)
   const openings = wall.openings.map((opening) => {
-    if (opening.aligned) return applyAligned(opening, system)
+    if (opening.aligned) return applyAligned(opening, system, document.building.defaults)
     const v = snapToCourse(system, opening.v)
     const head = snapToCourse(system, opening.v + opening.height, 'ceil')
     return { ...opening, v, height: Math.max(system.courseHeight, head - v) }
@@ -218,6 +220,19 @@ export function setWallSystem(
 
 export function setDefaultWallSystem(document: Document, systemId: WallSystemId): MutationResult {
   return ok({ ...document, building: { ...document.building, wallSystemId: systemId } })
+}
+
+export function setProjectDefaults(document: Document, patch: Partial<ProjectDefaults>): MutationResult {
+  const next = { ...(document.building.defaults ?? {}), ...patch }
+  if (patch.roofCovering !== undefined && !COVERINGS.some((item) => item.id === patch.roofCovering)) {
+    return fail(document, 'unknown roof covering')
+  }
+  if (patch.roofForm !== undefined && !['hip', 'gable', 'mono'].includes(patch.roofForm)) {
+    return fail(document, 'unknown roof form')
+  }
+  const problem = defaultsProblem({ ...projectDefaults(document), ...next })
+  if (problem) return fail(document, problem)
+  return ok({ ...document, building: { ...document.building, defaults: next } })
 }
 
 function withoutCell(floor: Floor, cell: Cell, cells: Cell[]): Space[] {
@@ -474,7 +489,7 @@ export function addOpening(
   const wall = floor.walls.find((w) => w.id === wallId)
   if (!wall) return fail(document, 'wall not found')
   const system = systemOf(wall)
-  const opening = createOpening(newId('opening'), kind, u, width, system)
+  const opening = createOpening(newId('opening'), kind, u, width, system, document.building.defaults)
   if (v !== undefined) {
     opening.v = v
     opening.aligned = false
@@ -515,7 +530,7 @@ export function updateOpening(
     aligned = false
   }
   if (patch.kind !== undefined && patch.kind !== existing.kind) {
-    const d = defaultOpeningDimensions(patch.kind, system)
+    const d = defaultOpeningDimensions(patch.kind, system, document.building.defaults)
     if (aligned) {
       patch = { ...patch, v: d.v, height: d.height }
     }
@@ -585,7 +600,7 @@ export function setOpeningAligned(
 
   let updated = { ...existing, aligned }
   if (aligned) {
-    updated = applyAligned(updated, systemOf(wall))
+    updated = applyAligned(updated, systemOf(wall), document.building.defaults)
   }
 
   const walls = floor.walls.map((w) =>
