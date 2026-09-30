@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
+  import { untrack } from 'svelte'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Redo2 from '@lucide/svelte/icons/redo-2'
@@ -26,9 +27,15 @@
 
   $effect(() => {
     const projectId = id
-    ready = false
-    void session.open(projectId).then((ok) => {
-      if (projectId === id) ready = ok
+    untrack(() => {
+      if (session.project?.id === projectId) {
+        ready = true
+        return
+      }
+      ready = false
+      void session.open(projectId).then((ok) => {
+        if (projectId === id) ready = ok
+      })
     })
   })
 

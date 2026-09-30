@@ -4,6 +4,11 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  server: {
+    watch: {
+      ignored: ['**/.svelte-kit/generated/**'],
+    },
+  },
   test: {
     include: ['src/**/*.test.ts'],
   },
