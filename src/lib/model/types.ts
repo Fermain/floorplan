@@ -44,6 +44,13 @@ export type Fence = {
   height: number
 }
 
+export type SupportType = 'column' | 'pier' | 'steel' | 'pole'
+
+export type Support = {
+  type: SupportType
+  spacing: number
+}
+
 export type Wall = {
   id: string
   startCornerId: string
@@ -51,6 +58,7 @@ export type Wall = {
   skin: WallSkin
   systemId?: WallSystemId
   fence?: Fence
+  support?: Support
   openings: Opening[]
 }
 

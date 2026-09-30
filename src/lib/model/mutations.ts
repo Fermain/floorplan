@@ -17,6 +17,7 @@ import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
 import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
+import { supportProblem } from './supports'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -29,6 +30,7 @@ import type {
   CostAssumptions,
   Document,
   Fence,
+  Support,
   Floor,
   Heightfield,
   MutationResult,
@@ -367,6 +369,30 @@ export function setFence(
     if (item.id !== wallId) return item
     if (fence) return { ...item, fence: { ...fence } }
     const { fence: _removed, ...rest } = item
+    return rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
+export function setSupport(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  support: Support | null,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin !== 'logical') return fail(document, 'only a logical wall can carry supports')
+  if (support) {
+    const problem = supportProblem(support)
+    if (problem) return fail(document, problem)
+  }
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    if (support) return { ...item, support: { ...support } }
+    const { support: _removed, ...rest } = item
     return rest
   })
   return ok(replaceFloor(document, { ...floor, walls }))

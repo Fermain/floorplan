@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fencePosts, fenceSpec } from '../../lib/model/fences'
+  import { floorSupports, pierSide, supportSpec } from '../../lib/model/supports'
   import { untrack } from 'svelte'
   import BrickWall from '@lucide/svelte/icons/brick-wall'
   import Footprints from '@lucide/svelte/icons/footprints'
@@ -170,6 +171,7 @@
   const document = $derived(documentStore.document)
   const plotRing = $derived(document.plot.ring)
   const floors = $derived(document.building.floors)
+  const defaultSystem = $derived(wallSystem(documentStore.document.building.wallSystemId))
   const levelFloors = $derived(floors.filter((floor) => floor.index === activeStoreyIndex))
   const storeyIndexes = $derived.by(() => {
     let max = 0
@@ -2064,6 +2066,28 @@
             />
           {/if}
         {/if}
+      {/each}
+      {#each floorSupports(displayFloor) as spot (`${spot.x}:${spot.z}`)}
+        {@const side = spot.support.type === 'pier' ? pierSide(defaultSystem) : supportSpec(spot.support.type).size}
+        {@const angle = (Math.atan2(spot.dir.z, spot.dir.x) * 180) / Math.PI}
+        <g transform="translate({spot.x} {spot.z}) rotate({angle})" pointer-events="none">
+          {#if spot.support.type === 'column'}
+            <rect x={-side / 2} y={-side / 2} width={side} height={side} fill="#f5f5f4" stroke="#44403c" stroke-width={s(0.015)} />
+            <circle r={0.12} fill="#a8a29e" stroke="#44403c" stroke-width={s(0.012)} />
+          {:else if spot.support.type === 'pole'}
+            <circle r={side / 2} fill="#8b6b4a" stroke="#44403c" stroke-width={s(0.012)} />
+          {:else}
+            <rect
+              x={-side / 2}
+              y={-side / 2}
+              width={side}
+              height={side}
+              fill={spot.support.type === 'steel' ? '#3a3f44' : '#a8927a'}
+              stroke="#44403c"
+              stroke-width={s(0.012)}
+            />
+          {/if}
+        </g>
       {/each}
       {#if showUnlandedWarning}
         {#each displayFloor.walls as wall (wall.id)}
