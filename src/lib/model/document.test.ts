@@ -316,7 +316,7 @@ describe('aligned openings', () => {
   })
 
   it('sets a door head on the same line as a window head', () => {
-    let d = rectInsidePlot(fixtureDocument())
+    const d = rectInsidePlot(fixtureDocument())
     const fid = floorId(d)
     const wallId = d.building.floors[0].walls[0].id
     const door = addOpening(d, fid, wallId, 'door', 0.5)

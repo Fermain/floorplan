@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { SvelteSet } from 'svelte/reactivity'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
@@ -278,8 +279,8 @@
   const rooms = $derived(displayFloor ? deriveRooms(displayFloor) : [])
   const logicalWalls = $derived(displayFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
   const unlandedWallIds = $derived.by(() => {
-    if (activeStoreyIndex <= 0) return new Set<string>()
-    const ids = new Set<string>()
+    if (activeStoreyIndex <= 0) return new SvelteSet<string>()
+    const ids = new SvelteSet<string>()
     for (const floor of levelFloors) {
       for (const wall of floor.walls) {
         if (isUnlandedWall(document, floor, wall)) ids.add(wall.id)

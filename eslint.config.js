@@ -12,7 +12,7 @@ export default defineConfig(
   ...svelte.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ['dist/**', 'build/**', '.svelte-kit/**', 'eslint.config.js', 'svelte.config.js'],
+    ignores: ['dist/**', 'build/**', '.svelte-kit/**', '.worktrees/**', 'eslint.config.js', 'svelte.config.js'],
   },
   {
     languageOptions: {
@@ -24,6 +24,14 @@ export default defineConfig(
   {
     rules: {
       'svelte/no-navigation-without-resolve': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
     },
   },
   {

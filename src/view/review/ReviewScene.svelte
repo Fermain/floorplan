@@ -95,6 +95,7 @@
     let sz = 0
     for (const [x, z] of ring) {
       sx += x
+      sz += z
     }
     const n = ring.length || 1
     return { x: sx / n, y: 2, z: sz / n }

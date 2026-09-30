@@ -176,7 +176,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   })
 
   $effect(() => {
-    selectedOpeningId
+    const _opening = selectedOpeningId
     widthDraft = null
   })
 
