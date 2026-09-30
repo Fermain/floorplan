@@ -9,6 +9,7 @@
   import Plus from '@lucide/svelte/icons/plus'
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -1538,6 +1539,35 @@
     if (applyResult(documentStore.removeStair(chosen.floorId, chosen.stair.id))) chooseSelection({})
   }
 
+  const deletable = $derived.by((): { label: string; run: () => void } | null => {
+    if (roofFloor) return null
+    if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
+    const wallId = selectedWallId
+    const floor = activeFloor
+    const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
+    if (!floor || !wall) return null
+    return {
+      label: wall.skin === 'logical' ? (wall.fence ? 'Delete fence line' : 'Delete logical wall') : 'Delete wall',
+      run: () => {
+        if (applyResult(documentStore.removeWall(floor.id, wall.id))) chooseSelection({})
+      },
+    }
+  })
+
+  $effect(() => {
+    const action = deletable
+    if (!action) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      if (event.target instanceof HTMLElement && event.target.closest('[role="listbox"], [role="menu"], select')) return
+      event.preventDefault()
+      action.run()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const drawHintBody = $derived.by(() => {
     if (tool === 'draw-stair') {
       if (!pendingStair) return 'Click where the bottom step starts. A stair needs a storey above it.'
@@ -1645,6 +1675,18 @@
         <Footprints />Stair
       </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if deletable}
+      <Button
+        variant="ghost"
+        size="sm"
+        class="ml-auto text-destructive hover:text-destructive"
+        title="{deletable.label} (Delete or Backspace)"
+        onclick={deletable.run}
+      >
+        <Trash2 />{deletable.label}
+        <kbd class="ml-1 rounded border px-1 font-sans text-[10px] text-muted-foreground">⌫</kbd>
+      </Button>
+    {/if}
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">

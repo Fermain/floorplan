@@ -2,7 +2,6 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { planHref, wallHref } from '$lib/routes/links'
-  import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
   import PlanView from '$view/plan/index.svelte'
 
@@ -18,26 +17,6 @@
     const next = storey
     if (next === urlStorey) return
     void goto(planHref(id, next), { keepFocus: true, noScroll: true })
-  })
-
-  $effect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
-      }
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
-      const wallId = selectedWallId
-      if (!wallId) return
-      const floor = documentStore.document.building.floors.find((item) => item.walls.some((wall) => wall.id === wallId))
-      if (!floor) return
-      event.preventDefault()
-      documentStore.removeWall(floor.id, wallId)
-      selectedWallId = null
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
   })
 </script>
 

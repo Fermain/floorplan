@@ -695,7 +695,10 @@ export function removeWall(document: Document, floorId: string, wallId: string):
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
   if (!floor.walls.some((w) => w.id === wallId)) return fail(document, 'wall not found')
-  let next = replaceFloor(document, { ...floor, walls: floor.walls.filter((w) => w.id !== wallId) })
+  const walls = floor.walls.filter((w) => w.id !== wallId)
+  const used = new Set(walls.flatMap((w) => [w.startCornerId, w.endCornerId]))
+  const corners = floor.corners.filter((corner) => used.has(corner.id))
+  let next = replaceFloor(document, { ...floor, walls, corners })
   if (floor.index === 0) next = syncGroundUnits(next)
   return ok(next)
 }
