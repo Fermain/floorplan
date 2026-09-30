@@ -4,3 +4,8 @@ body,
   min-height: 100%;
   margin: 0;
 }
+
+html,
+body {
+  background: #f4f4f5;
+}

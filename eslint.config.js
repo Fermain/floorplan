@@ -12,7 +12,7 @@ export default defineConfig(
   ...svelte.configs.recommended,
   eslintConfigPrettier,
   {
-    ignores: ['dist/**', 'eslint.config.js', 'svelte.config.js'],
+    ignores: ['dist/**', 'build/**', '.svelte-kit/**', 'eslint.config.js', 'svelte.config.js'],
   },
   {
     languageOptions: {
