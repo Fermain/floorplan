@@ -16,6 +16,8 @@
     type Cell,
   } from '../../lib/geometry/spaces'
   import { FINISH_LABEL } from '../../lib/cost/quantities'
+  import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
+  import { isHabitable } from '../../lib/geometry/spaces'
   import {
     pointInsideRings,
     storeyFootprint,
@@ -193,6 +195,13 @@
     const resolved = entry.layout.spaces.find((item) => item.cells.includes(cell)) ?? null
     return { floorId: pick.floorId, cell, resolved }
   })
+
+  const sans = $derived(buildingChecks(document))
+  const shortSpaceIds = $derived(new Set(sans.rooms.filter((room) => !room.ok).map((room) => room.spaceId)))
+  const selectedChecks = $derived(
+    selectedRoom?.resolved ? checksForSpace(sans, selectedRoom.resolved.space.id) : undefined,
+  )
+  const checkFormat = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 1 })
 
   const areaFormat = new Intl.NumberFormat('en-ZA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
@@ -1181,6 +1190,15 @@
       return 'A straight wall is longer than 8 m and wants a movement joint.'
     }
     if (activeStoreyIndex >= 2) return 'Empirical masonry rules stop at two storeys.'
+    if (sans.fenestration && !sans.fenestration.ok) {
+      const share = Math.round(sans.fenestration.ratio * 100)
+      const limit = Math.round(FENESTRATION_MAX_RATIO * 100)
+      return `Glazing is ${share}% of the floor area. Above ${limit}%, SANS 10400-XA wants a fenestration calculation.`
+    }
+    if (shortSpaceIds.size > 0) {
+      const count = shortSpaceIds.size
+      return `${count} ${count === 1 ? 'room falls' : 'rooms fall'} short of SANS 10400 checks. Select one to see why.`
+    }
     return ''
   })
 
@@ -1445,11 +1463,25 @@
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
             {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
-            <text x={at.x} y={at.z - labelSize * 0.35} font-size={labelSize} text-anchor="middle" class="room-name">
+            <text
+              x={at.x}
+              y={at.z - labelSize * 0.35}
+              font-size={labelSize}
+              text-anchor="middle"
+              class="room-name"
+              class:short={shortSpaceIds.has(resolved.space.id)}
+            >
               {resolved.space.name}
             </text>
-            <text x={at.x} y={at.z + labelSize * 0.8} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
-              {areaFormat.format(resolved.area)} m²
+            <text
+              x={at.x}
+              y={at.z + labelSize * 0.8}
+              font-size={labelSize * 0.8}
+              text-anchor="middle"
+              class="room-area"
+              class:short={shortSpaceIds.has(resolved.space.id)}
+            >
+              {areaFormat.format(resolved.area)} m²{shortSpaceIds.has(resolved.space.id) ? ' · check' : ''}
             </text>
           {/each}
           {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
@@ -1789,6 +1821,21 @@
               ? `, in ${resolved.cells.length} parts`
               : ''}
           </p>
+          {#if selectedChecks}
+            <section class="checks" aria-label="SANS 10400 checks">
+              <h3>SANS 10400</h3>
+              {#each selectedChecks.checks as item (item.id)}
+                <p class:short={!item.ok}>
+                  <span class="mark">{item.ok ? 'Meets' : 'Short'}</span>
+                  {item.label}: {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}, needs {checkFormat.format(
+                    item.required,
+                  )}{item.unit === '%' ? '%' : ` ${item.unit}`} (Part {item.part})
+                </p>
+              {/each}
+            </section>
+          {:else if !isHabitable(resolved.space.type)}
+            <p class="hint">Not a habitable room, so the daylight and size checks do not apply.</p>
+          {/if}
           <p class="hint">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
           <p class="area">{areaFormat.format(selectedRoom.cell.netArea)} m² inside the walls</p>
@@ -1994,6 +2041,41 @@
   .room-area {
     fill: #52525b;
     font-family: system-ui, sans-serif;
+  }
+
+  .room-name.short,
+  .room-area.short {
+    fill: #b45309;
+  }
+
+  .checks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e4e4e7;
+  }
+
+  .checks h3 {
+    margin: 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #71717a;
+  }
+
+  .checks p {
+    font-size: 0.8125rem;
+  }
+
+  .checks .mark {
+    display: block;
+    font-weight: 600;
+    color: #15803d;
+  }
+
+  .checks .short .mark {
+    color: #b45309;
   }
 
   .rotate {
