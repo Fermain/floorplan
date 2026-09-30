@@ -5,10 +5,11 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, OpeningKind } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind } from '../model/types'
+import { layoutSpaces } from '../geometry/spaces'
 import { assumptionsOf, rateOf } from './rates'
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Roof'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -24,11 +25,20 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Roof']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof']
 
 export const LINTEL_STEP_M = 0.15
 
 const HOLLOW_BED_FRACTION = 0.5
+
+export const FINISH_LABEL: Record<FloorFinish, string> = {
+  screed: 'Screed',
+  tiles: 'Floor tiles',
+  timber: 'Timber flooring',
+  vinyl: 'Vinyl flooring',
+  carpet: 'Carpet',
+  none: 'No finish',
+}
 
 const OPENING_LABEL: Record<OpeningKind, string> = {
   window: 'Window',
@@ -244,6 +254,31 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm³',
       quantity: round(slabArea * thickness * waste, 2),
       rateKey: 'concrete-m3',
+    })
+  }
+
+  const finishes = new Map<FloorFinish, { area: number; rooms: number }>()
+  for (const floor of doc.building.floors) {
+    for (const resolved of layoutSpaces(floor).spaces) {
+      const finish = resolved.space.finish
+      if (finish === 'none') continue
+      const entry = finishes.get(finish) ?? { area: 0, rooms: 0 }
+      entry.area += resolved.area
+      entry.rooms += 1
+      finishes.set(finish, entry)
+    }
+  }
+  for (const finish of Object.keys(FINISH_LABEL) as FloorFinish[]) {
+    const entry = finishes.get(finish)
+    if (!entry) continue
+    drafts.push({
+      id: `finish:${finish}`,
+      group: 'Finishes',
+      label: FINISH_LABEL[finish],
+      note: `${entry.rooms} ${entry.rooms === 1 ? 'room' : 'rooms'}, ${round(entry.area, 1)} m² net`,
+      unit: 'm²',
+      quantity: round(entry.area * waste, 1),
+      rateKey: `finish:${finish}`,
     })
   }
 

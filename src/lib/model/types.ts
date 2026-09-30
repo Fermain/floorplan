@@ -46,6 +46,30 @@ export type Wall = {
   openings: Opening[]
 }
 
+export type RoomType =
+  | 'living'
+  | 'bedroom'
+  | 'kitchen'
+  | 'dining'
+  | 'bathroom'
+  | 'toilet'
+  | 'study'
+  | 'passage'
+  | 'laundry'
+  | 'garage'
+  | 'store'
+  | 'other'
+
+export type FloorFinish = 'screed' | 'tiles' | 'timber' | 'vinyl' | 'carpet' | 'none'
+
+export type Space = {
+  id: string
+  name: string
+  type: RoomType
+  finish: FloorFinish
+  seeds: { x: number; z: number }[]
+}
+
 export type Floor = {
   id: string
   index: number
@@ -54,6 +78,7 @@ export type Floor = {
   corners: Corner[]
   walls: Wall[]
   roomFinishes: Record<string, string>
+  spaces?: Space[]
   outline?: { x: number; z: number }[][]
   roof?: Roof
 }

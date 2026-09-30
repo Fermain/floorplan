@@ -25,6 +25,11 @@ export const DEFAULT_RATES: Record<string, number> = {
   'opening:garage': 12000,
   'opening:portal': 0,
   'roof-m2': 320,
+  'finish:screed': 120,
+  'finish:tiles': 350,
+  'finish:timber': 650,
+  'finish:vinyl': 300,
+  'finish:carpet': 280,
 }
 
 export function assumptionsOf(costing: Costing | undefined): CostAssumptions {

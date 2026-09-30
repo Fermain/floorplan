@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addOpening, addWallRing, setAssumption, setRate } from '../model/mutations'
+import { addOpening, addWallRing, nameCell, setAssumption, setRate, updateSpace } from '../model/mutations'
 import type { Document, WallSystemId } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
 import { scheduleWall } from '../geometry/schedule'
@@ -100,6 +100,16 @@ describe('takeoff', () => {
     expect(bricks.amount).toBeCloseTo(bricks.quantity * 4, 2)
     const cleared = setRate(priced, 'unit:clay-brick', null).document
     expect(line(cleared, 'unit:clay-brick')!.rate).toBe(DEFAULT_RATES['unit:clay-brick'])
+  })
+
+  it('lays each floor finish over the net area of the rooms that use it', () => {
+    let doc = room()
+    const fid = doc.building.floors[0].id
+    doc = nameCell(doc, fid, 6, 6, 'Bedroom', 'bedroom').document
+    doc = updateSpace(doc, fid, doc.building.floors[0].spaces![0].id, { finish: 'tiles' }).document
+    const tiles = line(doc, 'finish:tiles')!
+    expect(tiles.quantity).toBeCloseTo(Math.round((4 - 0.262) ** 2 * 1.05 * 10) / 10, 6)
+    expect(line(doc, 'finish:screed')).toBeUndefined()
   })
 
   it('refuses a negative rate', () => {

@@ -6,7 +6,16 @@
   import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
-  import { deriveRooms } from '../../lib/model/rooms'
+  import { deriveRooms, roomKey } from '../../lib/model/rooms'
+  import {
+    cellAt,
+    layoutSpaces,
+    ringLabelPoint,
+    ROOM_TYPES,
+    roomTypeLabel,
+    type Cell,
+  } from '../../lib/geometry/spaces'
+  import { FINISH_LABEL } from '../../lib/cost/quantities'
   import {
     pointInsideRings,
     storeyFootprint,
@@ -14,7 +23,7 @@
     MAX_STOREYS,
     topStoreyIndex,
   } from '../../lib/model/stories'
-  import type { Floor, WallSkin, WallSystemId } from '../../lib/model/types'
+  import type { Floor, FloorFinish, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
@@ -102,6 +111,8 @@
   let selectedCornerId = $state<string | null>(null)
   let selectedPlateFloorId = $state<string | null>(null)
   let selectedPlateRing = $state<number | null>(null)
+  let selectedCell = $state<{ floorId: string; x: number; z: number } | null>(null)
+  let newRoomType = $state<RoomType>('bedroom')
   let hoverNodeId = $state<string | null>(null)
   let activeStoreyIndex = $state(0)
 
@@ -155,10 +166,73 @@
       corners: levelFloors.flatMap((floor) => floor.corners),
       walls: levelFloors.flatMap((floor) => floor.walls),
       roomFinishes: Object.assign({}, ...levelFloors.map((floor) => floor.roomFinishes)),
+      spaces: levelFloors.flatMap((floor) => floor.spaces ?? []),
     }
   })
 
+  const levelLayouts = $derived(levelFloors.map((floor) => ({ floorId: floor.id, layout: layoutSpaces(floor) })))
+
+  const spaceByRoom = $derived.by(() => {
+    const byRoom: Record<string, Space> = {}
+    for (const entry of levelLayouts) {
+      for (const resolved of entry.layout.spaces) {
+        for (const cell of resolved.cells) byRoom[roomKey(cell.room.cornerIds)] = resolved.space
+      }
+    }
+    return byRoom
+  })
+
+  const selectedRoom = $derived.by(() => {
+    const pick = selectedCell
+    if (!pick) return null
+    const entry = levelLayouts.find((item) => item.floorId === pick.floorId)
+    if (!entry) return null
+    const cells = [...entry.layout.spaces.flatMap((resolved) => resolved.cells), ...entry.layout.loose]
+    const cell = cellAt(cells, pick.x, pick.z)
+    if (!cell) return null
+    const resolved = entry.layout.spaces.find((item) => item.cells.includes(cell)) ?? null
+    return { floorId: pick.floorId, cell, resolved }
+  })
+
+  const areaFormat = new Intl.NumberFormat('en-ZA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+  function largestCell(cells: Cell[]): Cell {
+    return cells.reduce((best, cell) => (cell.netArea > best.netArea ? cell : best), cells[0])
+  }
+
+  function cellFill(cornerIds: string[]): string {
+    const space = spaceByRoom[roomKey(cornerIds)]
+    const chosen = selectedRoom
+    if (chosen && space && chosen.resolved?.space.id === space.id) return 'rgba(37, 99, 235, 0.12)'
+    if (chosen && !chosen.resolved && roomKey(chosen.cell.room.cornerIds) === roomKey(cornerIds)) {
+      return 'rgba(37, 99, 235, 0.12)'
+    }
+    if (!space) return 'rgba(120, 120, 120, 0.08)'
+    if (space.finish === 'timber') return 'rgba(139, 90, 43, 0.14)'
+    if (space.finish === 'tiles') return 'rgba(148, 163, 184, 0.2)'
+    if (space.finish === 'carpet') return 'rgba(120, 113, 108, 0.16)'
+    if (space.finish === 'vinyl') return 'rgba(163, 163, 143, 0.16)'
+    return 'rgba(120, 120, 120, 0.1)'
+  }
+
+  function nameSelectedRoom() {
+    const chosen = selectedRoom
+    const pick = selectedCell
+    if (!chosen || !pick) return
+    const label = roomTypeLabel(newRoomType)
+    const taken = floors.flatMap((floor) => floor.spaces ?? []).filter((space) => space.type === newRoomType).length
+    const name = taken === 0 ? label : `${label} ${taken + 1}`
+    applyResult(documentStore.nameCell(chosen.floorId, pick.x, pick.z, name, newRoomType))
+  }
+
+  function patchSelectedSpace(patch: Partial<Pick<Space, 'name' | 'type' | 'finish'>>) {
+    const chosen = selectedRoom
+    if (!chosen?.resolved) return
+    applyResult(documentStore.updateSpace(chosen.floorId, chosen.resolved.space.id, patch))
+  }
+
   const bounds = $derived(plotBounds(plotRing, PLOT_MARGIN_M))
+  const labelSize = $derived((bounds.maxX - bounds.minX) / 52)
   const viewBox = $derived(
     `${bounds.minX} ${bounds.minZ} ${bounds.maxX - bounds.minX} ${bounds.maxZ - bounds.minZ}`,
   )
@@ -386,7 +460,9 @@
     cornerId?: string | null
     plateFloorId?: string | null
     plateRing?: number | null
+    cell?: { floorId: string; x: number; z: number } | null
   }) {
+    selectedCell = next.cell ?? null
     selectedWallId = next.wallId ?? null
     selectedEdge = next.edge ?? null
     selectedOutline = next.outline ?? null
@@ -436,8 +512,18 @@
       if (pickOutline(plan.x, plan.z)) return
       const room = roomAtPoint(activeFloor, plan.x, plan.z)
       if (room) {
-        const next = room.finishId === 'timber' ? 'unfinished' : 'timber'
-        applyResult(documentStore.setRoomFinish(floorIdFor(room.cornerIds[0]) ?? activeFloorId, room.cornerIds, next))
+        const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
+        const current = selectedRoom?.resolved
+        if (event.shiftKey && current && selectedRoom?.floorId === floorId) {
+          const inside = current.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds))
+          applyResult(
+            inside
+              ? documentStore.leaveCell(floorId, plan.x, plan.z)
+              : documentStore.joinCell(floorId, current.space.id, plan.x, plan.z),
+          )
+          return
+        }
+        chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
         return
       }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
@@ -1103,10 +1189,6 @@
     return () => onStatus?.({ text: '', error: false })
   })
 
-  function roomFill(finishId: string): string {
-    if (finishId === 'timber') return 'rgba(139, 90, 43, 0.12)'
-    return 'rgba(120, 120, 120, 0.08)'
-  }
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
@@ -1350,7 +1432,7 @@
         {#if pts.length >= 3}
           <polygon
             points={pointsAttr(pts)}
-            fill={roomFill(room.finishId)}
+            fill={cellFill(room.cornerIds)}
             stroke="none"
             pointer-events="none"
           />
@@ -1359,6 +1441,25 @@
       {#each wallPolygons as poly, i (i)}
         <polygon points={pointsAttr(poly)} fill="#333" stroke="none" />
       {/each}
+      <g class="room-labels" pointer-events="none">
+        {#each levelLayouts as entry (entry.floorId)}
+          {#each entry.layout.spaces as resolved (resolved.space.id)}
+            {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
+            <text x={at.x} y={at.z - labelSize * 0.35} font-size={labelSize} text-anchor="middle" class="room-name">
+              {resolved.space.name}
+            </text>
+            <text x={at.x} y={at.z + labelSize * 0.8} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
+              {areaFormat.format(resolved.area)} m²
+            </text>
+          {/each}
+          {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
+            {@const at = ringLabelPoint(cell.net)}
+            <text x={at.x} y={at.z + labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
+              {areaFormat.format(cell.netArea)} m²
+            </text>
+          {/each}
+        {/each}
+      </g>
       {#each logicalWalls as wall (wall.id)}
         {@const a = cornerById(displayFloor.corners, wall.startCornerId)}
         {@const b = cornerById(displayFloor.corners, wall.endCornerId)}
@@ -1649,6 +1750,60 @@
       </text>
     </g>
   </svg>
+    {#if selectedRoom && !roofFloor}
+      <aside class="inspector" aria-label="Room">
+        {#if selectedRoom.resolved}
+          {@const resolved = selectedRoom.resolved}
+          <label>
+            Name
+            <input
+              type="text"
+              value={resolved.space.name}
+              onchange={(event) => patchSelectedSpace({ name: event.currentTarget.value })}
+            />
+          </label>
+          <label>
+            Use
+            <select
+              value={resolved.space.type}
+              onchange={(event) => patchSelectedSpace({ type: event.currentTarget.value as RoomType })}
+            >
+              {#each ROOM_TYPES as option (option.type)}
+                <option value={option.type}>{option.label}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            Floor finish
+            <select
+              value={resolved.space.finish}
+              onchange={(event) => patchSelectedSpace({ finish: event.currentTarget.value as FloorFinish })}
+            >
+              {#each Object.entries(FINISH_LABEL) as [finish, label] (finish)}
+                <option value={finish}>{label}</option>
+              {/each}
+            </select>
+          </label>
+          <p class="area">
+            {areaFormat.format(resolved.area)} m² inside the walls{resolved.cells.length > 1
+              ? `, in ${resolved.cells.length} parts`
+              : ''}
+          </p>
+          <p class="hint">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
+        {:else}
+          <p class="area">{areaFormat.format(selectedRoom.cell.netArea)} m² inside the walls</p>
+          <label>
+            Use
+            <select bind:value={newRoomType}>
+              {#each ROOM_TYPES as option (option.type)}
+                <option value={option.type}>{option.label}</option>
+              {/each}
+            </select>
+          </label>
+          <button type="button" onclick={nameSelectedRoom}>Name this room</button>
+        {/if}
+      </aside>
+    {/if}
     {#if roofFloor}
       <aside class="inspector" aria-label="Roof">
         {#if roofFloor.roof}
@@ -1744,6 +1899,7 @@
     display: flex;
     flex: 1;
     min-height: 0;
+    position: relative;
   }
 
   .key {
@@ -1789,14 +1945,19 @@
   }
 
   .inspector {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
     width: 9.5rem;
-    flex-shrink: 0;
     padding: 0.75rem;
     background: #fff;
     border-left: 1px solid #e4e4e7;
+    font-family: system-ui, sans-serif;
     font-size: 0.875rem;
   }
 
@@ -1806,10 +1967,33 @@
     gap: 0.25rem;
   }
 
-  .inspector input {
+  .inspector input,
+  .inspector select {
     width: 100%;
+    box-sizing: border-box;
     font: inherit;
     padding: 0.2rem 0.35rem;
+  }
+
+  .inspector p {
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .inspector .hint {
+    color: #71717a;
+    font-size: 0.8125rem;
+  }
+
+  .room-name {
+    fill: #27272a;
+    font-family: system-ui, sans-serif;
+    font-weight: 600;
+  }
+
+  .room-area {
+    fill: #52525b;
+    font-family: system-ui, sans-serif;
   }
 
   .rotate {

@@ -158,6 +158,7 @@ function combineFloors(list: Floor[]): Floor {
     corners: list.flatMap((floor) => floor.corners),
     walls: list.flatMap((floor) => floor.walls),
     roomFinishes: Object.assign({}, ...list.map((floor) => floor.roomFinishes)),
+    spaces: list.flatMap((floor) => floor.spaces ?? []),
     outline: list.flatMap((floor) => floor.outline ?? []),
   }
 }

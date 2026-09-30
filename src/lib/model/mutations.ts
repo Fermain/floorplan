@@ -12,6 +12,7 @@ import {
 } from './openings'
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
+import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -29,6 +30,8 @@ import type {
   OpeningKind,
   Plot,
   Roof,
+  RoomType,
+  Space,
   Wall,
   WallSkin,
   WallSystemId,
@@ -212,6 +215,73 @@ export function setWallSystem(
 
 export function setDefaultWallSystem(document: Document, systemId: WallSystemId): MutationResult {
   return ok({ ...document, building: { ...document.building, wallSystemId: systemId } })
+}
+
+function withoutCell(floor: Floor, cell: Cell, cells: Cell[]): Space[] {
+  return (floor.spaces ?? [])
+    .map((space) => ({ ...space, seeds: space.seeds.filter((seed) => cellAt(cells, seed.x, seed.z) !== cell) }))
+    .filter((space) => space.seeds.length > 0)
+}
+
+type LocatedCell = { floor: Floor; cells: Cell[]; cell: Cell } | { error: string }
+
+function locateCell(document: Document, floorId: string, x: number, z: number): LocatedCell {
+  const floor = getFloor(document, floorId)
+  if (!floor) return { error: 'floor not found' }
+  const cells = floorCells(floor)
+  const cell = cellAt(cells, x, z)
+  if (!cell) return { error: 'no room there' }
+  return { floor, cells, cell }
+}
+
+export function nameCell(
+  document: Document,
+  floorId: string,
+  x: number,
+  z: number,
+  name: string,
+  type: RoomType,
+): MutationResult {
+  const found = locateCell(document, floorId, x, z)
+  if ('error' in found) return fail(document, found.error)
+  const label = name.trim()
+  if (!label) return fail(document, 'a room needs a name')
+  const space: Space = { id: newId('space'), name: label, type, finish: 'screed', seeds: [{ x, z }] }
+  const spaces = [...withoutCell(found.floor, found.cell, found.cells), space]
+  return ok(replaceFloor(document, { ...found.floor, spaces }))
+}
+
+export function joinCell(document: Document, floorId: string, spaceId: string, x: number, z: number): MutationResult {
+  const found = locateCell(document, floorId, x, z)
+  if ('error' in found) return fail(document, found.error)
+  if (!(found.floor.spaces ?? []).some((space) => space.id === spaceId)) return fail(document, 'room not found')
+  const spaces = withoutCell(found.floor, found.cell, found.cells)
+  const target = spaces.find((space) => space.id === spaceId)
+  const joined = target
+    ? spaces.map((space) => (space.id === spaceId ? { ...space, seeds: [...space.seeds, { x, z }] } : space))
+    : [...spaces, { ...found.floor.spaces!.find((space) => space.id === spaceId)!, seeds: [{ x, z }] }]
+  return ok(replaceFloor(document, { ...found.floor, spaces: joined }))
+}
+
+export function leaveCell(document: Document, floorId: string, x: number, z: number): MutationResult {
+  const found = locateCell(document, floorId, x, z)
+  if ('error' in found) return fail(document, found.error)
+  return ok(replaceFloor(document, { ...found.floor, spaces: withoutCell(found.floor, found.cell, found.cells) }))
+}
+
+export function updateSpace(
+  document: Document,
+  floorId: string,
+  spaceId: string,
+  patch: Partial<Pick<Space, 'name' | 'type' | 'finish'>>,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  if (!(floor.spaces ?? []).some((space) => space.id === spaceId)) return fail(document, 'room not found')
+  if (patch.name !== undefined && !patch.name.trim()) return fail(document, 'a room needs a name')
+  const next = patch.name === undefined ? patch : { ...patch, name: patch.name.trim() }
+  const spaces = (floor.spaces ?? []).map((space) => (space.id === spaceId ? { ...space, ...next } : space))
+  return ok(replaceFloor(document, { ...floor, spaces }))
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {

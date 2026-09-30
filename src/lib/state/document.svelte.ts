@@ -84,5 +84,9 @@ export const documentStore = {
   setWallSystem: bind(mutations.setWallSystem),
   setDefaultWallSystem: bind(mutations.setDefaultWallSystem),
   setRate: bind(mutations.setRate),
+  nameCell: bind(mutations.nameCell),
+  joinCell: bind(mutations.joinCell),
+  leaveCell: bind(mutations.leaveCell),
+  updateSpace: bind(mutations.updateSpace),
   setAssumption: bind(mutations.setAssumption),
 }
