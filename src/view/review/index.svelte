@@ -22,8 +22,6 @@
 
   type SolsticeKind = 'summer' | 'winter'
 
-  let hour = $state(12)
-  let solsticeKind = $state<SolsticeKind>('summer')
 
   const latitude = $derived(documentStore.document.plot.latitude)
 
@@ -57,11 +55,13 @@
   }
 
   interface Props {
+    hour?: number
+    season?: SolsticeKind
     onSelectWall?: (wallId: string) => void
     onStatus?: (status: { text: string; error: boolean }) => void
   }
 
-  let { onSelectWall, onStatus }: Props = $props()
+  let { hour = $bindable(12), season: solsticeKind = $bindable('summer'), onSelectWall, onStatus }: Props = $props()
 
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
   const summerLabel = $derived(solsticeLabel('summer'))

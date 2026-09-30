@@ -1,8 +1,14 @@
-import { svelte } from '@sveltejs/vite-plugin-svelte'
+import { sveltekit } from '@sveltejs/kit/vite'
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [tailwindcss(), sveltekit()],
+  server: {
+    watch: {
+      ignored: ['**/.svelte-kit/generated/**'],
+    },
+  },
   test: {
     include: ['src/**/*.test.ts'],
   },
