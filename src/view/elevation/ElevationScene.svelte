@@ -10,6 +10,7 @@
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import ElevationResize from './ElevationResize.svelte'
+  import type { FencePart } from '../../lib/geometry/fence'
   import type { WallElevationFrame } from './wallFrame'
   import { wallCenterWorld } from './wallFrame'
 
@@ -22,6 +23,7 @@
     frameGeometry: BufferGeometry | null
     glassGeometry: BufferGeometry | null
     panelMeshes: OpeningPanelMesh[]
+    fenceParts?: FencePart[]
     orthoCamera: OrthographicCamera | undefined
     onOrthoCamera: (camera: OrthographicCamera) => void
   }
@@ -35,6 +37,7 @@
     frameGeometry,
     glassGeometry,
     panelMeshes,
+    fenceParts = [],
     orthoCamera,
     onOrthoCamera,
   }: Props = $props()
@@ -114,6 +117,18 @@
       />
     </T.Mesh>
   {/if}
+  {#each fenceParts as part (part.geometry.uuid)}
+    <T.Mesh geometry={part.geometry}>
+      <T.MeshStandardMaterial
+        color={part.colour}
+        transparent={part.opacity < 1}
+        opacity={part.opacity}
+        depthWrite={part.opacity >= 1}
+        side={DoubleSide}
+        roughness={0.8}
+      />
+    </T.Mesh>
+  {/each}
   {#each panelMeshes as panel (panel.geometry.uuid)}
     <T.Mesh geometry={panel.geometry}>
       <T.MeshStandardMaterial

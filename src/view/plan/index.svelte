@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fencePosts, fenceSpec } from '../../lib/model/fences'
   import { untrack } from 'svelte'
   import BrickWall from '@lucide/svelte/icons/brick-wall'
   import Footprints from '@lucide/svelte/icons/footprints'
@@ -1981,15 +1982,31 @@
         {@const a = cornerById(displayFloor.corners, wall.startCornerId)}
         {@const b = cornerById(displayFloor.corners, wall.endCornerId)}
         {#if a && b}
-          <line
-            x1={a.x}
-            y1={a.z}
-            x2={b.x}
-            y2={b.z}
-            stroke="#666"
-            stroke-width={s(0.02)}
-            stroke-dasharray={dash(0.2, 0.15)}
-          />
+          {#if wall.fence}
+            {@const spec = fenceSpec(wall.fence.type)}
+            {@const length = Math.hypot(b.x - a.x, b.z - a.z)}
+            <line x1={a.x} y1={a.z} x2={b.x} y2={b.z} stroke={spec.colour} stroke-width={Math.max(s(0.025), 0.03)} />
+            {#each fencePosts(length, spec) as u (u)}
+              {@const t = length > 0 ? u / length : 0}
+              <rect
+                x={a.x + (b.x - a.x) * t - spec.postSize / 2}
+                y={a.z + (b.z - a.z) * t - spec.postSize / 2}
+                width={spec.postSize}
+                height={spec.postSize}
+                fill={spec.colour}
+              />
+            {/each}
+          {:else}
+            <line
+              x1={a.x}
+              y1={a.z}
+              x2={b.x}
+              y2={b.z}
+              stroke="#666"
+              stroke-width={s(0.02)}
+              stroke-dasharray={dash(0.2, 0.15)}
+            />
+          {/if}
         {/if}
       {/each}
       {#if showUnlandedWarning}

@@ -38,6 +38,7 @@
   import { stairVoids } from '../../lib/geometry/stairs'
   import { supportingFloor } from '../../lib/model/stories'
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
+  import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -88,6 +89,7 @@
   let floorSlabs = $state<FloorSlab[]>([])
   let roofMeshes = $state<RoofMesh[]>([])
   let stairMeshes = $state<StairMesh[]>([])
+  let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -167,9 +169,21 @@
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
+    const fences: { key: string; parts: FencePart[] }[] = []
     for (const floor of floors) {
       for (const wall of floor.walls) {
-        if (wall.skin === 'logical') continue
+        if (wall.skin === 'logical') {
+          const line = wall.fence ? fenceFrame(floor, wall) : null
+          if (!line || !wall.fence) continue
+          const datum = floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0)
+          const baseAt =
+            floor.index === 0
+              ? (u: number) =>
+                  bilinearHeight(displayField, line.start.x + line.dir.x * u, line.start.z + line.dir.z * u)
+              : () => datum
+          fences.push({ key: `${floor.id}:${wall.id}`, parts: buildFenceParts(line, wall.fence, baseAt) })
+          continue
+        }
         const samples = bottomSamplesForWall(floor, wall)
         const head = continuingFacadeHead(floor, wall)
         const geoms = buildWallGeometries(floor, wall, samples, head)
@@ -202,7 +216,9 @@
     floorSlabs = slabs
     roofMeshes = roofs
     stairMeshes = stairs
+    fenceMeshes = fences
     return () => {
+      for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
       minor?.dispose()
       major?.dispose()
@@ -481,6 +497,21 @@
           polygonOffsetUnits={1}
         />
       </T.Mesh>
+    {/each}
+
+    {#each fenceMeshes as fence (fence.key)}
+      {#each fence.parts as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} castShadow={part.opacity >= 1} receiveShadow>
+          <T.MeshStandardMaterial
+            color={part.colour}
+            transparent={part.opacity < 1}
+            opacity={part.opacity}
+            depthWrite={part.opacity >= 1}
+            side={DoubleSide}
+            roughness={0.8}
+          />
+        </T.Mesh>
+      {/each}
     {/each}
 
     {#each stairMeshes as stair (stair.key)}
