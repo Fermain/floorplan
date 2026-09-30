@@ -22,6 +22,7 @@ import {
   blankStorey,
   prepareStorey,
   syncGroundUnits,
+  syncOutlines,
   topStoreyIndex,
 } from './stories'
 import type {
@@ -49,7 +50,7 @@ function fail(document: Document, reason: string): MutationResult {
 }
 
 function ok(document: Document): MutationResult {
-  return { ok: true, document }
+  return { ok: true, document: syncOutlines(document) }
 }
 
 function getFloor(document: Document, floorId: string): Floor | undefined {
