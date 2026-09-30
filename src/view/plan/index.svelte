@@ -9,6 +9,7 @@
   import Plus from '@lucide/svelte/icons/plus'
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -1538,6 +1539,35 @@
     if (applyResult(documentStore.removeStair(chosen.floorId, chosen.stair.id))) chooseSelection({})
   }
 
+  const deletable = $derived.by((): { label: string; run: () => void } | null => {
+    if (roofFloor) return null
+    if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
+    const wallId = selectedWallId
+    const floor = activeFloor
+    const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
+    if (!floor || !wall) return null
+    return {
+      label: wall.skin === 'logical' ? (wall.fence ? 'Delete fence line' : 'Delete logical wall') : 'Delete wall',
+      run: () => {
+        if (applyResult(documentStore.removeWall(floor.id, wall.id))) chooseSelection({})
+      },
+    }
+  })
+
+  $effect(() => {
+    const action = deletable
+    if (!action) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      if (event.target instanceof HTMLElement && event.target.closest('[role="listbox"], [role="menu"], select')) return
+      event.preventDefault()
+      action.run()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const drawHintBody = $derived.by(() => {
     if (tool === 'draw-stair') {
       if (!pendingStair) return 'Click where the bottom step starts. A stair needs a storey above it.'
@@ -1621,7 +1651,7 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5">
+  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3">
     <ToggleGroup.Root
       type="single"
       variant="outline"
@@ -1632,25 +1662,38 @@
       }}
       aria-label="Tool"
     >
-      <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)">
-        <MousePointer2 />Select
+      <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
+        <MousePointer2 /><span class="hidden sm:inline">Select</span>
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle.">
-        <BrickWall />Wall
+      <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
+        <BrickWall /><span class="hidden sm:inline">Wall</span>
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything">
-        <SquareDashed />Logical
+      <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
+        <SquareDashed /><span class="hidden sm:inline">Logical</span>
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair">
-        <Footprints />Stair
+      <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
+        <Footprints /><span class="hidden sm:inline">Stair</span>
       </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if deletable}
+      <Button
+        variant="ghost"
+        size="sm"
+        class="ml-auto text-destructive hover:text-destructive"
+        title="{deletable.label} (Delete or Backspace)"
+        onclick={deletable.run}
+      >
+        <Trash2 />{deletable.label}
+        <kbd class="ml-1 hidden rounded border px-1 font-sans text-[10px] text-muted-foreground sm:inline">⌫</kbd>
+      </Button>
+    {/if}
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">
       <Button
         variant="outline"
         size="sm"
+        class="shrink-0"
         disabled={!storeyTarget || atStoreyLimit}
         title={!storeyTarget
           ? 'Select a closed building first.'
@@ -1662,16 +1705,16 @@
         <Plus />Storey
       </Button>
       {#if storeyUnitId}
-        <Button variant="ghost" size="sm" class="text-muted-foreground" onclick={removeStorey}>
+        <Button variant="ghost" size="sm" class="shrink-0 text-muted-foreground" onclick={removeStorey}>
           <Minus />Remove
         </Button>
       {/if}
-      <div class="mt-1 flex flex-col gap-1 border-t pt-2">
+      <div class="flex gap-1 max-md:border-l max-md:pl-2 md:mt-1 md:flex-col md:border-t md:pt-2">
         {#each [...storeyIndexes].reverse() as index (index)}
           <Button
             variant={index === activeStoreyIndex ? 'secondary' : 'ghost'}
             size="sm"
-            class="justify-start"
+            class="shrink-0 justify-start"
             aria-current={index === activeStoreyIndex ? 'true' : undefined}
             onclick={() => selectStorey(index)}
           >
@@ -1685,7 +1728,13 @@
         {/each}
       </div>
     </nav>
-  <div class="pointer-events-none absolute bottom-3 left-[9.25rem] z-10">
+  <div
+    class="pointer-events-none absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 origin-bottom-left scale-90 md:left-[9.25rem] md:scale-100 {chosenStair ||
+    selectedRoom ||
+    roofFloor
+      ? 'max-md:hidden'
+      : ''}"
+  >
     <PlanNavigator
       {turn}
       bearing={document.plot.northBearingDeg}
@@ -2238,7 +2287,7 @@
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
-      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Stair">
+      <aside class="inspector" aria-label="Stair">
         <h2 class="font-semibold">Stair</h2>
         <p>
           {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
@@ -2269,7 +2318,7 @@
       </aside>
     {/if}
     {#if selectedRoom && !roofFloor}
-      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Room">
+      <aside class="inspector" aria-label="Room">
         {#if selectedRoom.resolved}
           {@const resolved = selectedRoom.resolved}
           <div class="grid gap-1.5">
@@ -2361,7 +2410,7 @@
       </aside>
     {/if}
     {#if roofFloor}
-      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Roof">
+      <aside class="inspector" aria-label="Roof">
         <h2 class="font-semibold">Roof</h2>
         {#if roofFloor.roof}
           {@const roof = roofFloor.roof}
@@ -2450,20 +2499,66 @@
   .stage {
     display: flex;
     flex: 1;
+    flex-direction: column;
     min-height: 0;
     position: relative;
   }
 
   .key {
     display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
     gap: 0.35rem;
-    width: 8.5rem;
+    width: auto;
     flex-shrink: 0;
-    padding: 0.75rem 0.5rem;
+    overflow-x: auto;
+    padding: 0.4rem 0.5rem;
     background: var(--background);
-    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inspector {
+    position: absolute;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    overflow-y: auto;
+    background: var(--background);
+    padding: 1rem;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    font-size: 0.875rem;
+    inset: auto 0 0 0;
+    max-height: min(24rem, 62%);
+    width: 100%;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (min-width: 768px) {
+    .stage {
+      flex-direction: row;
+    }
+
+    .key {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-end;
+      width: 8.5rem;
+      overflow-x: visible;
+      padding: 0.75rem 0.5rem;
+      border-bottom: none;
+      border-right: 1px solid var(--border);
+    }
+
+    .inspector {
+      inset: 0 0 0 auto;
+      max-height: none;
+      width: 16rem;
+      border-top: none;
+      border-left: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
   }
 
   .canvas {

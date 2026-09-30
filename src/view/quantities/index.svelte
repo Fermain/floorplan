@@ -59,7 +59,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="flex items-center justify-between gap-3 border-b bg-background px-3 py-1.5 text-sm">
+  <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-1.5 text-sm">
     <p>
       <span class="text-muted-foreground">Estimated total</span>
       <span class="ml-1 text-base font-semibold tabular-nums">R {money.format(total)}</span>
@@ -69,7 +69,7 @@
     </Button>
   </div>
   <div class="min-h-0 flex-1 overflow-auto">
-    <div class="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+    <div class="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-6">
       {#if lines.length === 0}
         <p class="text-sm text-muted-foreground">Draw some walls and the quantities appear here.</p>
       {:else}

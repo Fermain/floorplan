@@ -49,7 +49,7 @@
 </script>
 
 <div class="h-full overflow-auto">
-  <div class="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+  <div class="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-6">
     <div>
       <h1 class="text-lg font-semibold">Checks</h1>
       <p class="text-sm text-muted-foreground">
@@ -86,6 +86,11 @@
 
     <Card.Root>
       <Card.Content class="p-0">
+        {#if rows.length === 0}
+          <p class="px-4 py-8 text-center text-sm text-muted-foreground">
+            Name the rooms on the plan and their checks appear here.
+          </p>
+        {:else}
         <Table.Root>
           <Table.Header>
             <Table.Row>
@@ -126,15 +131,10 @@
                   </Button>
                 </Table.Cell>
               </Table.Row>
-            {:else}
-              <Table.Row>
-                <Table.Cell colspan={6} class="py-8 text-center text-sm text-muted-foreground">
-                  Name the rooms on the plan and their checks appear here.
-                </Table.Cell>
-              </Table.Row>
             {/each}
           </Table.Body>
         </Table.Root>
+        {/if}
       </Card.Content>
     </Card.Root>
 

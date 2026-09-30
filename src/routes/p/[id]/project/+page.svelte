@@ -95,7 +95,7 @@
 </script>
 
 <div class="h-full overflow-auto">
-  <div class="mx-auto flex max-w-3xl flex-col gap-4 p-6">
+  <div class="mx-auto flex max-w-3xl flex-col gap-4 p-4 sm:p-6">
     <div>
       <h1 class="text-lg font-semibold">Project</h1>
       <p class="text-sm text-muted-foreground">The site, and the defaults new work starts from.</p>

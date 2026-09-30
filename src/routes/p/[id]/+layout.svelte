@@ -141,15 +141,15 @@
   })
 </script>
 
-<div class="flex h-screen flex-col bg-muted/40">
-  <header class="relative z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b bg-background px-3 py-2">
-    <div class="flex min-w-0 items-center gap-2">
+<div class="flex h-dvh flex-col overflow-hidden bg-muted/40">
+  <header class="z-20 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 border-b bg-background px-2 py-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-3 md:py-2">
+    <div class="flex min-w-0 items-center gap-1 md:gap-2">
       <Button variant="ghost" size="icon-sm" href={homeHref()} aria-label="All projects">
         <ArrowLeft />
       </Button>
       {#if renaming}
         <Input
-          class="h-7 w-56"
+          class="h-7 w-40 max-w-full sm:w-56"
           bind:value={nameDraft}
           autofocus
           onblur={() => void finishRename()}
@@ -161,7 +161,7 @@
       {:else}
         <button
           type="button"
-          class="truncate rounded-md px-1.5 py-0.5 text-sm font-medium hover:bg-muted"
+          class="min-w-0 truncate rounded-md px-1.5 py-0.5 text-sm font-medium hover:bg-muted"
           title="Rename"
           onclick={startRename}
         >
@@ -169,25 +169,12 @@
         </button>
       {/if}
       {#if saveLabel}
-        <Badge variant={session.saveState === 'error' ? 'destructive' : 'secondary'} class="font-normal">
+        <Badge variant={session.saveState === 'error' ? 'destructive' : 'secondary'} class="shrink-0 font-normal">
           {saveLabel}
         </Badge>
       {/if}
     </div>
-    <nav class="flex items-center gap-1 rounded-lg bg-muted p-1" aria-label="Project">
-      {#each sections as section (section.id)}
-        <Button
-          size="sm"
-          variant={active === section.id ? 'outline' : 'ghost'}
-          href={sectionHref(id, section.id)}
-          aria-current={active === section.id ? 'page' : undefined}
-          class={active === section.id ? 'shadow-xs' : 'text-muted-foreground'}
-        >
-          {section.label}
-        </Button>
-      {/each}
-    </nav>
-    <div class="flex items-center justify-end gap-1">
+    <div class="flex items-center justify-end gap-0.5 md:col-start-3">
       <Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (⌘Z)" onclick={() => documentStore.undo()}>
         <Undo2 />
       </Button>
@@ -213,19 +200,37 @@
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     </div>
+    <nav
+      class="col-span-2 mt-1.5 flex items-center gap-1 overflow-x-auto md:col-span-1 md:col-start-2 md:row-start-1 md:mt-0 md:justify-center md:overflow-visible md:rounded-lg md:bg-muted md:p-1"
+      aria-label="Project"
+    >
+      {#each sections as section (section.id)}
+        <Button
+          size="sm"
+          variant={active === section.id ? 'outline' : 'ghost'}
+          href={sectionHref(id, section.id)}
+          aria-current={active === section.id ? 'page' : undefined}
+          class="shrink-0 {active === section.id ? 'shadow-xs' : 'text-muted-foreground'}"
+        >
+          {section.label}
+        </Button>
+      {/each}
+    </nav>
   </header>
   <main class="relative min-h-0 flex-1">
-    {#if ready}
-      {@render children()}
-    {:else if session.loadError}
-      <div class="mx-auto mt-24 max-w-md text-center">
-        <p class="text-sm text-muted-foreground">{session.loadError}</p>
-        <Button class="mt-4" variant="outline" href={homeHref()}>Back to projects</Button>
-      </div>
-    {/if}
+    <div class="h-full min-h-0">
+      {#if ready}
+        {@render children()}
+      {:else if session.loadError}
+        <div class="mx-auto mt-24 max-w-md text-center">
+          <p class="text-sm text-muted-foreground">{session.loadError}</p>
+          <Button class="mt-4" variant="outline" href={homeHref()}>Back to projects</Button>
+        </div>
+      {/if}
+    </div>
     {#if statusLine.text}
       <p
-        class="pointer-events-none absolute right-3 bottom-3 z-10 max-w-md rounded-md border bg-background px-3 py-1.5 text-sm shadow-sm {statusLine.error
+        class="pointer-events-none absolute right-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 max-w-[min(28rem,calc(100%-10.5rem))] rounded-md border bg-background px-3 py-1.5 text-sm shadow-sm {statusLine.error
           ? 'border-destructive/40 text-destructive'
           : 'text-muted-foreground'}"
       >

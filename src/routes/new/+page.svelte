@@ -129,17 +129,17 @@
   const mm = (m: number) => Math.round(m * 1000)
 </script>
 
-<div class="flex min-h-screen flex-col bg-muted/40">
-  <header class="flex items-center gap-3 border-b bg-background px-3 py-2">
+<div class="flex min-h-dvh flex-col bg-muted/40">
+  <header class="flex items-center gap-2 border-b bg-background px-2 py-2 sm:gap-3 sm:px-3">
     <Button variant="ghost" size="icon-sm" href={homeHref()} aria-label="All projects"><ArrowLeft /></Button>
-    <span class="text-sm font-medium">New project</span>
-    <ol class="mx-auto flex items-center gap-1 text-sm" aria-label="Steps">
+    <span class="hidden text-sm font-medium sm:inline">New project</span>
+    <ol class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm" aria-label="Steps">
       {#each STEPS as item, i (item.id)}
         <li>
           <button
             type="button"
             class={cn(
-              'flex items-center gap-1.5 rounded-md px-2 py-1',
+              'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1',
               item.id === step ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/60',
             )}
             aria-current={item.id === step ? 'step' : undefined}
@@ -154,15 +154,14 @@
             >
               {#if i < index}<Check class="size-3" />{:else}{i + 1}{/if}
             </span>
-            {item.label}
+            <span class={item.id === step ? '' : 'max-sm:sr-only'}>{item.label}</span>
           </button>
         </li>
       {/each}
     </ol>
-    <span class="w-24"></span>
   </header>
 
-  <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
+  <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3">
       <p class="text-sm text-muted-foreground">
         In a hurry? Start on a level plot with standard defaults, and change anything later on the Project page.
@@ -301,7 +300,7 @@
     {/if}
   </main>
 
-  <footer class="sticky bottom-0 flex items-center justify-between gap-3 border-t bg-background px-6 py-3">
+  <footer class="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-background px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
     <Button variant="ghost" onclick={() => (index > 0 ? go(STEPS[index - 1].id) : void goto(homeHref()))}>
       {index > 0 ? 'Back' : 'Cancel'}
     </Button>
