@@ -346,6 +346,20 @@ describe('delete', () => {
     expect(removed.document.building.floors[0].walls).toHaveLength(3)
   })
 
+  it('drops corners that no wall uses any more', () => {
+    const d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    let doc = d
+    const [first, second] = doc.building.floors[0].walls
+    doc = (removeWall(doc, fid, first.id) as { document: typeof d }).document
+    expect(doc.building.floors[0].corners).toHaveLength(4)
+    doc = (removeWall(doc, fid, second.id) as { document: typeof d }).document
+    const floor = doc.building.floors[0]
+    const used = new Set(floor.walls.flatMap((w) => [w.startCornerId, w.endCornerId]))
+    expect(floor.corners.every((corner) => used.has(corner.id))).toBe(true)
+    expect(floor.corners.length).toBeLessThan(4)
+  })
+
   it('leaves the document unchanged when the wall is missing', () => {
     const d = rectInsidePlot(fixtureDocument())
     const missing = removeWall(d, floorId(d), 'missing')
