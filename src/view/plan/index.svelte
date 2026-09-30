@@ -14,7 +14,8 @@
     MAX_STOREYS,
     topStoreyIndex,
   } from '../../lib/model/stories'
-  import type { Floor, WallSkin } from '../../lib/model/types'
+  import type { Floor, WallSkin, WallSystemId } from '../../lib/model/types'
+  import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -51,6 +52,8 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
 
   type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'select'
+
+  const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
   const PLOT_MARGIN_M = 2.4
 
@@ -287,6 +290,7 @@
       endX,
       endZ,
       highlightedDirection(floor),
+      drawSystem.moduleLength,
     )
     const endCornerHit = resolved.cornerId
       ? floor.corners.find((c) => c.id === resolved.cornerId)
@@ -326,7 +330,7 @@
       }
     }
 
-    const wallResult = documentStore.addWall(drawFloorId, startId, endId, skin)
+    const wallResult = documentStore.addWall(drawFloorId, startId, endId, skin, skin === 'logical' ? undefined : drawSystem.id)
     if (!applyResult(wallResult)) {
       rollbackCorners()
       return
@@ -495,6 +499,7 @@
       endX,
       endZ,
       highlightedDirection(floor),
+      drawSystem.moduleLength,
     )
     if (!rect) return
     if (!rect.allowed) {
@@ -505,6 +510,7 @@
       drawFloorId,
       rect.corners.map((corner, index) => ({ ...corner, cornerId: rect.cornerIds[index] })),
       'double',
+      drawSystem.id,
     )
     if (!applyResult(result)) return
     pendingDraw = null
@@ -884,6 +890,7 @@
       pointerPlan.x,
       pointerPlan.z,
       highlighted,
+      drawSystem.moduleLength,
     )
     const dx = resolved.x - start.x
     const dz = resolved.z - start.z
@@ -921,6 +928,7 @@
       pointerPlan.x,
       pointerPlan.z,
       highlightedDirection(activeFloor),
+      drawSystem.moduleLength,
     )
     if (!rect) return null
     const width = lengthReadout(rect.corners[0].x, rect.corners[0].z, rect.corners[1].x, rect.corners[1].z, rect.width)
@@ -1109,6 +1117,16 @@
       <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
         Logical
       </button>
+      <select
+        class="system"
+        aria-label="Wall system for new walls"
+        value={drawSystem.id}
+        onchange={(event) => documentStore.setDefaultWallSystem(event.currentTarget.value as WallSystemId)}
+      >
+        {#each WALL_SYSTEMS as choice (choice.id)}
+          <option value={choice.id}>{choice.name}</option>
+        {/each}
+      </select>
     </div>
   </div>
   <div class="stage">
@@ -1706,6 +1724,15 @@
   button.active {
     border-color: #2563eb;
     background: #eff6ff;
+  }
+
+  select.system {
+    margin-left: 0.4rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid #d4d4d8;
+    border-radius: 4px;
+    background: #fff;
+    font: inherit;
   }
 
   button:disabled {

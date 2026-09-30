@@ -1,4 +1,5 @@
-import { BLOCK_HEIGHT, BLOCK_THICKNESS, LEAF_OFFSET } from '../plot/fixture'
+import { BLOCK_HEIGHT, BLOCK_THICKNESS } from '../plot/fixture'
+import { leafOffset, systemOf } from '../model/systems'
 import type { Floor, OpeningKind, Wall } from '../model/types'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -146,19 +147,19 @@ function insetGlass(cell: FrameMemberSpan): FrameMemberSpan {
   }
 }
 
-function sillBearingY(openingV: number): number {
-  const joint = Math.floor((openingV + 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
+function sillBearingY(openingV: number, courseHeight: number): number {
+  const joint = Math.floor((openingV + 1e-9) / courseHeight) * courseHeight
   if (joint < openingV) return joint
   return openingV
 }
 
-export function openingFrameLayout(opening: OpeningRect): OpeningFrameLayout | null {
+export function openingFrameLayout(opening: OpeningRect, courseHeight = BLOCK_HEIGHT): OpeningFrameLayout | null {
   if (opening.width < 2 * FRAME_SECTION + 2 * GLASS_INSET + 1e-6) return null
   if (opening.height < 2 * FRAME_SECTION + 2 * GLASS_INSET + 1e-6) return null
   const u0 = opening.u
   const u1 = opening.u + opening.width
   const openingY0 = opening.v
-  const y0 = sillBearingY(opening.v)
+  const y0 = sillBearingY(opening.v, courseHeight)
   const y1 = opening.v + opening.height
   const innerY0 = openingY0 + FRAME_SECTION
   const outer = { u0, u1, y0, y1 }
@@ -257,9 +258,9 @@ function buildWallFrame(floor: Floor, wall: Wall): WallFrame {
   }
 }
 
-function outerLeafSign(skin: Wall['skin']): number {
-  if (skin === 'single') return 0
-  return 1
+function outerLeafCenter(wall: Wall): number {
+  if (wall.skin === 'single') return 0
+  return leafOffset(systemOf(wall))
 }
 
 function placeBox(
@@ -268,7 +269,7 @@ function placeBox(
   u1: number,
   y0: number,
   y1: number,
-  leafSign: number,
+  along: number,
   depth: number,
   depthBias: number,
   unitBox: BoxGeometry,
@@ -279,14 +280,8 @@ function placeBox(
   const yCenter = (y0 + y1) / 2
   const blockLen = u1 - u0
   const blockH = y1 - y0
-  const cx =
-    frame.start.x +
-    uCenter * frame.dir.x +
-    (leafSign * LEAF_OFFSET + depthBias) * frame.normal.x
-  const cz =
-    frame.start.z +
-    uCenter * frame.dir.z +
-    (leafSign * LEAF_OFFSET + depthBias) * frame.normal.z
+  const cx = frame.start.x + uCenter * frame.dir.x + (along + depthBias) * frame.normal.x
+  const cz = frame.start.z + uCenter * frame.dir.z + (along + depthBias) * frame.normal.z
   const geom = unitBox.clone()
   matrix.identity()
   const xUnit = new Vector3(frame.dir.x, 0, frame.dir.z).normalize()
@@ -316,12 +311,13 @@ export function buildOpeningFrameGeometry(
   const openings = wall.openings
   if (openings.length === 0) return null
   const wallFrame = buildWallFrame(floor, wall)
-  const leafSign = outerLeafSign(wall.skin)
+  const system = systemOf(wall)
+  const along = outerLeafCenter(wall)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
   for (const opening of openings) {
-    const layout = openingFrameLayout(opening)
+    const layout = openingFrameLayout(opening, system.courseHeight)
     if (!layout) continue
     for (const member of layout.members) {
       const visible = clipToWallBottom(member, bottomSamples)
@@ -332,8 +328,8 @@ export function buildOpeningFrameGeometry(
         visible.u1,
         visible.y0,
         visible.y1,
-        leafSign,
-        FRAME_DEPTH,
+        along,
+        system.leafThickness,
         0,
         unitBox,
         matrix,
@@ -353,13 +349,14 @@ export function buildOpeningGlassGeometry(
   const openings = wall.openings
   if (openings.length === 0) return null
   const wallFrame = buildWallFrame(floor, wall)
-  const leafSign = outerLeafSign(wall.skin)
-  const depthBias = -(FRAME_DEPTH / 2 - GLASS_THICKNESS / 2 - 0.004)
+  const system = systemOf(wall)
+  const along = outerLeafCenter(wall)
+  const depthBias = -(system.leafThickness / 2 - GLASS_THICKNESS / 2 - 0.004)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
   for (const opening of openings) {
-    const layout = openingFrameLayout(opening)
+    const layout = openingFrameLayout(opening, system.courseHeight)
     if (!layout) continue
     for (const pane of layout.glass) {
       const glass = clipToWallBottom(pane, bottomSamples)
@@ -370,7 +367,7 @@ export function buildOpeningGlassGeometry(
         glass.u1,
         glass.y0,
         glass.y1,
-        leafSign,
+        along,
         GLASS_THICKNESS,
         depthBias,
         unitBox,
@@ -406,11 +403,12 @@ export function buildOpeningPanelMeshes(
   const openings = wall.openings
   if (openings.length === 0) return []
   const wallFrame = buildWallFrame(floor, wall)
-  const leafSign = outerLeafSign(wall.skin)
+  const courseHeight = systemOf(wall).courseHeight
+  const along = outerLeafCenter(wall)
   const groups = new Map<string, { color: string; emissive: string; depth: number; spans: FrameMemberSpan[] }>()
   for (const opening of openings) {
     const finish = panelFinish(opening.kind)
-    const layout = openingFrameLayout(opening)
+    const layout = openingFrameLayout(opening, courseHeight)
     if (!finish || !layout) continue
     const group = groups.get(finish.color) ?? { ...finish, depth: panelDepth(opening.kind), spans: [] }
     for (const panel of layout.panels) {
@@ -432,7 +430,7 @@ export function buildOpeningPanelMeshes(
         span.u1,
         span.y0,
         span.y1,
-        leafSign,
+        along,
         group.depth,
         0,
         unitBox,

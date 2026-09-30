@@ -5,22 +5,14 @@ import {
   ShapeUtils,
   Vector2,
 } from 'three'
-import { signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
 import type { Floor, Roof, Wall } from '../model/types'
-import {
-  BLOCK_HEIGHT,
-  BLOCK_THICKNESS,
-  DEFAULT_STOREY_HEIGHT,
-  LEAF_OFFSET,
-} from '../plot/fixture'
+import { WALL_HEAD } from '../plot/fixture'
 import { unionRings, type DeckPolygon } from './deck'
+import { DEFAULT_REACH, offsetEdges, wallBetween, wallReach, widestReach } from './outline'
 import type { Ring } from './pad'
 
-const OUTER_DOUBLE = LEAF_OFFSET + BLOCK_THICKNESS / 2
-const OUTER_SINGLE = BLOCK_THICKNESS / 2
-
-export const WALL_HEAD_M = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT) * BLOCK_HEIGHT
+export const WALL_HEAD_M = WALL_HEAD
 
 export type PlanPoint = { x: number; z: number }
 
@@ -60,12 +52,10 @@ export function hipRoofFaces(
 }
 
 export function masonryReach(walls: Wall[]): number {
-  const solid = walls.filter((wall) => wall.skin !== 'logical')
-  if (solid.length > 0 && solid.every((wall) => wall.skin === 'single')) return OUTER_SINGLE
-  return OUTER_DOUBLE
+  return widestReach(walls)
 }
 
-export function roofFacesForFloor(floor: Floor, roof: Roof, reach = OUTER_DOUBLE): RoofVertex[][] {
+export function roofFacesForFloor(floor: Floor, roof: Roof, reach = DEFAULT_REACH): RoofVertex[][] {
   const rise = Math.tan((roof.pitchDeg * Math.PI) / 180)
   const baseY = -roof.eaves * rise
   const faces: RoofVertex[][] = []
@@ -80,7 +70,7 @@ export type RoofPlan = {
   hips: { a: PlanPoint; b: PlanPoint }[]
 }
 
-export function roofPlan(floor: Floor, roof: Roof, reach = OUTER_DOUBLE): RoofPlan {
+export function roofPlan(floor: Floor, roof: Roof, reach = DEFAULT_REACH): RoofPlan {
   const footprints = eavesFootprints(floor, roof.eaves, reach)
   const rise = Math.tan((roof.pitchDeg * Math.PI) / 180)
   const baseY = -roof.eaves * rise
@@ -102,7 +92,7 @@ export function roofPlan(floor: Floor, roof: Roof, reach = OUTER_DOUBLE): RoofPl
   return { footprints, hips }
 }
 
-export function buildRoofGeometry(floor: Floor, roof: Roof, reach = OUTER_DOUBLE): BufferGeometry | null {
+export function buildRoofGeometry(floor: Floor, roof: Roof, reach = DEFAULT_REACH): BufferGeometry | null {
   const positions: number[] = []
   for (const face of roofFacesForFloor(floor, roof, reach)) {
     positions.push(...triangulateFace(face))
@@ -134,7 +124,7 @@ function eavesFootprints(floor: Floor, eaves: number, reach: number): DeckPolygo
         break
       }
       ring.push({ x: corner.x, z: corner.z })
-      distances.push(outerReach(wallBetween(floor, id, next)))
+      distances.push(wallReach(wallBetween(floor, id, next)))
     }
     if (ring.length >= 3) pieces.push(offsetEdges(ring, distances))
   }
@@ -144,91 +134,6 @@ function eavesFootprints(floor: Floor, eaves: number, reach: number): DeckPolygo
       .map((hole) => offsetEdges(hole, hole.map(() => -eaves)))
       .filter((hole) => hole.length >= 3),
   }))
-}
-
-function wallBetween(floor: Floor, a: string, b: string): Wall | undefined {
-  return floor.walls.find(
-    (wall) =>
-      (wall.startCornerId === a && wall.endCornerId === b) ||
-      (wall.startCornerId === b && wall.endCornerId === a),
-  )
-}
-
-function outerReach(wall: Wall | undefined): number {
-  if (!wall || wall.skin === 'logical') return 0
-  if (wall.skin === 'single') return OUTER_SINGLE
-  return OUTER_DOUBLE
-}
-
-function offsetEdges(ring: Ring, distances: number[]): Ring {
-  if (ring.length < 3 || distances.length !== ring.length) return ring
-  const ccw = signedPolygonArea(ring) < 0
-  const points = ccw ? [...ring].reverse() : ring
-  const edge = ccw ? reversedDistances(distances) : distances
-  const count = points.length
-  const offset: Ring = []
-  const limit = Math.max(...edge.map((distance) => Math.abs(distance))) * 4
-  for (let i = 0; i < count; i++) {
-    const prev = points[(i + count - 1) % count]
-    const current = points[i]
-    const next = points[(i + 1) % count]
-    const inward = direction(prev, current)
-    const outward = direction(current, next)
-    if (!inward || !outward) continue
-    const dIn = edge[(i + count - 1) % count]
-    const dOut = edge[i]
-    const left = { x: inward.z, z: -inward.x }
-    const right = { x: outward.z, z: -outward.x }
-    const a = { x: current.x + left.x * dIn, z: current.z + left.z * dIn }
-    const b = { x: current.x + right.x * dOut, z: current.z + right.z * dOut }
-    const hit = lineIntersection(a, inward, b, outward)
-    const span = hit ? Math.hypot(hit.x - current.x, hit.z - current.z) : Infinity
-    if (!hit || span > limit) offset.push(a, b)
-    else offset.push(hit)
-  }
-  return clean(offset)
-}
-
-function reversedDistances(distances: number[]): number[] {
-  const count = distances.length
-  const reversed: number[] = []
-  for (let i = 0; i < count; i++) reversed.push(distances[(count - 2 - i + count) % count])
-  return reversed
-}
-
-function direction(a: PlanPoint, b: PlanPoint): PlanPoint | null {
-  const dx = b.x - a.x
-  const dz = b.z - a.z
-  const length = Math.hypot(dx, dz)
-  if (length < 1e-9) return null
-  return { x: dx / length, z: dz / length }
-}
-
-function lineIntersection(
-  origin: PlanPoint,
-  directionA: PlanPoint,
-  other: PlanPoint,
-  directionB: PlanPoint,
-): PlanPoint | null {
-  const det = directionA.x * directionB.z - directionA.z * directionB.x
-  if (Math.abs(det) < 1e-12) return null
-  const t = ((other.x - origin.x) * directionB.z - (other.z - origin.z) * directionB.x) / det
-  return { x: origin.x + directionA.x * t, z: origin.z + directionA.z * t }
-}
-
-function clean(ring: Ring): Ring {
-  const points: Ring = []
-  for (const point of ring) {
-    const previous = points[points.length - 1]
-    if (previous && Math.hypot(point.x - previous.x, point.z - previous.z) < 1e-6) continue
-    points.push(point)
-  }
-  const first = points[0]
-  const last = points[points.length - 1]
-  if (first && last && points.length > 1 && Math.hypot(first.x - last.x, first.z - last.z) < 1e-6) {
-    points.pop()
-  }
-  return points
 }
 
 function triangulateFace(face: RoofVertex[]): number[] {

@@ -252,8 +252,9 @@
 
   function slabsFor(structures: { datum: number; rings: Ring[] }[]): FloorSlab[] {
     const slabs: FloorSlab[] = []
+    const groundFloor = doc.building.floors.find((floor) => floor.index === 0)
     structures.forEach((structure, structureIndex) => {
-      surfaceBedPolygons(structure.rings).forEach((polygon, polygonIndex) => {
+      surfaceBedPolygons(structure.rings, groundFloor).forEach((polygon, polygonIndex) => {
         if (polygon.outer.length < 3) return
         const shape = ringShape(polygon.outer)
         for (const hole of polygon.holes) {

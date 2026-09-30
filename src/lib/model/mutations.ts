@@ -11,6 +11,7 @@ import {
   placeOpeningU,
 } from './openings'
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
+import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -27,7 +28,9 @@ import type {
   OpeningKind,
   Plot,
   Roof,
+  Wall,
   WallSkin,
+  WallSystemId,
 } from './types'
 
 function fail(document: Document, reason: string): MutationResult {
@@ -70,9 +73,12 @@ export function addWall(
   startCornerId: string,
   endCornerId: string,
   skin: WallSkin,
+  systemId?: WallSystemId,
 ): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
+  const solid: Pick<Wall, 'skin' | 'systemId'> =
+    skin !== 'logical' && systemId ? { skin: skinFor(wallSystem(systemId)), systemId } : { skin }
   const start = floor.corners.find((c) => c.id === startCornerId)
   const end = floor.corners.find((c) => c.id === endCornerId)
   if (!start || !end) return fail(document, 'corner not found')
@@ -128,7 +134,7 @@ export function addWall(
       id: newId('wall'),
       startCornerId: a.id,
       endCornerId: b.id,
-      skin,
+      ...solid,
       openings: [],
     })
   }
@@ -143,6 +149,7 @@ export function addWallRing(
   floorId: string,
   points: { x: number; z: number; cornerId?: string }[],
   skin: WallSkin,
+  systemId?: WallSystemId,
 ): MutationResult {
   if (points.length < 3) return fail(document, 'degenerate wall')
   for (let i = 0; i < points.length; i++) {
@@ -171,11 +178,39 @@ export function addWallRing(
     ids.push(created.id)
   }
   for (let i = 0; i < ids.length; i++) {
-    const wall = addWall(doc, floorId, ids[i], ids[(i + 1) % ids.length], skin)
+    const wall = addWall(doc, floorId, ids[i], ids[(i + 1) % ids.length], skin, systemId)
     if (!wall.ok) return fail(document, wall.reason ?? 'degenerate wall')
     doc = wall.document
   }
   return ok(doc)
+}
+
+export function setWallSystem(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  systemId: WallSystemId,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((w) => w.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin === 'logical') return fail(document, 'logical walls have no blocks')
+  const system = wallSystem(systemId)
+  const openings = wall.openings.map((opening) => {
+    if (opening.aligned) return applyAligned(opening, system)
+    const v = snapToCourse(system, opening.v)
+    const head = snapToCourse(system, opening.v + opening.height, 'ceil')
+    return { ...opening, v, height: Math.max(system.courseHeight, head - v) }
+  })
+  const walls = floor.walls.map((w) =>
+    w.id === wallId ? { ...w, skin: skinFor(system), systemId, openings } : w,
+  )
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
+export function setDefaultWallSystem(document: Document, systemId: WallSystemId): MutationResult {
+  return ok({ ...document, building: { ...document.building, wallSystemId: systemId } })
 }
 
 export function moveCorner(
@@ -303,7 +338,8 @@ export function addOpening(
   if (!floor) return fail(document, 'floor not found')
   const wall = floor.walls.find((w) => w.id === wallId)
   if (!wall) return fail(document, 'wall not found')
-  const opening = createOpening(newId('opening'), kind, u, width)
+  const system = systemOf(wall)
+  const opening = createOpening(newId('opening'), kind, u, width, system)
   if (v !== undefined) {
     opening.v = v
     opening.aligned = false
@@ -314,7 +350,7 @@ export function addOpening(
     if (limits.max < limits.min - 1e-9) return fail(document, shortWallReason(kind))
     opening.width = Math.min(limits.max, Math.max(limits.min, opening.width))
   }
-  const placedU = placeOpeningU(opening.u, opening.width, length, wall.openings)
+  const placedU = placeOpeningU(opening.u, opening.width, length, wall.openings, undefined, system.moduleLength)
   if (placedU === null) return fail(document, 'openings too close')
   opening.u = placedU
   const walls = floor.walls.map((w) =>
@@ -337,12 +373,14 @@ export function updateOpening(
   const existing = wall.openings.find((o) => o.id === openingId)
   if (!existing) return fail(document, 'opening not found')
 
+  const system = systemOf(wall)
+  const gap = system.moduleLength
   let aligned = existing.aligned
   if (patch.v !== undefined || patch.height !== undefined) {
     aligned = false
   }
   if (patch.kind !== undefined && patch.kind !== existing.kind) {
-    const d = defaultOpeningDimensions(patch.kind)
+    const d = defaultOpeningDimensions(patch.kind, system)
     if (aligned) {
       patch = { ...patch, v: d.v, height: d.height }
     }
@@ -362,11 +400,11 @@ export function updateOpening(
     let requestedU = updated.u
     if (patch.width !== undefined && patch.u === undefined) {
       const centre = existing.u + existing.width / 2
-      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others))
+      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others, undefined, gap))
       if (nextWidth < limits.min - 1e-9) return fail(document, 'openings too close')
       requestedU = centre - nextWidth / 2
     }
-    const placedU = placeOpeningU(requestedU, nextWidth, length, others)
+    const placedU = placeOpeningU(requestedU, nextWidth, length, others, undefined, gap)
     if (placedU === null) return fail(document, 'openings too close')
     updated = { ...updated, width: nextWidth, u: placedU }
   } else {
@@ -376,11 +414,11 @@ export function updateOpening(
       const centre = existing.u + existing.width / 2
       const limits = openingWidthLimits('window', length)
       nextWidth = Math.min(limits.max, Math.max(limits.min, nextWidth))
-      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others))
+      nextWidth = Math.min(nextWidth, maxOpeningWidth(centre, length, others, undefined, gap))
       if (nextWidth < limits.min - 1e-9) return fail(document, 'openings too close')
       requestedU = centre - nextWidth / 2
     }
-    const placedU = placeOpeningU(requestedU, nextWidth, length, others)
+    const placedU = placeOpeningU(requestedU, nextWidth, length, others, undefined, gap)
     if (placedU === null) return fail(document, 'openings too close')
     updated = { ...updated, width: nextWidth, u: placedU }
   }
@@ -412,7 +450,7 @@ export function setOpeningAligned(
 
   let updated = { ...existing, aligned }
   if (aligned) {
-    updated = applyAligned(updated)
+    updated = applyAligned(updated, systemOf(wall))
   }
 
   const walls = floor.walls.map((w) =>

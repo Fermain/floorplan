@@ -40,6 +40,7 @@ export function configureOrthoCamera(
   camera.near = 0.1
   camera.far = 100
   camera.updateProjectionMatrix()
+  camera.updateMatrixWorld()
   return camera
 }
 

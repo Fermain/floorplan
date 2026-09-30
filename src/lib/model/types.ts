@@ -35,11 +35,14 @@ export type Opening = {
 
 export type WallSkin = 'single' | 'double' | 'logical'
 
+export type WallSystemId = 'clay-cavity' | 'clay-solid' | 'clay-single' | 'maxi-140' | 'block-140' | 'block-90'
+
 export type Wall = {
   id: string
   startCornerId: string
   endCornerId: string
   skin: WallSkin
+  systemId?: WallSystemId
   openings: Opening[]
 }
 
@@ -62,6 +65,7 @@ export type Roof = {
 
 export type Building = {
   floors: Floor[]
+  wallSystemId?: WallSystemId
 }
 
 export type Document = {

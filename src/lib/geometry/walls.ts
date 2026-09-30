@@ -1,21 +1,20 @@
-import {
-  BLOCK_HEIGHT,
-  BLOCK_LENGTH,
-  BLOCK_THICKNESS,
-  CAVITY,
-  DEFAULT_STOREY_HEIGHT,
-  LEAF_OFFSET,
-  LINTEL_BEARING,
-} from '../plot/fixture'
+import { LINTEL_BEARING, WALL_HEAD } from '../plot/fixture'
 import type { Floor, Opening, Wall } from '../model/types'
 import { deriveRooms } from '../model/rooms'
+import {
+  courseCount,
+  leafOffset,
+  MORTAR_JOINT,
+  snapToCourse,
+  systemOf,
+  wallThickness,
+  type WallSystem,
+} from '../model/systems'
 import { pointInRing, type Ring } from './pad'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const LINTEL_THICKNESS = CAVITY + 2 * BLOCK_THICKNESS
 const MITER_MAX_CORNER_DIST = 1
-const COURSE_COUNT = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)
 
 export type BottomSample = { u: number; y: number }
 
@@ -116,20 +115,21 @@ function bottomOffsetForBlock(u0: number, u1: number, samples: BottomSample[] | 
 
 function courseVerticalRange(
   course: number,
+  courseHeight: number,
   u0: number,
   u1: number,
   samples: BottomSample[] | undefined,
 ): { y0: number; y1: number } | null {
   if (course === 0) {
     const y0 = bottomOffsetForBlock(u0, u1, samples)
-    const y1 = BLOCK_HEIGHT
+    const y1 = courseHeight
     if (y0 >= y1 - 1e-9) return null
     return { y0, y1 }
   }
-  const y0 = course * BLOCK_HEIGHT
+  const y0 = course * courseHeight
   const grade = bottomOffsetForBlock(u0, u1, samples)
-  if (grade >= y0 + BLOCK_HEIGHT - 1e-9) return null
-  return { y0: Math.max(y0, grade), y1: y0 + BLOCK_HEIGHT }
+  if (grade >= y0 + courseHeight - 1e-9) return null
+  return { y0: Math.max(y0, grade), y1: y0 + courseHeight }
 }
 
 function intervalsOverlap(a0: number, a1: number, b0: number, b1: number): boolean {
@@ -156,14 +156,15 @@ function subtractInterval(
 function splitBlockRuns(
   u0: number,
   u1: number,
+  moduleLength: number,
   uShift = 0,
 ): { u0: number; u1: number }[] {
   const spans: { u0: number; u1: number }[] = []
-  const kStart = Math.floor((u0 - uShift) / BLOCK_LENGTH)
-  const kEnd = Math.floor((u1 - 1e-9 - uShift) / BLOCK_LENGTH)
+  const kStart = Math.floor((u0 - uShift) / moduleLength)
+  const kEnd = Math.floor((u1 - 1e-9 - uShift) / moduleLength)
   for (let k = kStart; k <= kEnd; k++) {
-    const b0 = uShift + k * BLOCK_LENGTH
-    const b1 = b0 + BLOCK_LENGTH
+    const b0 = uShift + k * moduleLength
+    const b1 = b0 + moduleLength
     const s0 = Math.max(u0, b0)
     const s1 = Math.min(u1, b1)
     if (s1 - s0 > 1e-9) {
@@ -185,20 +186,19 @@ function openingGapU(opening: Opening): { u0: number; u1: number; v0: number; v1
 function openingAffectsCourse(
   opening: Opening,
   course: number,
+  courseHeight: number,
   samples: BottomSample[] | undefined,
   u0: number,
   u1: number,
 ): boolean {
-  const range = courseVerticalRange(course, u0, u1, samples)
+  const range = courseVerticalRange(course, courseHeight, u0, u1, samples)
   if (!range) return false
   const { v0, v1 } = openingGapU(opening)
   return intervalsOverlap(range.y0, range.y1, v0, v1)
 }
 
-const WALL_HEAD = COURSE_COUNT * BLOCK_HEIGHT
-
-function moduleBearing(edge: number, direction: -1 | 1): number {
-  const step = BLOCK_LENGTH / 2
+function moduleBearing(edge: number, direction: -1 | 1, moduleLength: number): number {
+  const step = moduleLength / 2
   const limit = edge + direction * LINTEL_BEARING
   const n =
     direction > 0
@@ -208,6 +208,7 @@ function moduleBearing(edge: number, direction: -1 | 1): number {
 }
 
 function lintelBox(
+  system: WallSystem,
   opening: Opening,
   others: Opening[],
   uMin: number,
@@ -216,10 +217,10 @@ function lintelBox(
   const head = opening.v + opening.height
   if (head >= WALL_HEAD - 1e-6) return null
   const y0 = head
-  const y1 = Math.min(WALL_HEAD, head + BLOCK_HEIGHT)
+  const y1 = Math.min(WALL_HEAD, head + system.courseHeight)
   if (y1 - y0 <= 1e-4) return null
-  let u0 = Math.max(uMin, moduleBearing(opening.u, -1))
-  let u1 = Math.min(uMax, moduleBearing(opening.u + opening.width, 1))
+  let u0 = Math.max(uMin, moduleBearing(opening.u, -1, system.moduleLength))
+  let u1 = Math.min(uMax, moduleBearing(opening.u + opening.width, 1, system.moduleLength))
   const openingEnd = opening.u + opening.width
   for (const other of others) {
     const otherEnd = other.u + other.width
@@ -239,10 +240,11 @@ export function collectLintelSpans(floor: Floor, wall: Wall): LintelSpan[] {
   if (wall.skin === 'logical') return []
   const { uMin, uMax } = wallMeshURange(floor, wall, 0)
   if (uMax - uMin <= 1e-9) return []
+  const system = systemOf(wall)
   const spans: LintelSpan[] = []
   for (const opening of wall.openings) {
     const others = wall.openings.filter((item) => item.id !== opening.id)
-    const box = lintelBox(opening, others, uMin, uMax)
+    const box = lintelBox(system, opening, others, uMin, uMax)
     if (!box) continue
     spans.push(box)
   }
@@ -311,12 +313,14 @@ function bondFace(wallId: string, otherId: string, course: number): LeafFace {
   return through ? 'far' : 'near'
 }
 
-function faceOffset(skin: Wall['skin'], mateSide: number, face: LeafFace): number {
-  if (skin === 'single' || face === 'center') {
-    return skin === 'single' ? 0 : mateSide * LEAF_OFFSET
+function faceOffset(wall: Wall, mateSide: number, face: LeafFace): number {
+  const system = systemOf(wall)
+  const offset = leafOffset(system)
+  if (wall.skin === 'single' || face === 'center') {
+    return wall.skin === 'single' ? 0 : mateSide * offset
   }
-  const half = face === 'far' ? BLOCK_THICKNESS / 2 : -BLOCK_THICKNESS / 2
-  return mateSide * (LEAF_OFFSET + half)
+  const half = face === 'far' ? system.leafThickness / 2 : -system.leafThickness / 2
+  return mateSide * (offset + half)
 }
 
 function miterUAtCorner(
@@ -334,9 +338,10 @@ function miterUAtCorner(
   const away = awayFromCorner(frame, cornerIsStart)
   const side = cornerIsStart ? leafSign : -leafSign
   const selfLeft = leftWhenWalking(away)
+  const selfOffset = leafOffset(systemOf(wall))
   const selfOrigin = {
-    x: corner.x + side * LEAF_OFFSET * selfLeft.x,
-    z: corner.z + side * LEAF_OFFSET * selfLeft.z,
+    x: corner.x + side * selfOffset * selfLeft.x,
+    z: corner.z + side * selfOffset * selfLeft.z,
   }
   let best: {
     dist: number
@@ -354,7 +359,7 @@ function miterUAtCorner(
     const cross = away.x * otherAway.z - away.z * otherAway.x
     if (Math.abs(cross) < 1e-8) continue
     const mateSide = -side
-    const mateOffset = faceOffset(other.skin, mateSide, 'center')
+    const mateOffset = faceOffset(other, mateSide, 'center')
     const otherOrigin = {
       x: corner.x + mateOffset * otherLeft.x,
       z: corner.z + mateOffset * otherLeft.z,
@@ -368,7 +373,7 @@ function miterUAtCorner(
     if (!best || dist < best.dist) best = { dist, other, otherAway, otherLeft, mateSide }
   }
   if (!best) return null
-  const mateOffset = faceOffset(best.other.skin, best.mateSide, faceFor(best.other.id))
+  const mateOffset = faceOffset(best.other, best.mateSide, faceFor(best.other.id))
   const otherOrigin = {
     x: corner.x + mateOffset * best.otherLeft.x,
     z: corner.z + mateOffset * best.otherLeft.z,
@@ -460,6 +465,8 @@ export function collectWallBlockSpans(
   if (wall.skin === 'logical') {
     return []
   }
+  const system = systemOf(wall)
+  const courseHeight = system.courseHeight
   const spans: BlockSpan[] = []
   const signs = leafSigns(wall.skin)
   const facing =
@@ -468,8 +475,8 @@ export function collectWallBlockSpans(
       : new Set<number>()
   for (let leaf = 0; leaf < signs.length; leaf++) {
     const leafSign = signs[leaf]
-    const head = facadeHead === undefined ? undefined : Math.ceil((facadeHead - 1e-9) / BLOCK_HEIGHT) * BLOCK_HEIGHT
-    const courseLimit = facing.has(leaf) && head !== undefined ? Math.ceil((head - 1e-9) / BLOCK_HEIGHT) : COURSE_COUNT
+    const head = facing.has(leaf) && facadeHead !== undefined ? snapToCourse(system, facadeHead, 'ceil') : WALL_HEAD
+    const courseLimit = courseCount(system, head)
     for (let course = 0; course < courseLimit; course++) {
       const { uMin, uMax } = wallMeshURange(floor, wall, leafSign, course)
       if (uMax - uMin <= 1e-9) {
@@ -480,7 +487,7 @@ export function collectWallBlockSpans(
         const gap = openingGapU(opening)
         const next: { u0: number; u1: number }[] = []
         for (const solid of solids) {
-          if (!openingAffectsCourse(opening, course, bottomSamples, solid.u0, solid.u1)) {
+          if (!openingAffectsCourse(opening, course, courseHeight, bottomSamples, solid.u0, solid.u1)) {
             next.push(solid)
             continue
           }
@@ -489,12 +496,12 @@ export function collectWallBlockSpans(
         solids = next
       }
       for (const solid of solids) {
-        const uShift = course % 2 === 1 ? BLOCK_LENGTH / 2 : 0
-        for (const block of splitBlockRuns(solid.u0, solid.u1, uShift)) {
-          const range = courseVerticalRange(course, block.u0, block.u1, bottomSamples)
+        const uShift = course % 2 === 1 ? system.moduleLength / 2 : 0
+        for (const block of splitBlockRuns(solid.u0, solid.u1, system.moduleLength, uShift)) {
+          const range = courseVerticalRange(course, courseHeight, block.u0, block.u1, bottomSamples)
           if (!range) continue
-          let { y0, y1 } = range
-          if (facing.has(leaf) && head !== undefined && y1 > head) y1 = head
+          const y0 = range.y0
+          const y1 = Math.min(range.y1, head)
           if (y1 - y0 <= 1e-4) continue
           spans.push({
             u0: block.u0,
@@ -541,18 +548,16 @@ function placeBox(
   u1: number,
   y0: number,
   y1: number,
-  leafSign: number,
   unitBox: BoxGeometry,
   matrix: Matrix4,
   parts: BufferGeometry[],
-  thickness = BLOCK_THICKNESS,
-  normalCenter?: number,
+  thickness: number,
+  along: number,
 ): void {
   const uCenter = (u0 + u1) / 2
   const yCenter = (y0 + y1) / 2
   const blockLen = u1 - u0
   const blockH = y1 - y0
-  const along = normalCenter ?? leafSign * LEAF_OFFSET
   const cx = frame.start.x + uCenter * frame.dir.x + along * frame.normal.x
   const cz = frame.start.z + uCenter * frame.dir.z + along * frame.normal.z
   const geom = unitBox.clone()
@@ -577,6 +582,7 @@ export function buildWallGeometries(
     return []
   }
   const frame = buildFrame(floor, wall)
+  const system = systemOf(wall)
   const signs = leafSigns(wall.skin)
   const spans = collectWallBlockSpans(floor, wall, bottomSamples, facadeHead)
   const unitBox = new BoxGeometry(1, 1, 1)
@@ -584,23 +590,13 @@ export function buildWallGeometries(
   const out: BufferGeometry[] = []
 
   for (let leaf = 0; leaf < signs.length; leaf++) {
-    const leafSign = signs[leaf]
+    const along = signs[leaf] * leafOffset(system)
     const parts: BufferGeometry[] = []
     for (const span of spans) {
       if (span.leaf !== leaf) {
         continue
       }
-      placeBox(
-        frame,
-        span.u0,
-        span.u1,
-        span.y0,
-        span.y1,
-        leafSign,
-        unitBox,
-        matrix,
-        parts,
-      )
+      placeBox(frame, span.u0, span.u1, span.y0, span.y1, unitBox, matrix, parts, system.leafThickness, along)
     }
     if (parts.length === 0) {
       continue
@@ -617,7 +613,6 @@ export function buildWallGeometries(
   return out
 }
 
-const MORTAR_JOINT = 0.01
 const COURSE_FACE_DEPTH = 0.003
 
 function insetBrick(span: BlockSpan): { u0: number; u1: number; y0: number; y1: number } | null {
@@ -631,10 +626,10 @@ function insetBrick(span: BlockSpan): { u0: number; u1: number; y0: number; y1: 
   return { u0: span.u0, u1: span.u1, y0: span.y0, y1: span.y1 }
 }
 
-function outerFaceCenters(leafSign: number): number[] {
-  const reach = BLOCK_THICKNESS / 2 + COURSE_FACE_DEPTH / 2
+function outerFaceCenters(system: WallSystem, leafSign: number): number[] {
+  const reach = system.leafThickness / 2 + COURSE_FACE_DEPTH / 2
   if (leafSign === 0) return [reach, -reach]
-  return [Math.sign(leafSign) * (LEAF_OFFSET + reach)]
+  return [Math.sign(leafSign) * (leafOffset(system) + reach)]
 }
 
 export function buildCourseFaceGeometries(
@@ -645,32 +640,20 @@ export function buildCourseFaceGeometries(
 ): BufferGeometry[] {
   if (wall.skin === 'logical') return []
   const frame = buildFrame(floor, wall)
+  const system = systemOf(wall)
   const signs = leafSigns(wall.skin)
   const spans = collectWallBlockSpans(floor, wall, bottomSamples, facadeHead)
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const out: BufferGeometry[] = []
   for (let leaf = 0; leaf < signs.length; leaf++) {
-    const leafSign = signs[leaf]
-    for (const center of outerFaceCenters(leafSign)) {
+    for (const center of outerFaceCenters(system, signs[leaf])) {
       const parts: BufferGeometry[] = []
       for (const span of spans) {
         if (span.leaf !== leaf) continue
         const face = insetBrick(span)
         if (!face) continue
-        placeBox(
-          frame,
-          face.u0,
-          face.u1,
-          face.y0,
-          face.y1,
-          leafSign,
-          unitBox,
-          matrix,
-          parts,
-          COURSE_FACE_DEPTH,
-          center,
-        )
+        placeBox(frame, face.u0, face.u1, face.y0, face.y1, unitBox, matrix, parts, COURSE_FACE_DEPTH, center)
       }
       if (parts.length === 0) continue
       const merged = mergeGeometries(parts, false)
@@ -690,22 +673,12 @@ export function buildLintelGeometry(
   const spans = collectLintelSpans(floor, wall)
   if (spans.length === 0) return null
   const frame = buildFrame(floor, wall)
+  const thickness = wallThickness(systemOf(wall))
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
   for (const span of spans) {
-    placeBox(
-      frame,
-      span.u0,
-      span.u1,
-      span.y0,
-      span.y1,
-      0,
-      unitBox,
-      matrix,
-      parts,
-      LINTEL_THICKNESS,
-    )
+    placeBox(frame, span.u0, span.u1, span.y0, span.y1, unitBox, matrix, parts, thickness, 0)
   }
   unitBox.dispose()
   if (parts.length === 0) return null

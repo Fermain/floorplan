@@ -9,19 +9,19 @@
 } from '../../lib/geometry/frames'
 import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
 import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-import { isFloorOpening, maxOpeningWidth, openingMinWidth, openingWidthLimits, placeOpeningU } from '../../lib/model/openings'
-import type { Floor, Opening, OpeningKind, Wall } from '../../lib/model/types'
 import {
-  DEFAULT_DOOR_WIDTH,
-  DEFAULT_EXTERNAL_DOOR_WIDTH,
-  DEFAULT_GARAGE_WIDTH,
-  DEFAULT_INTERNAL_DOOR_WIDTH,
-  DEFAULT_PORTAL_WIDTH,
-  DEFAULT_WINDOW_WIDTH,
-} from '../../lib/plot/fixture'
+  defaultOpeningDimensions,
+  isFloorOpening,
+  maxOpeningWidth,
+  openingMinWidth,
+  openingWidthLimits,
+  placeOpeningU,
+} from '../../lib/model/openings'
+import { systemOf, WALL_SYSTEMS } from '../../lib/model/systems'
+import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
-  import { pointerToWallUv } from './elevation'
+  import { configureOrthoCamera, pointerToWallUv } from './elevation'
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame } from './wallFrame'
 
@@ -38,14 +38,7 @@ import {
   let insertTool = $state<OpeningKind>('window')
   let menuOpen = $state(false)
   let menuEl = $state<HTMLDivElement | undefined>(undefined)
-  let preferredWidth = $state<Record<OpeningKind, number>>({
-    window: DEFAULT_WINDOW_WIDTH,
-    door: DEFAULT_DOOR_WIDTH,
-    'external-door': DEFAULT_EXTERNAL_DOOR_WIDTH,
-    'internal-door': DEFAULT_INTERNAL_DOOR_WIDTH,
-    garage: DEFAULT_GARAGE_WIDTH,
-    portal: DEFAULT_PORTAL_WIDTH,
-  })
+  let preferredWidth = $state<Partial<Record<OpeningKind, number>>>({})
   let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
   let readout = $state<{ u: number; v: number } | null>(null)
@@ -82,6 +75,8 @@ import {
 
   const floor = $derived(located?.floor)
   const wall = $derived(located?.wall)
+  const system = $derived(systemOf(wall ?? { skin: 'double' }))
+  const gap = $derived(system.moduleLength)
 
   const editingOpening = $derived.by(() => {
     if (!wall || !selectedOpeningId) return undefined
@@ -107,13 +102,13 @@ import {
     if (!editingOpening || !wall) return base
     const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
     const centre = editingOpening.u + editingOpening.width / 2
-    const room = maxOpeningWidth(centre, frame.length, others)
+    const room = maxOpeningWidth(centre, frame.length, others, undefined, gap)
     return { min: base.min, max: Math.min(base.max, room) }
   })
   const widthAllowed = $derived(widthLimits !== null && widthLimits.max >= widthLimits.min - 1e-9)
 
   const shownWidth = $derived.by(() => {
-    const fallback = preferredWidth[widthKind]
+    const fallback = preferredWidth[widthKind] ?? defaultOpeningDimensions(widthKind, system).width
     const raw = widthDraft ?? editingOpening?.width ?? fallback
     if (!widthLimits || !widthAllowed) return raw
     return Math.min(widthLimits.max, Math.max(widthLimits.min, raw))
@@ -132,7 +127,7 @@ import {
     } else if (widthDraft !== null && editingOpening && frame) {
       const centre = editingOpening.u + editingOpening.width / 2
       const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
-      const u = placeOpeningU(centre - shownWidth / 2, shownWidth, frame.length, others)
+      const u = placeOpeningU(centre - shownWidth / 2, shownWidth, frame.length, others, undefined, gap)
       if (u !== null) {
         openings = openings.map((opening) =>
           opening.id === editingOpening.id ? { ...opening, u, width: shownWidth } : opening,
@@ -240,6 +235,8 @@ import {
     if (!picked) return null
     const offsetX = event.clientX - picked.rect.left
     const offsetY = event.clientY - picked.rect.top
+    if (picked.rect.width <= 0 || picked.rect.height <= 0) return null
+    configureOrthoCamera(orthoCamera, picked.rect.width / picked.rect.height, frame)
     return pointerToWallUv(
       orthoCamera,
       offsetX,
@@ -274,7 +271,7 @@ import {
     }
 
     const min = openingMinWidth(insertTool)
-    const placed = placeSnappedOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings, min)
+    const placed = placeSnappedOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings, min, system)
     if (placed === null) return
     selectAdded(documentStore.addOpening(floor.id, wall.id, insertTool, placed.u, placed.width))
   }
@@ -286,7 +283,7 @@ import {
 
   function commitWidth(value: number) {
     widthDraft = null
-    const snapped = snapOpeningWidth(value, openingMinWidth(widthKind))
+    const snapped = snapOpeningWidth(value, openingMinWidth(widthKind), system)
     if (!editingOpening || !floor || !wall) {
       preferredWidth[insertTool] = snapped
       return
@@ -294,12 +291,18 @@ import {
     const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
     const centre = editingOpening.u + editingOpening.width / 2
     const u = frame
-      ? snapLegalModuleU(centre - snapped / 2, snapped, frame.length, others)
+      ? snapLegalModuleU(centre - snapped / 2, snapped, frame.length, others, system)
       : null
     documentStore.updateOpening(floor.id, wall.id, editingOpening.id, {
       width: snapped,
       ...(u === null ? {} : { u }),
     })
+  }
+
+  function chooseSystem(id: WallSystemId) {
+    if (!floor || !wall || id === system.id) return
+    preferredWidth = {}
+    documentStore.setWallSystem(floor.id, wall.id, id)
   }
 
   function removeSelected() {
@@ -386,7 +389,7 @@ import {
     const moving = wall.openings.find((opening) => opening.id === current.id)
     if (!moving) return
     const others = wall.openings.filter((opening) => opening.id !== current.id)
-    const u = placeOpeningU(uv.u - current.grabU, moving.width, frame.length, others)
+    const u = placeOpeningU(uv.u - current.grabU, moving.width, frame.length, others, undefined, gap)
     if (u === null) return
     const v = current.aligned ? current.v : uv.v - current.grabV
     drag = { ...current, u, v }
@@ -398,7 +401,7 @@ import {
       const moving = wall.openings.find((opening) => opening.id === current.id)
       if (moving) {
         const others = wall.openings.filter((opening) => opening.id !== current.id)
-        const u = snapLegalModuleU(current.u, moving.width, frame.length, others)
+        const u = snapLegalModuleU(current.u, moving.width, frame.length, others, system)
         if (u !== null) {
           const moved =
             u !== current.originU || (!current.aligned && current.v !== current.originV)
@@ -406,7 +409,7 @@ import {
             if (current.aligned) {
               documentStore.updateOpening(floor.id, wall.id, current.id, { u })
             } else {
-              const vertical = snapOpeningVertical(current.v, moving.height, frame.height)
+              const vertical = snapOpeningVertical(current.v, moving.height, frame.height, system)
               documentStore.updateOpening(floor.id, wall.id, current.id, {
                 u,
                 v: vertical.v,
@@ -486,6 +489,14 @@ import {
       {#if editingOpening}
         <button type="button" onclick={removeSelected}>Remove</button>
       {/if}
+      <label class="system">
+        Wall
+        <select value={system.id} onchange={(event) => chooseSystem(event.currentTarget.value as WallSystemId)}>
+          {#each WALL_SYSTEMS as choice (choice.id)}
+            <option value={choice.id}>{choice.name}</option>
+          {/each}
+        </select>
+      </label>
     </div>
     <div class="scene">
       <button type="button" class="lock" onclick={() => (locked = !locked)}>
@@ -609,6 +620,17 @@ import {
 
   .width input[type='number'] {
     width: 4.5rem;
+    font: inherit;
+  }
+
+  .system {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: auto;
+  }
+
+  .system select {
     font: inherit;
   }
 

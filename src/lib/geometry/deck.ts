@@ -2,33 +2,35 @@ import { union } from '@turf/union'
 import { signedPolygonArea } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
 import type { DerivedRoom, Floor, Wall } from '../model/types'
-import {
-  BLOCK_HEIGHT,
-  BLOCK_THICKNESS,
-  CAVITY,
-  DEFAULT_STOREY_HEIGHT,
-  FLOOR_TO_FLOOR,
-} from '../plot/fixture'
+import { FLOOR_TO_FLOOR, WALL_HEAD } from '../plot/fixture'
+import { leafOffset, systemOf } from '../model/systems'
 import { leafSigns, wallMeshURange } from './walls'
+import { offsetEdges, ringEdgeWalls, wallReach } from './outline'
 import { pointInRing, WALL_OUTSTAND_M, type Ring } from './pad'
 
-const CAVITY_FACE_M = CAVITY / 2
+const CAVITY_FACE_M = 0.025
 const MAX_DECK_THICKNESS_M = 0.255
 const SURFACE_BED_FACE_CLEARANCE_M = 0.02
 
 export type DeckPolygon = { outer: Ring; holes: Ring[] }
 
-export function surfaceBedPolygons(rings: Ring[]): DeckPolygon[] {
+export function surfaceBedPolygons(rings: Ring[], floor?: Floor): DeckPolygon[] {
   const expanded = rings
-    .map((ring) => offsetOutward(ring, WALL_OUTSTAND_M - SURFACE_BED_FACE_CLEARANCE_M))
+    .map((ring) => {
+      if (!floor) return offsetOutward(ring, WALL_OUTSTAND_M - SURFACE_BED_FACE_CLEARANCE_M)
+      const distances = ringEdgeWalls(floor, ring).map((wall) =>
+        wall && wall.skin !== 'logical'
+          ? wallReach(wall) - SURFACE_BED_FACE_CLEARANCE_M
+          : SURFACE_BED_FACE_CLEARANCE_M,
+      )
+      return offsetEdges(ring, distances)
+    })
     .filter((ring) => ring.length >= 3)
   return unionRings(expanded)
 }
 
 export function deckThickness(): number {
-  const courseCount = Math.floor(DEFAULT_STOREY_HEIGHT / BLOCK_HEIGHT)
-  const zone = FLOOR_TO_FLOOR - courseCount * BLOCK_HEIGHT
-  return Math.min(zone, MAX_DECK_THICKNESS_M)
+  return Math.min(FLOOR_TO_FLOOR - WALL_HEAD, MAX_DECK_THICKNESS_M)
 }
 
 export function deckPolygons(floor: Floor): DeckPolygon[] {
@@ -84,16 +86,18 @@ function wallStrip(floor: Floor, wall: Wall, rooms: DerivedRoom[]): Ring | null 
     x: start.x + dir.x * u + normal.x * side,
     z: start.z + dir.z * u + normal.z * side,
   })
+  const system = systemOf(wall)
   if (roomSide === null) {
-    const half = BLOCK_THICKNESS / 2
+    const half = system.leafThickness / 2
     return [at(u0, -half), at(u1, -half), at(u1, half), at(u0, half)]
   }
   if (wall.skin === 'single') {
-    const inner = roomSide * (BLOCK_THICKNESS / 2)
+    const inner = roomSide * (system.leafThickness / 2)
     return [at(u0, 0), at(u1, 0), at(u1, inner), at(u0, inner)]
   }
-  const cavity = roomSide * CAVITY_FACE_M
-  const roomFace = roomSide * (CAVITY_FACE_M + BLOCK_THICKNESS)
+  const cavityFace = leafOffset(system) - system.leafThickness / 2
+  const cavity = roomSide * cavityFace
+  const roomFace = roomSide * (cavityFace + system.leafThickness)
   return [at(u0, cavity), at(u1, cavity), at(u1, roomFace), at(u0, roomFace)]
 }
 

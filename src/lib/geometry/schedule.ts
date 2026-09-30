@@ -1,5 +1,5 @@
 import type { Document, Floor, OpeningKind, Wall } from '../model/types'
-import { BLOCK_HEIGHT, BLOCK_LENGTH } from '../plot/fixture'
+import { systemOf, type WallSystem } from '../model/systems'
 import {
   collectLintelSpans,
   collectWallBlockSpans,
@@ -27,18 +27,18 @@ export type WallSchedule = {
 
 export type BuildingSchedule = WallSchedule
 
-function isWholeSpan(span: BlockSpan): boolean {
+function isWholeSpan(span: BlockSpan, system: WallSystem): boolean {
   const length = span.u1 - span.u0
   const height = span.y1 - span.y0
-  return Math.abs(length - BLOCK_LENGTH) <= TOL && Math.abs(height - BLOCK_HEIGHT) <= TOL
+  return Math.abs(length - system.moduleLength) <= TOL && Math.abs(height - system.courseHeight) <= TOL
 }
 
-function courseShift(course: number): number {
-  return course % 2 === 1 ? BLOCK_LENGTH / 2 : 0
+function courseShift(course: number, system: WallSystem): number {
+  return course % 2 === 1 ? system.moduleLength / 2 : 0
 }
 
-function moduleIndex(span: BlockSpan): number {
-  return Math.floor((span.u0 - courseShift(span.course)) / BLOCK_LENGTH)
+function moduleIndex(span: BlockSpan, system: WallSystem): number {
+  return Math.floor((span.u0 - courseShift(span.course, system)) / system.moduleLength)
 }
 
 function moduleNaturalLength(
@@ -46,10 +46,11 @@ function moduleNaturalLength(
   module: number,
   uMin: number,
   uMax: number,
+  system: WallSystem,
 ): number {
-  const shift = courseShift(course)
-  const b0 = shift + module * BLOCK_LENGTH
-  const b1 = b0 + BLOCK_LENGTH
+  const shift = courseShift(course, system)
+  const b0 = shift + module * system.moduleLength
+  const b1 = b0 + system.moduleLength
   const s0 = Math.max(uMin, b0)
   const s1 = Math.min(uMax, b1)
   return Math.max(0, s1 - s0)
@@ -75,30 +76,31 @@ type CutGroup = {
 function countBricks(
   spans: BlockSpan[],
   rangeAt: (leaf: number, course: number) => { uMin: number, uMax: number },
+  system: WallSystem,
 ): { wholeBricks: number, cutBricks: number } {
   let wholeBricks = 0
   const groups = new Map<string, CutGroup>()
 
   for (const span of spans) {
-    if (isWholeSpan(span)) {
+    if (isWholeSpan(span, system)) {
       wholeBricks++
       continue
     }
-    const module = moduleIndex(span)
+    const module = moduleIndex(span, system)
     const key = `${span.course}:${span.leaf}:${module}`
     const height = span.y1 - span.y0
     const existing = groups.get(key)
     if (existing) {
       existing.length += span.u1 - span.u0
       existing.fullHeight =
-        existing.fullHeight && Math.abs(height - BLOCK_HEIGHT) <= TOL
+        existing.fullHeight && Math.abs(height - system.courseHeight) <= TOL
     } else {
       groups.set(key, {
         course: span.course,
         leaf: span.leaf,
         module,
         length: span.u1 - span.u0,
-        fullHeight: Math.abs(height - BLOCK_HEIGHT) <= TOL,
+        fullHeight: Math.abs(height - system.courseHeight) <= TOL,
       })
     }
   }
@@ -113,6 +115,7 @@ function countBricks(
       group.module,
       range.uMin,
       range.uMax,
+      system,
     )
     const isNatural =
       group.fullHeight && Math.abs(group.length - natural) <= TOL
@@ -130,7 +133,7 @@ function countBricks(
     const remaining = [...lengths]
     while (remaining.length > 0) {
       const a = remaining.pop()!
-      const pairAt = remaining.findIndex((b) => Math.abs(a + b - BLOCK_LENGTH) <= TOL)
+      const pairAt = remaining.findIndex((b) => Math.abs(a + b - system.moduleLength) <= TOL)
       if (pairAt >= 0) {
         remaining.splice(pairAt, 1)
         wholeBricks++
@@ -154,8 +157,10 @@ export function scheduleWall(
 
   const signs = leafSigns(wall.skin)
   const spans = collectWallBlockSpans(floor, wall, bottomSamples)
-  const { wholeBricks, cutBricks } = countBricks(spans, (leaf, course) =>
-    wallMeshURange(floor, wall, signs[leaf], course),
+  const { wholeBricks, cutBricks } = countBricks(
+    spans,
+    (leaf, course) => wallMeshURange(floor, wall, signs[leaf], course),
+    systemOf(wall),
   )
 
   const openings = { window: 0, door: 0, external: 0, internal: 0, garage: 0, portal: 0 }

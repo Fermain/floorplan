@@ -81,4 +81,6 @@ export const documentStore = {
   replaceHeightfield: bind(mutations.replaceHeightfield),
   setRoomFinish: bind(mutations.setRoomFinish),
   setRoof: bind(mutations.setRoof),
+  setWallSystem: bind(mutations.setWallSystem),
+  setDefaultWallSystem: bind(mutations.setDefaultWallSystem),
 }

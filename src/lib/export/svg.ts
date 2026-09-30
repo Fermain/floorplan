@@ -1,9 +1,8 @@
 import { leafSigns, wallMeshURange } from '../geometry/walls'
 import { cornerById, wallLength } from '../model/geom'
+import { leafOffset, systemOf } from '../model/systems'
 import type { Document, Floor, Opening, Wall } from '../model/types'
-import { BLOCK_THICKNESS, LEAF_OFFSET } from '../plot/fixture'
 
-const SKIN_HALF = BLOCK_THICKNESS / 2
 const PLOT_MARGIN_M = 1
 const NORTH_ARROW_LENGTH_M = 1.2
 const SCALE_BAR_OFFSET_Z_M = 0.6
@@ -68,26 +67,28 @@ function wallFrame(wall: Wall, floor: Floor) {
   return { start, tx, tz, nx, nz, len }
 }
 
-function leafOffsets(skin: Wall['skin']): number[] {
-  return leafSigns(skin).map((sign) => sign * LEAF_OFFSET)
+function leafOffsets(wall: Wall): number[] {
+  const offset = leafOffset(systemOf(wall))
+  return leafSigns(wall.skin).map((sign) => sign * offset)
 }
 
 function skinQuad(
   frame: ReturnType<typeof wallFrame>,
   u0: number,
   u1: number,
-  leafOffset: number,
+  centre: number,
+  half: number,
 ): SvgPoint[] {
   const { start, tx, tz, nx, nz } = frame
   const corners: SvgPoint[] = []
-  for (const side of [-SKIN_HALF, SKIN_HALF] as const) {
-    const nOff = leafOffset + side
+  for (const side of [-half, half]) {
+    const nOff = centre + side
     const x = start.x + tx * u0 + nx * nOff
     const z = start.z + tz * u0 + nz * nOff
     corners.push(planToSvg(x, z))
   }
-  for (const side of [SKIN_HALF, -SKIN_HALF] as const) {
-    const nOff = leafOffset + side
+  for (const side of [half, -half]) {
+    const nOff = centre + side
     const x = start.x + tx * u1 + nx * nOff
     const z = start.z + tz * u1 + nz * nOff
     corners.push(planToSvg(x, z))
@@ -101,13 +102,14 @@ export function solidWallPolygonsForFloor(floor: Floor): SvgPoint[][] {
     if (wall.skin === 'logical') continue
     const frame = wallFrame(wall, floor)
     if (frame.len <= 0) continue
-    for (const leafOffset of leafOffsets(wall.skin)) {
-      const leafSign = leafOffset === 0 ? 0 : Math.sign(leafOffset)
+    const half = systemOf(wall).leafThickness / 2
+    for (const centre of leafOffsets(wall)) {
+      const leafSign = centre === 0 ? 0 : Math.sign(centre)
       const { uMin, uMax } = wallMeshURange(floor, wall, leafSign)
       const intervals = solidIntervalsBetween(uMin, uMax, frame.len, wall.openings)
       for (const [u0, u1] of intervals) {
         if (u1 - u0 <= 0) continue
-        polygons.push(skinQuad(frame, u0, u1, leafOffset))
+        polygons.push(skinQuad(frame, u0, u1, centre, half))
       }
     }
   }

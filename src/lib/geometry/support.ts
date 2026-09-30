@@ -1,5 +1,5 @@
 import { cornerById } from '../model/geom'
-import { BLOCK_THICKNESS } from '../plot/fixture'
+import { systemOf } from '../model/systems'
 import type { Document, Floor, Wall } from '../model/types'
 
 type Segment = { ax: number; az: number; bx: number; bz: number }
@@ -83,10 +83,10 @@ export function wallLandsOnBelow(document: Document, floor: Floor, wall: Wall): 
   const below = floorBelow(document, floor)
   if (!below) return false
 
-  const tolerance = BLOCK_THICKNESS / 2
   for (const lowerWall of below.walls) {
     if (lowerWall.skin === 'logical') continue
     if (!wallBelongsToUnit(below, lowerWall, unitId)) continue
+    const tolerance = systemOf(lowerWall).leafThickness / 2
     const lower = wallCenterline(below, lowerWall)
     if (lower && centerlineCarriedBy(upper, lower, tolerance)) return true
   }

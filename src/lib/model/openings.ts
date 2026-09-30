@@ -1,4 +1,6 @@
 import {
+  BLOCK_HEIGHT,
+  BLOCK_LENGTH,
   DEFAULT_DOOR_HEIGHT,
   DEFAULT_DOOR_WIDTH,
   DEFAULT_EXTERNAL_DOOR_WIDTH,
@@ -17,6 +19,7 @@ import {
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
 } from '../plot/fixture'
+import { snapToCourse, snapToHalfModule, type WallSystem } from './systems'
 import type { Opening, OpeningKind } from './types'
 
 export function isFloorOpening(kind: OpeningKind): boolean {
@@ -32,11 +35,25 @@ export function openingMinWidth(kind: OpeningKind): number {
   return WINDOW_MIN_WIDTH
 }
 
-export function defaultOpeningDimensions(kind: OpeningKind): {
+export function defaultOpeningDimensions(
+  kind: OpeningKind,
+  system?: WallSystem,
+): {
   v: number
   height: number
   width: number
 } {
+  const base = clayOpeningDimensions(kind)
+  if (!system) return base
+  if (Math.abs(system.courseHeight - BLOCK_HEIGHT) < 1e-9 && Math.abs(system.moduleLength - BLOCK_LENGTH) < 1e-9) {
+    return base
+  }
+  const v = snapToCourse(system, base.v)
+  const head = snapToCourse(system, base.v + base.height, 'ceil')
+  return { v, height: head - v, width: snapToHalfModule(system, base.width, 'ceil') }
+}
+
+function clayOpeningDimensions(kind: OpeningKind): { v: number; height: number; width: number } {
   if (kind === 'external-door') {
     return { v: 0, height: DEFAULT_DOOR_HEIGHT, width: DEFAULT_EXTERNAL_DOOR_WIDTH }
   }
@@ -141,8 +158,8 @@ export function fitDoor(centre: number, width: number, length: number): { u: num
   return { u, width: nextWidth }
 }
 
-export function applyAligned(opening: Opening): Opening {
-  const d = defaultOpeningDimensions(opening.kind)
+export function applyAligned(opening: Opening, system?: WallSystem): Opening {
+  const d = defaultOpeningDimensions(opening.kind, system)
   return { ...opening, v: d.v, height: d.height, aligned: true }
 }
 
@@ -151,8 +168,9 @@ export function createOpening(
   kind: OpeningKind,
   u: number,
   width?: number,
+  system?: WallSystem,
 ): Opening {
-  const d = defaultOpeningDimensions(kind)
+  const d = defaultOpeningDimensions(kind, system)
   return {
     id,
     kind,

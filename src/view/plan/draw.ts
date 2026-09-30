@@ -65,6 +65,7 @@ export function resolveWallEnd(
   x: number,
   z: number,
   highlighted: { dx: number; dz: number } | null,
+  moduleLength = BLOCK_LENGTH,
 ): ResolvedEnd {
   const none = { wallSnap: false, minTurn: false, angleSnap: false, nodeSnap: false, traces: [] as SnapTrace[] }
   const hit = nearestCorner(floor.corners, x, z, CORNER_SNAP_M, startCornerId)
@@ -86,7 +87,7 @@ export function resolveWallEnd(
     end = turned
     minTurn = turned.applied
   }
-  const snapped = snapEndToModule(plot, start.x, start.z, end.x, end.z, false)
+  const snapped = snapEndToModule(plot, start.x, start.z, end.x, end.z, false, moduleLength)
   const aligned = alignToNodes(snapped.x, snapped.z, [...floor.corners, ...below], start)
   const onStart = Math.hypot(aligned.x - start.x, aligned.z - start.z) <= 1e-4
   const useAlign =
@@ -241,8 +242,8 @@ function rectangleAxes(highlighted: { dx: number; dz: number } | null) {
   }
 }
 
-function snapSpan(delta: number): number {
-  const snapped = Math.round(delta / BLOCK_LENGTH) * BLOCK_LENGTH
+function snapSpan(delta: number, moduleLength: number): number {
+  const snapped = Math.round(delta / moduleLength) * moduleLength
   if (snapped === 0 || Math.abs(delta - snapped) > MODULE_SNAP_TOLERANCE_M) return delta
   return snapped
 }
@@ -302,6 +303,7 @@ export function resolveRectangle(
   x: number,
   z: number,
   highlighted: { dx: number; dz: number } | null,
+  moduleLength = BLOCK_LENGTH,
 ): ResolvedRectangle | null {
   const axes = rectangleAxes(highlighted)
   const project = (point: PlanPoint) => ({
@@ -324,8 +326,8 @@ export function resolveRectangle(
     dv = spans.dv
   } else {
     const raw = project({ x, z })
-    const moduleDu = snapSpan(raw.du)
-    const moduleDv = snapSpan(raw.dv)
+    const moduleDu = snapSpan(raw.du, moduleLength)
+    const moduleDv = snapSpan(raw.dv, moduleLength)
     const nodes = [...floor.corners, ...below]
     const uAlign = alignSpan(moduleDu, nodes, start, axes.ux, axes.uz)
     const vAlign = alignSpan(moduleDv, nodes, start, axes.vx, axes.vz)

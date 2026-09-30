@@ -56,6 +56,7 @@ export function snapEndToModule(
   endX: number,
   endZ: number,
   endIsExistingCorner: boolean,
+  moduleLength = BLOCK_LENGTH,
 ): { x: number; z: number } {
   if (endIsExistingCorner) {
     return { x: endX, z: endZ }
@@ -66,7 +67,7 @@ export function snapEndToModule(
   if (len <= 0) {
     return { x: endX, z: endZ }
   }
-  const snappedLen = Math.round(len / BLOCK_LENGTH) * BLOCK_LENGTH
+  const snappedLen = Math.round(len / moduleLength) * moduleLength
   if (snappedLen <= 0 || Math.abs(len - snappedLen) > MODULE_SNAP_TOLERANCE_M) {
     return { x: endX, z: endZ }
   }
