@@ -95,11 +95,14 @@ export type Floor = {
 
 export type RoofForm = 'hip' | 'gable' | 'mono'
 
+export type RoofCovering = 'concrete-tile' | 'clay-tile' | 'ibr' | 'corrugated'
+
 export type Roof = {
   pitchDeg: number
   eaves: number
   form?: RoofForm
   turns?: number
+  covering?: RoofCovering
 }
 
 export type Building = {

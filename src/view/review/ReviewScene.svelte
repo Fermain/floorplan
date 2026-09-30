@@ -30,7 +30,10 @@
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { buildRoofGeometry, masonryReach, roofInfills, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
+  import { coveringOf } from '../../lib/geometry/coverings'
+  import { coveringTexture } from './roofTexture'
+  import type { CanvasTexture } from 'three'
   import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
   import { supportingFloor } from '../../lib/model/stories'
@@ -66,7 +69,9 @@
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = {
     key: string
-    geometry: BufferGeometry
+    meshes: RoofMeshes
+    texture: CanvasTexture | null
+    colour: string
     gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
     y: number
   }
@@ -209,7 +214,9 @@
       }
       for (const slab of slabs) slab.geometry.dispose()
       for (const roof of roofs) {
-        roof.geometry.dispose()
+        roof.meshes.top?.dispose()
+        roof.meshes.under?.dispose()
+        roof.meshes.edges?.dispose()
         roof.gable.body?.dispose()
         roof.gable.faces?.dispose()
       }
@@ -236,8 +243,9 @@
       if (!roof || floor.index === 0) continue
       const below = supportingFloor(doc, floor)
       const reach = masonryReach(below?.walls ?? [])
-      const geometry = buildRoofGeometry(floor, roof, reach)
-      if (!geometry) continue
+      const built = buildRoofMeshes(floor, roof, reach)
+      if (!built.top) continue
+      const spec = coveringOf(roof)
       const gable = below
         ? buildGableGeometries(below, roofInfills(below, floor, roof, reach))
         : { body: null, faces: null }
@@ -245,7 +253,9 @@
       const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
       meshes.push({
         key: floor.id,
-        geometry,
+        meshes: built,
+        texture: coveringTexture(spec),
+        colour: spec.colour,
         gable,
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
@@ -478,9 +488,24 @@
     {/each}
 
     {#each roofMeshes as roof (roof.key)}
-      <T.Mesh geometry={roof.geometry} position.y={roof.y} castShadow>
-        <T.MeshStandardMaterial color="#5e666e" roughness={0.84} side={DoubleSide} />
+      <T.Mesh geometry={roof.meshes.top ?? undefined} position.y={roof.y} castShadow>
+        <T.MeshStandardMaterial
+          map={roof.texture}
+          color={roof.texture ? '#ffffff' : roof.colour}
+          roughness={0.8}
+          side={DoubleSide}
+        />
       </T.Mesh>
+      {#if roof.meshes.under}
+        <T.Mesh geometry={roof.meshes.under} position.y={roof.y}>
+          <T.MeshStandardMaterial color="#8a7f73" roughness={0.9} side={DoubleSide} />
+        </T.Mesh>
+      {/if}
+      {#if roof.meshes.edges}
+        <T.Mesh geometry={roof.meshes.edges} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color="#e7e5e4" roughness={0.7} side={DoubleSide} />
+        </T.Mesh>
+      {/if}
       {#if roof.gable.body}
         <T.Mesh geometry={roof.gable.body} position.y={roof.y} castShadow receiveShadow>
           <T.MeshStandardMaterial color="#6e6256" />

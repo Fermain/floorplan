@@ -8,6 +8,7 @@ import {
 import { deriveRooms } from '../model/rooms'
 import { signedPolygonArea } from '../model/geom'
 import { gableBlocks, polygonArea, type GableBlock } from './gable'
+import { coveringOf } from './coverings'
 import { systemOf } from '../model/systems'
 import type { Floor, Roof, Wall } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
@@ -222,16 +223,101 @@ export function roofPlan(floor: Floor, roof: Roof, reach = DEFAULT_REACH): RoofP
   return { footprints, hips }
 }
 
-export function buildRoofGeometry(floor: Floor, roof: Roof, reach = DEFAULT_REACH): BufferGeometry | null {
-  const positions: number[] = []
-  for (const face of roofFacesForFloor(floor, roof, reach)) {
-    positions.push(...triangulateFace(face))
+export type RoofMeshes = {
+  top: BufferGeometry | null
+  under: BufferGeometry | null
+  edges: BufferGeometry | null
+}
+
+function faceTriangles(face: RoofVertex[]): RoofVertex[][] {
+  let ordered = face
+  let triangles = ShapeUtils.triangulateShape(
+    ordered.map((vertex) => new Vector2(vertex.x, vertex.z)),
+    [],
+  )
+  if (triangles.length === 0) {
+    ordered = [...face].reverse()
+    triangles = ShapeUtils.triangulateShape(
+      ordered.map((vertex) => new Vector2(vertex.x, vertex.z)),
+      [],
+    )
   }
+  return triangles.map((triangle) => triangle.map((index) => ordered[index]))
+}
+
+function facePlane(face: RoofVertex[]): { cos: number; down: PlanPoint } {
+  let nx = 0
+  let ny = 0
+  let nz = 0
+  for (let i = 0; i < face.length; i++) {
+    const a = face[i]
+    const b = face[(i + 1) % face.length]
+    nx += (a.y - b.y) * (a.z + b.z)
+    ny += (a.z - b.z) * (a.x + b.x)
+    nz += (a.x - b.x) * (a.y + b.y)
+  }
+  if (ny < 0) {
+    nx = -nx
+    ny = -ny
+    nz = -nz
+  }
+  const length = Math.hypot(nx, ny, nz) || 1
+  const flat = Math.hypot(nx, nz)
+  return {
+    cos: ny / length,
+    down: flat > 1e-9 ? { x: nx / flat, z: nz / flat } : { x: 0, z: 1 },
+  }
+}
+
+function geometry(positions: number[], uvs?: number[]): BufferGeometry | null {
   if (positions.length < 9) return null
-  const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-  geometry.computeVertexNormals()
-  return geometry
+  const built = new BufferGeometry()
+  built.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  if (uvs) built.setAttribute('uv', new Float32BufferAttribute(uvs, 2))
+  built.computeVertexNormals()
+  return built
+}
+
+export function buildRoofMeshes(floor: Floor, roof: Roof, reach = DEFAULT_REACH): RoofMeshes {
+  const spec = coveringOf(roof)
+  const faces = roofFacesForFloor(floor, roof, reach)
+  const top: number[] = []
+  const uvs: number[] = []
+  const under: number[] = []
+  const edges: number[] = []
+  const shared = new Map<string, number>()
+  const key = (a: RoofVertex, b: RoofVertex) => edgeKey(a, b)
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const k = key(face[i], face[(i + 1) % face.length])
+      shared.set(k, (shared.get(k) ?? 0) + 1)
+    }
+  }
+  for (const face of faces) {
+    const { cos, down } = facePlane(face)
+    const lift = spec.depth / Math.max(cos, 0.05)
+    const along = { x: -down.z, z: down.x }
+    for (const triangle of faceTriangles(face)) {
+      for (const v of triangle) {
+        top.push(v.x, v.y + lift, v.z)
+        uvs.push(
+          (v.x * along.x + v.z * along.z) / spec.across,
+          (v.x * down.x + v.z * down.z) / Math.max(cos, 0.05) / spec.along,
+        )
+        under.push(v.x, v.y, v.z)
+      }
+    }
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i]
+      const b = face[(i + 1) % face.length]
+      if (shared.get(key(a, b)) !== 1) continue
+      const aTop = [a.x, a.y + lift, a.z]
+      const bTop = [b.x, b.y + lift, b.z]
+      edges.push(a.x, a.y, a.z, b.x, b.y, b.z, ...bTop)
+      edges.push(a.x, a.y, a.z, ...bTop, ...aTop)
+    }
+  }
+  return { top: geometry(top, uvs), under: geometry(under), edges: geometry(edges) }
 }
 
 function eavesFootprints(floor: Floor, eaves: number, reach: number): DeckPolygon[] {
@@ -266,26 +352,6 @@ function eavesFootprints(floor: Floor, eaves: number, reach: number): DeckPolygo
   }))
 }
 
-function triangulateFace(face: RoofVertex[]): number[] {
-  const contour = face.map((vertex) => new Vector2(vertex.x, vertex.z))
-  let triangles = ShapeUtils.triangulateShape(contour, [])
-  let ordered = face
-  if (triangles.length === 0) {
-    ordered = [...face].reverse()
-    triangles = ShapeUtils.triangulateShape(
-      ordered.map((vertex) => new Vector2(vertex.x, vertex.z)),
-      [],
-    )
-  }
-  const positions: number[] = []
-  for (const triangle of triangles) {
-    for (const index of triangle) {
-      const vertex = ordered[index]
-      positions.push(vertex.x, vertex.y, vertex.z)
-    }
-  }
-  return positions
-}
 
 function toList(ring: PlanPoint[]): List<Vector2d> {
   const polygon = new List<Vector2d>()

@@ -14,6 +14,7 @@ import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
+import { COVERINGS } from '../geometry/coverings'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -645,6 +646,7 @@ export function setRoof(document: Document, floorId: string, roof: Roof | null):
   if (!(roof.eaves >= 0)) return fail(document, 'eaves out of range')
   if (roof.form !== undefined && !['hip', 'gable', 'mono'].includes(roof.form)) return fail(document, 'unknown roof form')
   if (roof.turns !== undefined && !Number.isInteger(roof.turns)) return fail(document, 'roof turns must be whole')
+  if (roof.covering !== undefined && !COVERINGS.some((item) => item.id === roof.covering)) return fail(document, 'unknown roof covering')
   return ok(replaceFloor(document, { ...floor, roof }))
 }
 

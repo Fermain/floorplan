@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Floor } from '../model/types'
 import { BLOCK_THICKNESS, CAVITY } from '../plot/fixture'
-import { hipRoofFaces, roofFacesForFloor, roofInfills, roofPlan } from './roof'
+import { buildRoofMeshes, hipRoofFaces, roofFacesForFloor, roofInfills, roofPlan } from './roof'
+import { coveringOf } from './coverings'
 
 describe('hipRoofFaces', () => {
   it('raises a rectangle to a ridge at half the short side', () => {
@@ -223,6 +224,17 @@ describe('gable and mono-pitch roofs', () => {
         }
       }
     }
+  })
+
+  it('lays the covering a structure depth above the roof it bears on', () => {
+    const roof = { pitchDeg: pitch, eaves: 0.3, form: 'gable' as const, covering: 'clay-tile' as const }
+    const { top, under, edges } = buildRoofMeshes(plate, roof, reach)
+    const lift = coveringOf(roof).depth / Math.cos((pitch * Math.PI) / 180)
+    const ys = (g: typeof top) => Array.from({ length: g!.getAttribute('position').count }, (_, i) => g!.getAttribute('position').getY(i))
+    expect(Math.max(...ys(top))).toBeCloseTo(Math.max(...ys(under)) + lift, 6)
+    expect(Math.min(...ys(top))).toBeCloseTo(Math.min(...ys(under)) + lift, 6)
+    expect(top!.getAttribute('uv').count).toBe(top!.getAttribute('position').count)
+    expect(edges!.getAttribute('position').count).toBe(6 * 6)
   })
 
   it('lays the gable in the units and bond of the wall below', () => {

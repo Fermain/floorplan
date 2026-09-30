@@ -126,7 +126,11 @@ describe('takeoff', () => {
     const bricks = line(gable.document, 'unit:clay-brick')!
     expect(bricks.quantity).toBeGreaterThan(before)
     expect(bricks.note).toMatch(/in gables/)
-    expect(line(gable.document, 'roof-covering')!.quantity).toBeGreaterThan(16)
+    expect(line(gable.document, 'roof:concrete-tile')!.quantity).toBeGreaterThan(16)
+    expect(line(gable.document, 'roof:concrete-tile')!.note).toMatch(/about \d+ tiles/)
+    const sheeted = setRoof(doc, upper.id, { pitchDeg: 10, eaves: 0.3, form: 'mono', covering: 'ibr' }).document
+    expect(line(sheeted, 'roof:ibr')!.label).toBe('IBR steel sheeting')
+    expect(line(sheeted, 'roof:concrete-tile')).toBeUndefined()
   })
 
   it('refuses a negative rate', () => {

@@ -29,6 +29,8 @@
     topStoreyIndex,
     supportingFloor,
   } from '../../lib/model/stories'
+  import { COVERINGS, coveringOf, DEFAULT_COVERING } from '../../lib/geometry/coverings'
+  import type { RoofCovering } from '../../lib/model/types'
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
@@ -420,11 +422,13 @@
       }
     }
 
+    const wallsBefore = new Set(floors.flatMap((item) => item.walls.map((wall) => wall.id)))
     const wallResult = documentStore.addWall(drawFloorId, startId, endId, skin, skin === 'logical' ? undefined : drawSystem.id)
     if (!applyResult(wallResult)) {
       rollbackCorners()
       return
     }
+    referenceNewWall(wallResult.document, drawFloorId, wallsBefore, endId)
     const origin = chainOriginId ?? startId
     if (chainOriginId && endId === chainOriginId) {
       pendingDraw = null
@@ -437,6 +441,15 @@
     const endCorner = placed ? cornerById(placed.corners, endId) : undefined
     pendingDraw = { startCornerId: endId }
     if (endCorner) pointerPlan = { x: endCorner.x, z: endCorner.z }
+  }
+
+  function referenceNewWall(doc: typeof document, floorId: string, before: Set<string>, cornerId: string) {
+    const fresh = doc.building.floors
+      .find((item) => item.id === floorId)
+      ?.walls.filter((wall) => !before.has(wall.id))
+    if (!fresh || fresh.length === 0) return
+    const touching = fresh.filter((wall) => wall.startCornerId === cornerId || wall.endCornerId === cornerId)
+    chooseSelection({ wallId: (touching.at(-1) ?? fresh.at(-1))!.id })
   }
 
   function cancelDraw() {
@@ -625,6 +638,7 @@
       errorMessage = 'That rectangle leaves the plot.'
       return
     }
+    const wallsBefore = new Set(floors.flatMap((item) => item.walls.map((wall) => wall.id)))
     const result = documentStore.addWallRing(
       drawFloorId,
       rect.corners.map((corner, index) => ({ ...corner, cornerId: rect.cornerIds[index] })),
@@ -632,6 +646,7 @@
       drawSystem.id,
     )
     if (!applyResult(result)) return
+    referenceNewWall(result.document, drawFloorId, wallsBefore, '')
     pendingDraw = null
     chainOriginId = null
     pointerPlan = null
@@ -868,6 +883,12 @@
     if (!floor?.roof) return
     const limit = floor.roof.form === 'gable' ? 2 : 4
     applyResult(documentStore.setRoof(floor.id, { ...floor.roof, turns: ((floor.roof.turns ?? 0) + 1) % limit }))
+  }
+
+  function setRoofCovering(covering: RoofCovering) {
+    const floor = roofFloor
+    if (!floor?.roof) return
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering }))
   }
 
   function setRoofPitch(value: number) {
@@ -2069,6 +2090,23 @@
             </button>
           {/if}
           <label>
+            Covering
+            <select
+              value={roofFloor.roof.covering ?? DEFAULT_COVERING}
+              onchange={(event) => setRoofCovering(event.currentTarget.value as RoofCovering)}
+            >
+              {#each COVERINGS as option (option.id)}
+                <option value={option.id}>{option.name}</option>
+              {/each}
+            </select>
+          </label>
+          {#if roofFloor.roof.pitchDeg < coveringOf(roofFloor.roof).minPitchDeg}
+            <p class="hint short-pitch">
+              {coveringOf(roofFloor.roof).name} usually need at least {coveringOf(roofFloor.roof).minPitchDeg}°. Check the
+              manufacturer's minimum.
+            </p>
+          {/if}
+          <label>
             Pitch
             <input
               type="number"
@@ -2239,6 +2277,10 @@
   .inspector p {
     margin: 0;
     line-height: 1.4;
+  }
+
+  .inspector .hint.short-pitch {
+    color: #b45309;
   }
 
   .inspector .hint {

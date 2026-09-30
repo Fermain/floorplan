@@ -5,7 +5,8 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering } from '../model/types'
+import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
@@ -319,21 +320,26 @@ export function takeoff(doc: Document): QuantityLine[] {
     })
   }
 
-  let roofArea = 0
+  const roofs = new Map<RoofCovering, number>()
   for (const floor of doc.building.floors) {
     if (!floor.roof || floor.index === 0) continue
     const reach = masonryReach(floorBelow(doc, floor)?.walls ?? [])
-    roofArea += roofFacesForFloor(floor, floor.roof, reach).reduce((sum, face) => sum + faceArea(face), 0)
+    const area = roofFacesForFloor(floor, floor.roof, reach).reduce((sum, face) => sum + faceArea(face), 0)
+    const covering = coveringOf(floor.roof).id
+    roofs.set(covering, (roofs.get(covering) ?? 0) + area)
   }
-  if (roofArea > 0) {
+  for (const spec of COVERINGS) {
+    const area = roofs.get(spec.id)
+    if (!area) continue
+    const tiles = spec.kind === 'tile' ? `, about ${Math.ceil(area * waste * tilesPerM2(spec))} tiles` : ''
     drafts.push({
-      id: 'roof-covering',
+      id: `roof:${spec.id}`,
       group: 'Roof',
-      label: 'Roof covering',
-      note: `${round(roofArea, 1)} m² on the slope`,
+      label: spec.name,
+      note: `${round(area, 1)} m² on the slope${tiles}`,
       unit: 'm²',
-      quantity: round(roofArea * waste, 1),
-      rateKey: 'roof-m2',
+      quantity: round(area * waste, 1),
+      rateKey: `roof:${spec.id}`,
     })
   }
 
