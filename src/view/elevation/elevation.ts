@@ -16,15 +16,28 @@ export function fitOrthoHalfExtents(
   return { halfW, halfH: halfW / aspect }
 }
 
+export const ELEVATION_MARGIN_U_M = 0.35
+export const ELEVATION_MARGIN_V_M = 0.6
+
+export function elevationWindow(
+  aspect: number,
+  frame: Pick<WallElevationFrame, 'length' | 'height'>,
+): { centerU: number; centerV: number; halfW: number; halfH: number } {
+  const { halfW, halfH } = fitOrthoHalfExtents(
+    aspect,
+    frame.length + 2 * ELEVATION_MARGIN_U_M,
+    frame.height + 2 * ELEVATION_MARGIN_V_M,
+  )
+  return { centerU: frame.length / 2, centerV: frame.height / 2, halfW, halfH }
+}
+
 export function configureOrthoCamera(
   camera: OrthographicCamera,
   aspect: number,
   frame: WallElevationFrame,
 ): OrthographicCamera {
-  const { length, height, origin, axisX, axisY, axisZ } = frame
-  const centerU = length / 2
-  const centerV = height / 2
-  const { halfW, halfH } = fitOrthoHalfExtents(aspect, length, height)
+  const { origin, axisX, axisY, axisZ } = frame
+  const { centerU, centerV, halfW, halfH } = elevationWindow(aspect, frame)
   const center = origin
     .clone()
     .addScaledVector(axisX, centerU)

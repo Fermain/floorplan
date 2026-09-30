@@ -21,6 +21,9 @@ import { systemOf, WALL_SYSTEMS } from '../../lib/model/systems'
 import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationScene from './ElevationScene.svelte'
+  import ElevationDimensions from './ElevationDimensions.svelte'
+  import { SURFACE_BED_TOP_ABOVE_DATUM_M } from '../../lib/geometry/pad'
+  import { WALL_HEAD } from '../../lib/plot/fixture'
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame } from './wallFrame'
@@ -523,6 +526,16 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         {orthoCamera}
         {onOrthoCamera}
       />
+      {#if locked && displayWall}
+        <ElevationDimensions
+          length={frame.length}
+          height={frame.height}
+          head={WALL_HEAD}
+          openings={displayWall.openings}
+          selectedId={selectedOpeningId}
+          floorLevel={floor?.index === 0 ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
+        />
+      {/if}
       </div>
     </div>
   {/if}
@@ -656,6 +669,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   .viewport {
+    position: relative;
     flex: 1;
     min-height: 0;
     width: 100%;
