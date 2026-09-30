@@ -20,6 +20,7 @@ import {
   topStoreyIndex,
 } from './stories'
 import type {
+  CostAssumptions,
   Document,
   Floor,
   Heightfield,
@@ -211,6 +212,24 @@ export function setWallSystem(
 
 export function setDefaultWallSystem(document: Document, systemId: WallSystemId): MutationResult {
   return ok({ ...document, building: { ...document.building, wallSystemId: systemId } })
+}
+
+export function setRate(document: Document, key: string, value: number | null): MutationResult {
+  if (value !== null && (!Number.isFinite(value) || value < 0)) return fail(document, 'rate must be zero or more')
+  const rates = { ...(document.costing?.rates ?? {}) }
+  if (value === null) delete rates[key]
+  else rates[key] = value
+  return ok({ ...document, costing: { ...document.costing, rates } })
+}
+
+export function setAssumption(
+  document: Document,
+  key: keyof CostAssumptions,
+  value: number,
+): MutationResult {
+  if (!Number.isFinite(value) || value < 0) return fail(document, 'value must be zero or more')
+  const assumptions = { ...(document.costing?.assumptions ?? {}), [key]: value }
+  return ok({ ...document, costing: { ...document.costing, assumptions } })
 }
 
 export function moveCorner(

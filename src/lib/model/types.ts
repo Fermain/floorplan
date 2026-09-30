@@ -68,10 +68,25 @@ export type Building = {
   wallSystemId?: WallSystemId
 }
 
+export type CostAssumptions = {
+  wastePct: number
+  mortarAllowancePct: number
+  cementBagsPerM3: number
+  sandM3PerM3: number
+  footingWidth: number
+  footingDepth: number
+}
+
+export type Costing = {
+  rates?: Record<string, number>
+  assumptions?: Partial<CostAssumptions>
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
   building: Building
+  costing?: Costing
 }
 
 export type DerivedRoom = {

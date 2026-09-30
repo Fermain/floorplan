@@ -2,10 +2,14 @@ import type { Wall, WallSystemId } from './types'
 
 export const MORTAR_JOINT = 0.01
 
+export type UnitKey = 'clay-brick' | 'maxi-brick' | 'block-140' | 'block-90'
+
 export type WallSystem = {
   id: WallSystemId
   name: string
+  unitKey: UnitKey
   unitName: string
+  hollow: boolean
   moduleLength: number
   courseHeight: number
   leafThickness: number
@@ -17,6 +21,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'clay-cavity',
     name: 'Clay brick cavity',
+    unitKey: 'clay-brick',
+    hollow: false,
     unitName: 'Clay brick 222 × 106 × 73',
     moduleLength: 0.232,
     courseHeight: 0.083,
@@ -27,6 +33,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'clay-solid',
     name: 'Clay brick solid 220',
+    unitKey: 'clay-brick',
+    hollow: false,
     unitName: 'Clay brick 222 × 106 × 73',
     moduleLength: 0.232,
     courseHeight: 0.083,
@@ -37,6 +45,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'clay-single',
     name: 'Clay brick half 110',
+    unitKey: 'clay-brick',
+    hollow: false,
     unitName: 'Clay brick 222 × 106 × 73',
     moduleLength: 0.232,
     courseHeight: 0.083,
@@ -47,6 +57,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'maxi-140',
     name: 'Maxi brick 140',
+    unitKey: 'maxi-brick',
+    hollow: false,
     unitName: 'Maxi brick 290 × 140 × 90',
     moduleLength: 0.3,
     courseHeight: 0.1,
@@ -57,6 +69,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'block-140',
     name: 'Concrete block 140',
+    unitKey: 'block-140',
+    hollow: true,
     unitName: 'Hollow block 390 × 140 × 190',
     moduleLength: 0.4,
     courseHeight: 0.2,
@@ -67,6 +81,8 @@ export const WALL_SYSTEMS: readonly WallSystem[] = [
   {
     id: 'block-90',
     name: 'Concrete block 90',
+    unitKey: 'block-90',
+    hollow: true,
     unitName: 'Hollow block 390 × 90 × 190',
     moduleLength: 0.4,
     courseHeight: 0.2,

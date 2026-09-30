@@ -1,0 +1,293 @@
+import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../geometry/deck'
+import { groundPad, SURFACE_BED_THICKNESS_M } from '../geometry/pad'
+import { masonryReach, roofFacesForFloor, type RoofVertex } from '../geometry/roof'
+import { scheduleWall } from '../geometry/schedule'
+import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
+import { signedPolygonArea, wallLength } from '../model/geom'
+import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
+import type { Document, Floor, OpeningKind } from '../model/types'
+import { assumptionsOf, rateOf } from './rates'
+
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Roof'
+
+export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
+
+export type QuantityLine = {
+  id: string
+  group: QuantityGroup
+  label: string
+  note: string
+  unit: QuantityUnit
+  quantity: number
+  rateKey: string
+  rate: number
+  amount: number
+}
+
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Roof']
+
+export const LINTEL_STEP_M = 0.15
+
+const HOLLOW_BED_FRACTION = 0.5
+
+const OPENING_LABEL: Record<OpeningKind, string> = {
+  window: 'Window',
+  door: 'Sliding door',
+  'external-door': 'External door',
+  'internal-door': 'Internal door',
+  garage: 'Garage door',
+  portal: 'Portal',
+}
+
+type Draft = Omit<QuantityLine, 'rate' | 'amount'>
+
+function mm(m: number): number {
+  return Math.round(m * 1000)
+}
+
+function round(value: number, places: number): number {
+  const f = 10 ** places
+  return Math.round(value * f) / f
+}
+
+function mortarFraction(system: WallSystem): number {
+  const unitLength = system.moduleLength - MORTAR_JOINT
+  const unitHeight = system.courseHeight - MORTAR_JOINT
+  const joints = 1 - (unitLength * unitHeight) / (system.moduleLength * system.courseHeight)
+  return system.hollow ? joints * HOLLOW_BED_FRACTION : joints
+}
+
+function polygonArea(polygon: DeckPolygon): number {
+  const holes = polygon.holes.reduce((sum, hole) => sum + Math.abs(signedPolygonArea(hole)), 0)
+  return Math.abs(signedPolygonArea(polygon.outer)) - holes
+}
+
+function faceArea(face: RoofVertex[]): number {
+  let x = 0
+  let y = 0
+  let z = 0
+  for (let i = 1; i < face.length - 1; i++) {
+    const a = face[0]
+    const b = face[i]
+    const c = face[i + 1]
+    const ux = b.x - a.x
+    const uy = b.y - a.y
+    const uz = b.z - a.z
+    const vx = c.x - a.x
+    const vy = c.y - a.y
+    const vz = c.z - a.z
+    x += uy * vz - uz * vy
+    y += uz * vx - ux * vz
+    z += ux * vy - uy * vx
+  }
+  return Math.hypot(x, y, z) / 2
+}
+
+function floorBelow(doc: Document, floor: Floor): Floor | undefined {
+  return doc.building.floors.find((item) => item.unitId === floor.unitId && item.index === floor.index - 1)
+}
+
+type MasonryTally = { whole: number; cut: number }
+
+export function takeoff(doc: Document): QuantityLine[] {
+  const assumptions = assumptionsOf(doc.costing)
+  const waste = 1 + assumptions.wastePct / 100
+  const drafts: Draft[] = []
+
+  const masonry = new Map<UnitKey, MasonryTally>()
+  let mortarM3 = 0
+  const lintels = new Map<number, number>()
+  const openings = new Map<string, { kind: OpeningKind; width: number; height: number; count: number }>()
+  let footingLength = 0
+
+  for (const floor of doc.building.floors) {
+    for (const wall of floor.walls) {
+      if (wall.skin === 'logical') continue
+      const system = systemOf(wall)
+      const schedule = scheduleWall(floor, wall)
+      const tally = masonry.get(system.unitKey) ?? { whole: 0, cut: 0 }
+      tally.whole += schedule.wholeBricks
+      tally.cut += schedule.cutBricks
+      masonry.set(system.unitKey, tally)
+
+      const spans = collectWallBlockSpans(floor, wall)
+      const face = spans.reduce((sum, span) => sum + (span.u1 - span.u0) * (span.y1 - span.y0), 0)
+      mortarM3 += face * system.leafThickness * mortarFraction(system)
+      if (system.leaves === 2 && system.cavity <= MORTAR_JOINT + 1e-9) {
+        mortarM3 += (face / 2) * system.cavity
+      }
+
+      for (const span of collectLintelSpans(floor, wall)) {
+        const stock = round(Math.ceil((span.u1 - span.u0) / LINTEL_STEP_M - 1e-9) * LINTEL_STEP_M, 2)
+        lintels.set(stock, (lintels.get(stock) ?? 0) + system.leaves)
+      }
+
+      for (const opening of wall.openings) {
+        const key = `${opening.kind}:${mm(opening.width)}x${mm(opening.height)}`
+        const entry = openings.get(key) ?? { kind: opening.kind, width: opening.width, height: opening.height, count: 0 }
+        entry.count += 1
+        openings.set(key, entry)
+      }
+
+      if (floor.index === 0) footingLength += wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+    }
+  }
+
+  for (const system of WALL_SYSTEMS) {
+    const tally = masonry.get(system.unitKey)
+    if (!tally) continue
+    masonry.delete(system.unitKey)
+    const total = tally.whole + tally.cut
+    drafts.push({
+      id: `unit:${system.unitKey}`,
+      group: 'Masonry',
+      label: system.unitName,
+      note: `${tally.whole} whole, ${tally.cut} cut, ${assumptions.wastePct}% waste`,
+      unit: 'each',
+      quantity: Math.ceil(total * waste),
+      rateKey: `unit:${system.unitKey}`,
+    })
+  }
+
+  if (mortarM3 > 0) {
+    const volume = mortarM3 * (1 + assumptions.mortarAllowancePct / 100)
+    drafts.push({
+      id: 'mortar-cement',
+      group: 'Mortar',
+      label: 'Cement 50 kg',
+      note: `${round(volume, 2)} m³ of mortar, ${assumptions.mortarAllowancePct}% over the joints, at ${assumptions.cementBagsPerM3} bags per m³`,
+      unit: 'bag',
+      quantity: Math.ceil(volume * assumptions.cementBagsPerM3),
+      rateKey: 'cement-bag',
+    })
+    drafts.push({
+      id: 'mortar-sand',
+      group: 'Mortar',
+      label: 'Building sand',
+      note: `${assumptions.sandM3PerM3} m³ per m³ of mortar`,
+      unit: 'm³',
+      quantity: round(volume * assumptions.sandM3PerM3, 2),
+      rateKey: 'sand-m3',
+    })
+  }
+
+  for (const [length, count] of [...lintels].sort((a, b) => a[0] - b[0])) {
+    drafts.push({
+      id: `lintel:${length}`,
+      group: 'Lintels',
+      label: `Precast lintel ${length.toFixed(2)} m`,
+      note: `${count} × ${length.toFixed(2)} m, one per leaf`,
+      unit: 'm',
+      quantity: round(count * length, 2),
+      rateKey: 'lintel-m',
+    })
+  }
+
+  const openingEntries = [...openings.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  for (const [key, entry] of openingEntries) {
+    const size = `${mm(entry.width)} × ${mm(entry.height)}`
+    const glazed = entry.kind === 'window'
+    drafts.push({
+      id: `opening:${key}`,
+      group: 'Openings',
+      label: `${OPENING_LABEL[entry.kind]} ${size}`,
+      note: glazed ? `${entry.count} × ${round(entry.width * entry.height, 2)} m²` : `${entry.count} off`,
+      unit: glazed ? 'm²' : 'each',
+      quantity: glazed ? round(entry.count * entry.width * entry.height, 2) : entry.count,
+      rateKey: glazed ? 'window-m2' : `opening:${entry.kind}`,
+    })
+  }
+
+  const ground = doc.building.floors.find((floor) => floor.index === 0)
+  const pad = groundPad(doc)
+  if (pad && ground) {
+    const area = pad.structures
+      .flatMap((structure) => surfaceBedPolygons(structure.rings, ground))
+      .reduce((sum, polygon) => sum + polygonArea(polygon), 0)
+    if (area > 0) {
+      drafts.push({
+        id: 'surface-bed',
+        group: 'Concrete',
+        label: 'Surface bed',
+        note: `${round(area, 1)} m² at ${mm(SURFACE_BED_THICKNESS_M)} mm`,
+        unit: 'm³',
+        quantity: round(area * SURFACE_BED_THICKNESS_M * waste, 2),
+        rateKey: 'concrete-m3',
+      })
+    }
+  }
+
+  if (footingLength > 0) {
+    drafts.push({
+      id: 'footings',
+      group: 'Concrete',
+      label: 'Strip footings',
+      note: `${round(footingLength, 1)} m at ${mm(assumptions.footingWidth)} × ${mm(assumptions.footingDepth)} mm, assumed section`,
+      unit: 'm³',
+      quantity: round(footingLength * assumptions.footingWidth * assumptions.footingDepth * waste, 2),
+      rateKey: 'concrete-m3',
+    })
+  }
+
+  let slabArea = 0
+  for (const floor of doc.building.floors) {
+    if (floor.index === 0 || floor.roof) continue
+    slabArea += deckPolygons(floor).reduce((sum, polygon) => sum + polygonArea(polygon), 0)
+  }
+  if (slabArea > 0) {
+    const thickness = deckThickness()
+    drafts.push({
+      id: 'suspended-slabs',
+      group: 'Concrete',
+      label: 'Suspended floor slabs',
+      note: `${round(slabArea, 1)} m² at ${mm(thickness)} mm`,
+      unit: 'm³',
+      quantity: round(slabArea * thickness * waste, 2),
+      rateKey: 'concrete-m3',
+    })
+  }
+
+  let roofArea = 0
+  for (const floor of doc.building.floors) {
+    if (!floor.roof || floor.index === 0) continue
+    const reach = masonryReach(floorBelow(doc, floor)?.walls ?? [])
+    roofArea += roofFacesForFloor(floor, floor.roof, reach).reduce((sum, face) => sum + faceArea(face), 0)
+  }
+  if (roofArea > 0) {
+    drafts.push({
+      id: 'roof-covering',
+      group: 'Roof',
+      label: 'Roof covering',
+      note: `${round(roofArea, 1)} m² on the slope`,
+      unit: 'm²',
+      quantity: round(roofArea * waste, 1),
+      rateKey: 'roof-m2',
+    })
+  }
+
+  return drafts.map((draft) => {
+    const rate = rateOf(doc.costing, draft.rateKey)
+    return { ...draft, rate, amount: round(draft.quantity * rate, 2) }
+  })
+}
+
+export function totalCost(lines: QuantityLine[]): number {
+  return round(
+    lines.reduce((sum, line) => sum + line.amount, 0),
+    2,
+  )
+}
+
+function csvCell(value: string | number): string {
+  const text = String(value)
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+export function quantitiesCsv(lines: QuantityLine[]): string {
+  const rows: (string | number)[][] = [['Group', 'Item', 'Note', 'Quantity', 'Unit', 'Rate (R)', 'Amount (R)']]
+  for (const line of lines) {
+    rows.push([line.group, line.label, line.note, line.quantity, line.unit, line.rate, line.amount])
+  }
+  rows.push(['', 'Total', '', '', '', '', totalCost(lines)])
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n')
+}

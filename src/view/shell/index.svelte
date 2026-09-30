@@ -2,10 +2,11 @@
   import { documentStore } from '../../lib/state/document.svelte'
   import ElevationView from '../elevation/index.svelte'
   import PlanView from '../plan/index.svelte'
+  import QuantitiesView from '../quantities/index.svelte'
   import ReviewView from '../review/index.svelte'
   import FileMenu from './FileMenu.svelte'
 
-  type Mode = 'plan' | 'focus' | 'review'
+  type Mode = 'plan' | 'focus' | 'review' | 'quantities'
   type Status = { text: string; error: boolean }
 
   let mode = $state<Mode>('plan')
@@ -71,6 +72,7 @@
         return
       }
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (currentMode !== 'plan' && currentMode !== 'focus') return
       if (currentMode === 'focus' && wallId && openingId) {
         const floorId = floorContaining(wallId)
         if (!floorId) return
@@ -127,6 +129,9 @@
         Focus
       </button>
       <button type="button" class:active={mode === 'review'} onclick={() => (mode = 'review')}>Review</button>
+      <button type="button" class:active={mode === 'quantities'} onclick={() => (mode = 'quantities')}>
+        Quantities
+      </button>
     </nav>
   </header>
   <div class="stage">
@@ -150,6 +155,8 @@
       />
     {:else if mode === 'review'}
       <ReviewView onSelectWall={selectWallFromReview} onStatus={setViewStatus} />
+    {:else if mode === 'quantities'}
+      <QuantitiesView />
     {/if}
   </div>
   {#if statusText}
