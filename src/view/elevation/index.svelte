@@ -20,6 +20,10 @@ import {
 import { systemOf, WALL_SYSTEMS } from '../../lib/model/systems'
 import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
+  import { Button } from '$lib/components/ui/button'
+  import { Input } from '$lib/components/ui/input'
+  import * as Select from '$lib/components/ui/select'
+  import { Separator } from '$lib/components/ui/separator'
   import ElevationScene from './ElevationScene.svelte'
   import ElevationDimensions from './ElevationDimensions.svelte'
   import { SURFACE_BED_TOP_ABOVE_DATUM_M } from '../../lib/geometry/pad'
@@ -39,8 +43,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   let locked = $state(true)
   let insertTool = $state<OpeningKind>('window')
-  let menuOpen = $state(false)
-  let menuEl = $state<HTMLDivElement | undefined>(undefined)
   let preferredWidth = $state<Partial<Record<OpeningKind, number>>>({})
   let widthDraft = $state<number | null>(null)
   let orthoCamera = $state<OrthographicCamera | undefined>(undefined)
@@ -181,18 +183,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   })
 
   $effect(() => {
-    if (!menuOpen) return
-    const menu = menuEl
-    const onPointer = (event: PointerEvent) => {
-      const target = event.target
-      if (menu && target instanceof Node && menu.contains(target)) return
-      menuOpen = false
-    }
-    window.addEventListener('pointerdown', onPointer, true)
-    return () => window.removeEventListener('pointerdown', onPointer, true)
-  })
-
-  $effect(() => {
     const geoms = wallModel.blocks
     const courses = wallModel.courses
     const lintel = wallModel.lintel
@@ -316,7 +306,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   function chooseInsert(tool: OpeningKind) {
     insertTool = tool
-    menuOpen = false
   }
 
   const insertChoices: { kind: OpeningKind; label: string }[] = [
@@ -435,37 +424,26 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   {#if !wall || !frame}
     <p class="empty">No wall selected</p>
   {:else}
-    <div class="bar">
-      <div class="menu" bind:this={menuEl}>
-        <button
-          type="button"
-          class:active={menuOpen}
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onclick={() => (menuOpen = !menuOpen)}
-        >
-          Openings
-        </button>
-        {#if menuOpen}
-          <div class="menu-panel" role="menu">
-            <p class="section">Openings</p>
+    <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
+      <div class="flex items-center gap-2">
+        <span class="text-muted-foreground">Place</span>
+        <Select.Root type="single" value={insertTool} onValueChange={(next) => chooseInsert(next as OpeningKind)}>
+          <Select.Trigger size="sm" class="w-40" aria-label="Opening to place">
+            {insertChoices.find((choice) => choice.kind === insertTool)?.label}
+          </Select.Trigger>
+          <Select.Content>
             {#each insertChoices as choice (choice.kind)}
-              <button
-                type="button"
-                role="menuitem"
-                class:active={insertTool === choice.kind}
-                onclick={() => chooseInsert(choice.kind)}
-              >
-                {choice.label}
-              </button>
+              <Select.Item value={choice.kind}>{choice.label}</Select.Item>
             {/each}
-          </div>
-        {/if}
+          </Select.Content>
+        </Select.Root>
       </div>
       {#if widthLimits && widthAllowed}
-        <label class="width">
-          Width
+        <Separator orientation="vertical" class="h-5" />
+        <label class="flex items-center gap-2">
+          <span class="text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
           <input
+            class="w-32 accent-primary"
             type="range"
             min={widthLimits.min}
             max={widthLimits.max}
@@ -474,7 +452,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
             oninput={(event) => onWidthInput(Number(event.currentTarget.value))}
             onchange={(event) => commitWidth(Number(event.currentTarget.value))}
           />
-          <input
+          <Input
+            class="h-7 w-20"
             type="number"
             min={mm(widthLimits.min)}
             max={mm(widthLimits.max)}
@@ -486,25 +465,28 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
               commitWidth(next)
             }}
           />
-          <span>mm</span>
+          <span class="text-muted-foreground">mm</span>
         </label>
       {/if}
       {#if editingOpening}
-        <button type="button" onclick={removeSelected}>Remove</button>
+        <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
-      <label class="system">
-        Wall
-        <select value={system.id} onchange={(event) => chooseSystem(event.currentTarget.value as WallSystemId)}>
-          {#each WALL_SYSTEMS as choice (choice.id)}
-            <option value={choice.id}>{choice.name}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="ml-auto flex items-center gap-2">
+        <span class="text-muted-foreground">Wall</span>
+        <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
+          <Select.Trigger size="sm" class="w-48" aria-label="Wall system">{system.name}</Select.Trigger>
+          <Select.Content>
+            {#each WALL_SYSTEMS as choice (choice.id)}
+              <Select.Item value={choice.id}>{choice.name}</Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
     </div>
     <div class="scene">
-      <button type="button" class="lock" onclick={() => (locked = !locked)}>
+      <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
         {locked ? 'Perspective' : 'Fixed view'}
-      </button>
+      </Button>
       <div
         class="viewport"
         class:elevation={locked}
@@ -554,118 +536,12 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     font: 0.9375rem system-ui, sans-serif;
   }
 
-  .bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75rem 1rem;
-    padding: 0.5rem 0.75rem;
-    background: #fff;
-    border-bottom: 1px solid #e4e4e7;
-    font: 0.875rem system-ui, sans-serif;
-    flex-shrink: 0;
-  }
-
-  .bar button {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .menu {
-    position: relative;
-  }
-
-  .menu > button.active,
-  .menu-panel button.active {
-    border-color: #2563eb;
-    background: #eff6ff;
-  }
-
-  .menu-panel {
-    position: absolute;
-    top: calc(100% + 0.35rem);
-    left: 0;
-    z-index: 3;
-    display: flex;
-    flex-direction: column;
-    min-width: 11rem;
-    padding: 0.25rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-  }
-
-  .menu-panel button {
-    display: block;
-    width: 100%;
-    border: none;
-    border-radius: 3px;
-    background: transparent;
-    text-align: left;
-  }
-
-  .menu-panel button:hover {
-    background: #f4f4f5;
-  }
-
-  .section {
-    margin: 0.35rem 0.65rem 0.15rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #71717a;
-  }
-
-  .width {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-  }
-
-  .width input[type='range'] {
-    width: 8rem;
-  }
-
-  .width input[type='number'] {
-    width: 4.5rem;
-    font: inherit;
-  }
-
-  .system {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-left: auto;
-  }
-
-  .system select {
-    font: inherit;
-  }
-
   .scene {
     position: relative;
     display: flex;
     flex: 1;
     min-height: 0;
     width: 100%;
-  }
-
-  .lock {
-    position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
-    z-index: 1;
-    padding: 0.35rem 0.75rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: 0.875rem system-ui, sans-serif;
-    cursor: pointer;
   }
 
   .viewport {

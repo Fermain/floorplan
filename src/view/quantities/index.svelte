@@ -3,6 +3,12 @@
   import { assumptionsOf, rateIsDefault } from '../../lib/cost/rates'
   import type { CostAssumptions } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
+  import Download from '@lucide/svelte/icons/download'
+  import { Button } from '$lib/components/ui/button'
+  import * as Card from '$lib/components/ui/card'
+  import { Input } from '$lib/components/ui/input'
+  import { Label } from '$lib/components/ui/label'
+  import * as Table from '$lib/components/ui/table'
 
   const doc = $derived(documentStore.document)
   const lines = $derived(takeoff(doc))
@@ -52,218 +58,97 @@
   }
 </script>
 
-<div class="root">
-  <div class="bar">
-    <p class="total">Estimated total <strong>R {money.format(total)}</strong></p>
-    <button type="button" onclick={downloadCsv} disabled={lines.length === 0}>Download CSV</button>
+<div class="flex h-full flex-col">
+  <div class="flex items-center justify-between gap-3 border-b bg-background px-3 py-1.5 text-sm">
+    <p>
+      <span class="text-muted-foreground">Estimated total</span>
+      <span class="ml-1 text-base font-semibold tabular-nums">R {money.format(total)}</span>
+    </p>
+    <Button variant="outline" size="sm" onclick={downloadCsv} disabled={lines.length === 0}>
+      <Download />Download CSV
+    </Button>
   </div>
-  <div class="page">
-    {#if lines.length === 0}
-      <p class="empty">Draw some walls and the quantities appear here.</p>
-    {:else}
-      <table>
-        <thead>
-          <tr>
-            <th class="item">Item</th>
-            <th class="num">Quantity</th>
-            <th>Unit</th>
-            <th class="num">Rate (R)</th>
-            <th class="num">Amount (R)</th>
-          </tr>
-        </thead>
-        {#each groups as entry (entry.group)}
-          <tbody>
-            <tr class="group">
-              <th colspan="4">{entry.group}</th>
-              <td class="num">{money.format(groupTotal(entry.lines))}</td>
-            </tr>
-            {#each entry.lines as line (line.id)}
-              <tr>
-                <td class="item">
-                  {line.label}
-                  <span class="note">{line.note}</span>
-                </td>
-                <td class="num">{count.format(line.quantity)}</td>
-                <td>{line.unit}</td>
-                <td class="num">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    class:default={rateIsDefault(doc.costing, line.rateKey)}
-                    value={line.rate}
-                    aria-label={`Rate for ${line.label}`}
-                    onchange={(event) => commitRate(line.rateKey, event.currentTarget.value)}
-                  />
-                </td>
-                <td class="num">{money.format(line.amount)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        {/each}
-      </table>
-      <p class="caveat">
-        Rates in grey are rough examples, not quotes. Type your supplier's price to replace one, or clear a field to
-        return to the example. Quantities come from the drawn walls, openings, slabs and roofs; foundations below the
-        footing, reinforcement, plaster, finishes and labour are not included yet.
-      </p>
-    {/if}
-    <section class="assumptions">
-      <h2>Assumptions</h2>
-      <div class="fields">
-        {#each assumptionFields as field (field.key)}
-          <label>
-            <span>{field.label}</span>
-            <input
-              type="number"
-              min="0"
-              step={field.step}
-              value={assumptions[field.key]}
-              onchange={(event) => commitAssumption(field.key, event.currentTarget.value)}
-            />
-            <span class="unit">{field.unit}</span>
-          </label>
-        {/each}
-      </div>
-    </section>
+  <div class="min-h-0 flex-1 overflow-auto">
+    <div class="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+      {#if lines.length === 0}
+        <p class="text-sm text-muted-foreground">Draw some walls and the quantities appear here.</p>
+      {:else}
+        <Card.Root>
+          <Card.Content class="p-0">
+            <Table.Root>
+              <Table.Header>
+                <Table.Row>
+                  <Table.Head class="pl-4">Item</Table.Head>
+                  <Table.Head class="text-right">Quantity</Table.Head>
+                  <Table.Head>Unit</Table.Head>
+                  <Table.Head class="text-right">Rate (R)</Table.Head>
+                  <Table.Head class="pr-4 text-right">Amount (R)</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              {#each groups as entry (entry.group)}
+                <Table.Body>
+                  <Table.Row class="bg-muted/50 hover:bg-muted/50">
+                    <Table.Cell colspan={4} class="pl-4 font-semibold">{entry.group}</Table.Cell>
+                    <Table.Cell class="pr-4 text-right font-semibold tabular-nums">
+                      {money.format(groupTotal(entry.lines))}
+                    </Table.Cell>
+                  </Table.Row>
+                  {#each entry.lines as line (line.id)}
+                    <Table.Row>
+                      <Table.Cell class="pl-4 whitespace-normal">
+                        <div>{line.label}</div>
+                        <div class="text-xs text-muted-foreground">{line.note}</div>
+                      </Table.Cell>
+                      <Table.Cell class="text-right tabular-nums">{count.format(line.quantity)}</Table.Cell>
+                      <Table.Cell class="text-muted-foreground">{line.unit}</Table.Cell>
+                      <Table.Cell class="text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          class="ml-auto h-7 w-28 text-right tabular-nums {rateIsDefault(doc.costing, line.rateKey)
+                            ? 'text-muted-foreground'
+                            : ''}"
+                          value={line.rate}
+                          aria-label={`Rate for ${line.label}`}
+                          onchange={(event) => commitRate(line.rateKey, event.currentTarget.value)}
+                        />
+                      </Table.Cell>
+                      <Table.Cell class="pr-4 text-right tabular-nums">{money.format(line.amount)}</Table.Cell>
+                    </Table.Row>
+                  {/each}
+                </Table.Body>
+              {/each}
+            </Table.Root>
+          </Card.Content>
+        </Card.Root>
+        <p class="text-sm text-muted-foreground">
+          Rates in grey are rough examples, not quotes. Type your supplier's price to replace one, or clear a field to
+          return to the example. Quantities come from the drawn walls, openings, slabs and roofs; foundations below the
+          footing, reinforcement, plaster, finishes and labour are not included yet.
+        </p>
+      {/if}
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Assumptions</Card.Title>
+          <Card.Description>These shape the quantities above.</Card.Description>
+        </Card.Header>
+        <Card.Content class="grid gap-4 sm:grid-cols-3">
+          {#each assumptionFields as field (field.key)}
+            <div class="grid gap-1.5">
+              <Label for={`assumption-${field.key}`}>{field.label} ({field.unit})</Label>
+              <Input
+                id={`assumption-${field.key}`}
+                type="number"
+                min="0"
+                step={field.step}
+                value={assumptions[field.key]}
+                onchange={(event) => commitAssumption(field.key, event.currentTarget.value)}
+              />
+            </div>
+          {/each}
+        </Card.Content>
+      </Card.Root>
+    </div>
   </div>
 </div>
-
-<style>
-  .root {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-    font: 0.875rem system-ui, sans-serif;
-  }
-
-  .bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5rem 0.75rem;
-    background: #fff;
-    border-bottom: 1px solid #e4e4e7;
-    flex-shrink: 0;
-  }
-
-  .total {
-    margin: 0;
-  }
-
-  button {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  button:disabled {
-    cursor: default;
-    opacity: 0.45;
-  }
-
-  .page {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 1rem 0.75rem 2rem;
-  }
-
-  .empty {
-    color: #52525b;
-  }
-
-  table {
-    width: 100%;
-    max-width: 60rem;
-    border-collapse: collapse;
-    background: #fff;
-    border: 1px solid #e4e4e7;
-  }
-
-  th,
-  td {
-    padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid #f0f0f1;
-    text-align: left;
-    vertical-align: top;
-  }
-
-  thead th {
-    font-weight: 600;
-    color: #52525b;
-    border-bottom: 1px solid #e4e4e7;
-  }
-
-  tr.group th,
-  tr.group td {
-    background: #fafafa;
-    font-weight: 600;
-  }
-
-  .num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .note {
-    display: block;
-    color: #71717a;
-    font-size: 0.8125rem;
-  }
-
-  input {
-    width: 6.5rem;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 3px;
-    font: inherit;
-    text-align: right;
-  }
-
-  input.default {
-    color: #a1a1aa;
-  }
-
-  .caveat {
-    max-width: 60rem;
-    color: #52525b;
-    line-height: 1.45;
-  }
-
-  .assumptions {
-    max-width: 60rem;
-    margin-top: 1.5rem;
-  }
-
-  h2 {
-    margin: 0 0 0.5rem;
-    font-size: 0.9375rem;
-  }
-
-  .fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.25rem;
-  }
-
-  .fields label {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .fields input {
-    width: 4.5rem;
-  }
-
-  .unit {
-    color: #71717a;
-  }
-</style>
