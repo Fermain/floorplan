@@ -182,7 +182,7 @@ export function roofInfills(below: Floor, floor: Floor, roof: Roof, reach = DEFA
   const infills: RoofInfill[] = []
   for (const wall of walls.values()) {
     if (count.get(wall.id) !== 1) continue
-    const blocks = gableBlocks(below, wall, heightAt, reach * Math.tan((roof.pitchDeg * Math.PI) / 180))
+    const blocks = gableBlocks(below, wall, heightAt)
     if (blocks.length === 0) continue
     const leaves = Math.max(1, systemOf(wall).leaves)
     const area = blocks.reduce((sum, block) => sum + polygonArea(block.poly), 0) / leaves

@@ -205,25 +205,30 @@ describe('gable and mono-pitch roofs', () => {
     const gables = roofInfills(below, plate, roof, reach)
     expect(gables.map((infill) => infill.wall.id).sort()).toEqual(['bc', 'da'])
     const [end] = gables
-    const apex = (6 / 2) * tan
+    const apex = (6 / 2 + reach) * tan
     const top = Math.max(...end.blocks.flatMap((block) => block.poly.map((p) => p.y)))
     expect(top).toBeCloseTo(apex, 6)
-    expect(end.area).toBeCloseTo(0.5 * 6 * 3 * tan, 1)
+    expect(end.area).toBeCloseTo(6 * reach * tan + 0.5 * 6 * 3 * tan, 1)
     expect(roofInfills(below, plate, { pitchDeg: pitch, eaves: 0.3 }, reach)).toEqual([])
   })
 
-  it('keeps every gable unit under the roof', () => {
+  it('fills every gable up to the underside of the roof and no further', () => {
     const gables = roofInfills(below, plate, { pitchDeg: pitch, eaves: 0.3, form: 'gable' }, reach)
     const half = 3 + reach + 0.3
     const roofAt = (z: number) => (half - Math.abs(z - 3)) * tan - 0.3 * tan
+    let touches = false
     for (const infill of gables) {
       const toZ = infill.wall.id === 'bc' ? (u: number) => u : (u: number) => 6 - u
       for (const block of infill.blocks) {
+        for (const p of block.poly) {
+          if (p.y > 0.01) touches = touches || Math.abs(p.y - roofAt(toZ(p.u))) < 1e-6
+        }
         for (const p of [...block.poly, ...block.face]) {
-          expect(p.y).toBeLessThanOrEqual(roofAt(toZ(p.u)) - reach * tan + 1e-9)
+          expect(p.y).toBeLessThanOrEqual(roofAt(toZ(p.u)) + 1e-9)
         }
       }
     }
+    expect(touches).toBe(true)
   })
 
   it('lays the covering a structure depth above the roof it bears on', () => {

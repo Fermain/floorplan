@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute } from 'three'
-import { courseCount, leafOffset, MORTAR_JOINT, systemOf } from '../model/systems'
+import { courseCount, leafOffset, MORTAR_JOINT, outerReach, systemOf } from '../model/systems'
 import type { Floor, Wall } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
 import { leafSigns, wallMeshURange } from './walls'
@@ -26,7 +26,7 @@ function wallFrame(floor: Floor, wall: Wall): Frame | null {
 
 type Piece = { a: number; b: number }
 
-type RoofLine = { at: (u: number) => number; kink: number | null; pieces: Piece[] }
+type RoofLine = { at: (u: number) => number; kinks: number[]; pieces: Piece[] }
 
 function roofLine(frame: Frame, offset: number, heightAt: (p: PlanPoint) => number): RoofLine {
   const at = (u: number) =>
@@ -39,11 +39,11 @@ function roofLine(frame: Frame, offset: number, heightAt: (p: PlanPoint) => numb
   const hL = at(frame.length)
   const s0 = (at(step) - h0) / step
   const s1 = (hL - at(frame.length - step)) / step
-  if (Math.abs(s0 - s1) < 1e-6) return { at: (u) => h0 + s0 * u, kink: null, pieces: [{ a: h0, b: s0 }] }
+  if (Math.abs(s0 - s1) < 1e-6) return { at: (u) => h0 + s0 * u, kinks: [], pieces: [{ a: h0, b: s0 }] }
   const kink = (hL - s1 * frame.length - h0) / (s0 - s1)
   return {
     at: (u) => (u <= kink ? h0 + s0 * u : hL + s1 * (u - frame.length)),
-    kink,
+    kinks: [kink],
     pieces: [
       { a: h0, b: s0 },
       { a: hL - s1 * frame.length, b: s1 },
@@ -51,9 +51,12 @@ function roofLine(frame: Frame, offset: number, heightAt: (p: PlanPoint) => numb
   }
 }
 
+function lower(a: RoofLine, b: RoofLine): RoofLine {
+  return { at: (u) => Math.min(a.at(u), b.at(u)), kinks: [...a.kinks, ...b.kinks], pieces: [...a.pieces, ...b.pieces] }
+}
+
 function peak(line: RoofLine, u0: number, u1: number): number {
-  const knots = [u0, u1]
-  if (line.kink !== null && line.kink > u0 && line.kink < u1) knots.push(line.kink)
+  const knots = [u0, u1, ...line.kinks.filter((kink) => kink > u0 && kink < u1)]
   return Math.max(...knots.map((u) => line.at(u)))
 }
 
@@ -112,7 +115,6 @@ export function gableBlocks(
   floor: Floor,
   wall: Wall,
   heightAt: (p: PlanPoint) => number,
-  plate = 0,
 ): GableBlock[] {
   const frame = wallFrame(floor, wall)
   if (!frame || wall.skin === 'logical') return []
@@ -121,10 +123,11 @@ export function gableBlocks(
   const half = MORTAR_JOINT / 2
   const blocks: GableBlock[] = []
   leafSigns(wall.skin).forEach((sign, leaf) => {
-    const line = roofLine(frame, 0, (p) => heightAt(p) - plate)
+    const reach = outerReach(system)
+    const line = lower(roofLine(frame, reach, heightAt), roofLine(frame, -reach, heightAt))
     const lowered: RoofLine = {
       at: (u) => line.at(u) - half,
-      kink: line.kink,
+      kinks: line.kinks,
       pieces: line.pieces.map((piece) => ({ a: piece.a - half, b: piece.b })),
     }
     for (let k = 0; k < 200; k++) {
