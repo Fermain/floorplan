@@ -44,7 +44,7 @@
     { id: 'review', label: 'Review' },
     { id: 'quantities', label: 'Quantities' },
     { id: 'checks', label: 'Checks' },
-    { id: 'site', label: 'Site' },
+    { id: 'project', label: 'Project' },
   ]
 
   const active = $derived.by((): ProjectSection => {
@@ -52,7 +52,7 @@
     if (route.includes('/review')) return 'review'
     if (route.includes('/quantities')) return 'quantities'
     if (route.includes('/checks')) return 'checks'
-    if (route.includes('/site')) return 'site'
+    if (route.includes('/project')) return 'project'
     return 'plan'
   })
 

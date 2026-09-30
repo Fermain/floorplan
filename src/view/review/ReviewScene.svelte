@@ -47,6 +47,7 @@
   import type { Ring } from '../../lib/geometry/pad'
   import { liftAboveGround } from './ground-limit'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
+  import { Button } from '$lib/components/ui/button'
 
   interface Props {
     sunDate: Date
@@ -424,9 +425,9 @@
 </script>
 
 <div class="scene">
-  <button type="button" class="lock" onclick={() => (locked = !locked)}>
+  <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
     {locked ? 'Perspective' : 'Fixed view'}
-  </button>
+  </Button>
   <Canvas shadows>
     <ReviewInteractivity />
     <T.PerspectiveCamera
@@ -580,16 +581,4 @@
     height: 100%;
   }
 
-  .lock {
-    position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
-    z-index: 1;
-    padding: 0.35rem 0.75rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: 0.875rem system-ui, sans-serif;
-    cursor: pointer;
-  }
 </style>

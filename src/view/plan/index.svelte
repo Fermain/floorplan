@@ -1,5 +1,20 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import BrickWall from '@lucide/svelte/icons/brick-wall'
+  import Footprints from '@lucide/svelte/icons/footprints'
+  import Layers from '@lucide/svelte/icons/layers'
+  import Minus from '@lucide/svelte/icons/minus'
+  import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
+  import Plus from '@lucide/svelte/icons/plus'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
+  import SquareDashed from '@lucide/svelte/icons/square-dashed'
+  import Triangle from '@lucide/svelte/icons/triangle'
+  import { Badge } from '$lib/components/ui/badge'
+  import { Button } from '$lib/components/ui/button'
+  import { Input } from '$lib/components/ui/input'
+  import { Label } from '$lib/components/ui/label'
+  import * as Select from '$lib/components/ui/select'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { SvelteSet } from 'svelte/reactivity'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
@@ -33,10 +48,11 @@
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING } from '../../lib/geometry/coverings'
   import type { RoofCovering } from '../../lib/model/types'
-  import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
-  import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
+  import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
+  import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
-  import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
+  import { DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
+  import { projectDefaults } from '../../lib/model/defaults'
   import { documentStore } from '../../lib/state/document.svelte'
   import {
     nearestCorner,
@@ -69,12 +85,14 @@
   } from './gesture'
   import { roofableFloor, storeyAddTarget } from './storey'
   import { plotBounds, pointsAttr, ringPath } from './svg'
+  import PlanNavigator from './PlanNavigator.svelte'
 
   type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
   const PLOT_MARGIN_M = 2.4
+  const ROOF_FORMS: Record<RoofForm, string> = { hip: 'Hip', gable: 'Gable', mono: 'Mono-pitch' }
   const MONO_ROOF_PITCH_DEG = 10
 
   type PendingDraw = {
@@ -87,6 +105,7 @@
     activeFloorId = $bindable(''),
     storey: activeStoreyIndex = $bindable(0),
     focusSpace = null,
+    viewKey = '',
     onStatus,
     onFocus,
   }: {
@@ -94,6 +113,7 @@
     activeFloorId?: string
     storey?: number
     focusSpace?: string | null
+    viewKey?: string
     onStatus?: (status: { text: string; error: boolean }) => void
     onFocus?: (wallId: string) => void
   } = $props()
@@ -269,10 +289,215 @@
   }
 
   const bounds = $derived(plotBounds(plotRing, PLOT_MARGIN_M))
-  const labelSize = $derived((bounds.maxX - bounds.minX) / 52)
-  const viewBox = $derived(
-    `${bounds.minX} ${bounds.minZ} ${bounds.maxX - bounds.minX} ${bounds.maxZ - bounds.minZ}`,
-  )
+
+  let turn = $state(0)
+  let zoom = $state(1)
+  let centre = $state<{ x: number; y: number } | null>(null)
+  let contentEl = $state<SVGGElement | undefined>(undefined)
+  let canvasSize = $state({ width: 1, height: 1 })
+
+  const viewMatrix = $derived(`rotate(${turn}) scale(1 -1)`)
+
+  function toScreen(x: number, z: number): { x: number; y: number } {
+    const a = (turn * Math.PI) / 180
+    const fy = -z
+    return { x: x * Math.cos(a) - fy * Math.sin(a), y: x * Math.sin(a) + fy * Math.cos(a) }
+  }
+
+  const fitBox = $derived.by(() => {
+    const corners = [
+      toScreen(bounds.minX, bounds.minZ),
+      toScreen(bounds.maxX, bounds.minZ),
+      toScreen(bounds.maxX, bounds.maxZ),
+      toScreen(bounds.minX, bounds.maxZ),
+    ]
+    const xs = corners.map((c) => c.x)
+    const ys = corners.map((c) => c.y)
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+  })
+
+  const view = $derived.by(() => {
+    const aspect = canvasSize.width / Math.max(1, canvasSize.height)
+    let w = fitBox.w
+    let h = fitBox.h
+    if (w / h < aspect) w = h * aspect
+    else h = w / aspect
+    w /= zoom
+    h /= zoom
+    const c = centre ?? { x: fitBox.x + fitBox.w / 2, y: fitBox.y + fitBox.h / 2 }
+    return { x: c.x - w / 2, y: c.y - h / 2, w, h, c }
+  })
+
+  const viewBox = $derived(`${view.x} ${view.y} ${view.w} ${view.h}`)
+  const labelSize = $derived((bounds.maxX - bounds.minX) / 52 / zoom)
+
+  const screenAxis = $derived({ dx: Math.cos((turn * Math.PI) / 180), dz: Math.sin((turn * Math.PI) / 180) })
+
+  const MIN_ZOOM = 0.5
+  const MAX_ZOOM = 40
+  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number } } | null>(null)
+  let spaceHeld = $state(false)
+
+  $effect(() => {
+    const svg = svgEl
+    if (!svg) return
+    const observer = new ResizeObserver(() => {
+      canvasSize = { width: svg.clientWidth || 1, height: svg.clientHeight || 1 }
+    })
+    observer.observe(svg)
+    return () => observer.disconnect()
+  })
+
+  $effect(() => {
+    const key = viewKey
+    if (!key) return
+    untrack(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(`floorplan:view:${key}`) ?? 'null')
+        if (saved && Number.isFinite(saved.turn) && Number.isFinite(saved.zoom)) {
+          turn = saved.turn
+          zoom = saved.zoom
+          centre = saved.centre ?? null
+        }
+      } catch {
+        return
+      }
+    })
+  })
+
+  $effect(() => {
+    const key = viewKey
+    const snapshot = JSON.stringify({ turn, zoom, centre })
+    if (!key) return
+    try {
+      localStorage.setItem(`floorplan:view:${key}`, snapshot)
+    } catch {
+      return
+    }
+  })
+
+  $effect(() => {
+    const down = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (event.code === 'Space') {
+        spaceHeld = true
+        event.preventDefault()
+      }
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.code === 'Space') spaceHeld = false
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  })
+
+  function pixelsToView(): number {
+    return view.w / Math.max(1, canvasSize.width)
+  }
+
+  function viewPointAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    const svg = svgEl
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    return {
+      x: view.x + (clientX - rect.left) * pixelsToView(),
+      y: view.y + (clientY - rect.top) * pixelsToView(),
+    }
+  }
+
+  function zoomAt(clientX: number, clientY: number, factor: number) {
+    const anchor = viewPointAt(clientX, clientY)
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor))
+    if (!anchor || next === zoom) return
+    const c = view.c
+    centre = { x: anchor.x + (c.x - anchor.x) * (zoom / next), y: anchor.y + (c.y - anchor.y) * (zoom / next) }
+    zoom = next
+  }
+
+  function zoomBy(factor: number) {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor))
+    centre = view.c
+    zoom = next
+  }
+
+  function fitView() {
+    zoom = 1
+    centre = null
+  }
+
+  function setTurn(next: number) {
+    const planCentre = untrack(() => {
+      const a = (turn * Math.PI) / 180
+      const c = view.c
+      return { x: c.x * Math.cos(a) + c.y * Math.sin(a), z: -(-c.x * Math.sin(a) + c.y * Math.cos(a)) }
+    })
+    turn = ((next % 360) + 360) % 360
+    if (centre) centre = toScreen(planCentre.x, planCentre.z)
+  }
+
+  function onWheel(event: WheelEvent) {
+    event.preventDefault()
+    const pinch = event.ctrlKey || event.metaKey
+    const notched = event.deltaMode === 1 || (!pinch && event.deltaX === 0 && Math.abs(event.deltaY) >= 50 && Number.isInteger(event.deltaY))
+    if (pinch || notched) {
+      const raw = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
+      const amount = Math.max(-0.5, Math.min(0.5, raw * (pinch ? 0.01 : 0.0015)))
+      zoomAt(event.clientX, event.clientY, Math.exp(-amount))
+      return
+    }
+    const k = pixelsToView()
+    const c = view.c
+    centre = { x: c.x + event.deltaX * k, y: c.y + event.deltaY * k }
+  }
+
+  function startPan(event: PointerEvent): boolean {
+    if (!(event.button === 1 || (event.button === 0 && spaceHeld))) return false
+    event.preventDefault()
+    svgEl?.setPointerCapture(event.pointerId)
+    panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: view.c }
+    return true
+  }
+
+  function movePan(event: PointerEvent): boolean {
+    const pan = panning
+    if (!pan || pan.pointerId !== event.pointerId) return false
+    const k = pixelsToView()
+    centre = { x: pan.from.x - (event.clientX - pan.x) * k, y: pan.from.y - (event.clientY - pan.y) * k }
+    return true
+  }
+
+  function endPan(event: PointerEvent): boolean {
+    const pan = panning
+    if (!pan || pan.pointerId !== event.pointerId) return false
+    panning = null
+    if (svgEl?.hasPointerCapture(event.pointerId)) svgEl.releasePointerCapture(event.pointerId)
+    return true
+  }
+
+  function s(size: number): number {
+    return size / zoom
+  }
+
+  function dash(on: number, off: number): string {
+    return `${on / zoom} ${off / zoom}`
+  }
+
+  function readable(angle: number): number {
+    let a = ((((angle + 180) % 360) + 360) % 360) - 180
+    if (a > 90) a -= 180
+    if (a <= -90) a += 180
+    return a
+  }
+
+  function upright(x: number, z: number, planAngle?: number): string {
+    const along = planAngle === undefined ? 0 : readable(turn - planAngle)
+    return `translate(${x} ${z}) scale(1 -1) rotate(${-turn}) rotate(${along})`
+  }
 
   const displayFloor = $derived(activeFloor ? previewFloor(activeFloor, rotateDrag, moveDrag) : undefined)
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
@@ -310,7 +535,7 @@
     const pt = svg.createSVGPoint()
     pt.x = clientX
     pt.y = clientY
-    const ctm = svg.getScreenCTM()
+    const ctm = (contentEl ?? svg).getScreenCTM()
     if (!ctm) return null
     const local = pt.matrixTransform(ctm.inverse())
     return { x: local.x, z: local.y }
@@ -496,10 +721,6 @@
     onFocus?.(id)
   }
 
-  function alignToCompass(event: PointerEvent) {
-    event.stopPropagation()
-    chooseSelection({})
-  }
 
   function onPlanContextMenu(event: MouseEvent) {
     event.preventDefault()
@@ -527,6 +748,7 @@
   }
 
   function onSvgPointerDown(event: PointerEvent) {
+    if (startPan(event)) return
     if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
       cancelDraw()
       return
@@ -688,6 +910,7 @@
   }
 
   function onSvgPointerMove(event: PointerEvent) {
+    if (movePan(event)) return
     const svg = svgEl
     if (!svg) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
@@ -728,6 +951,7 @@
   }
 
   function onSvgPointerUp(event: PointerEvent) {
+    if (endPan(event)) return
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
@@ -885,7 +1109,15 @@
   function addRoof() {
     const floor = roofFloor
     if (!floor || floor.roof) return
-    applyResult(documentStore.setRoof(floor.id, { pitchDeg: DEFAULT_ROOF_PITCH_DEG, eaves: DEFAULT_ROOF_EAVES }))
+    const defaults = projectDefaults(documentStore.document)
+    applyResult(
+      documentStore.setRoof(floor.id, {
+        pitchDeg: defaults.roofPitchDeg,
+        eaves: defaults.roofEaves,
+        form: defaults.roofForm,
+        covering: defaults.roofCovering,
+      }),
+    )
   }
 
   function setRoofForm(form: RoofForm) {
@@ -1041,7 +1273,7 @@
       if (Math.hypot(dx, dz) < 1e-9) return null
       return { dx, dz }
     }
-    if (selectedEdge === null) return null
+    if (selectedEdge === null) return turn === 0 ? null : screenAxis
     const ring = plotRing
     const a = ring[selectedEdge]
     const b = ring[(selectedEdge + 1) % ring.length]
@@ -1196,17 +1428,23 @@
       const b = ring[(selectedEdge + 1) % ring.length]
       if (a && b) return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
     }
-    return gridFromSegment(0, 0, 0, 1, bounds)
+    return gridFromSegment(0, 0, screenAxis.dx, screenAxis.dz, bounds)
   })
 
   const compassAligned = $derived(
     selectedWallId === null && selectedOutline === null && selectedEdge === null,
   )
 
-  const compassAt = $derived({
-    x: bounds.minX + 1.15,
-    z: bounds.maxZ - 1.15,
-  })
+  function squareToSelectedWall() {
+    const floor = activeFloor
+    const wall = floor?.walls.find((item) => item.id === selectedWallId)
+    const a = wall && floor ? cornerById(floor.corners, wall.startCornerId) : undefined
+    const b = wall && floor ? cornerById(floor.corners, wall.endCornerId) : undefined
+    if (!a || !b) return
+    const along = (Math.atan2(b.z - a.z, b.x - a.x) * 180) / Math.PI
+    const options = [along, along + 180, along - 180, along + 360]
+    setTurn(options.reduce((best, item) => (Math.abs(item - turn) < Math.abs(best - turn) ? item : best)))
+  }
 
   const snapTraces = $derived(
     moveDrag?.traces.length ? moveDrag.traces : (rectanglePreview?.traces ?? previewLine?.traces ?? []),
@@ -1382,31 +1620,36 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="bar">
-    <div class="tools">
-      <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
-      <button type="button" class:active={tool === 'draw-double'} onclick={() => setTool('draw-double')}>Wall</button>
-      <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
-        Logical
-      </button>
-      <button type="button" class:active={tool === 'draw-stair'} onclick={() => setTool('draw-stair')}>Stair</button>
-      <select
-        class="system"
-        aria-label="Wall system for new walls"
-        value={drawSystem.id}
-        onchange={(event) => documentStore.setDefaultWallSystem(event.currentTarget.value as WallSystemId)}
-      >
-        {#each WALL_SYSTEMS as choice (choice.id)}
-          <option value={choice.id}>{choice.name}</option>
-        {/each}
-      </select>
-    </div>
+  <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5">
+    <ToggleGroup.Root
+      type="single"
+      variant="outline"
+      size="sm"
+      value={tool === 'draw-rect' ? 'draw-double' : tool}
+      onValueChange={(next) => {
+        if (next) setTool(next as Tool)
+      }}
+      aria-label="Tool"
+    >
+      <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)">
+        <MousePointer2 />Select
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle.">
+        <BrickWall />Wall
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything">
+        <SquareDashed />Logical
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair">
+        <Footprints />Stair
+      </ToggleGroup.Item>
+    </ToggleGroup.Root>
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">
-      <button
-        type="button"
-        class="action"
+      <Button
+        variant="outline"
+        size="sm"
         disabled={!storeyTarget || atStoreyLimit}
         title={!storeyTarget
           ? 'Select a closed building first.'
@@ -1415,23 +1658,51 @@
             : 'Lay a floor on the selected building.'}
         onclick={addStorey}
       >
-        Add storey
-      </button>
+        <Plus />Storey
+      </Button>
       {#if storeyUnitId}
-        <button type="button" class="action" onclick={removeStorey}>Remove storey</button>
+        <Button variant="ghost" size="sm" class="text-muted-foreground" onclick={removeStorey}>
+          <Minus />Remove
+        </Button>
       {/if}
-      {#each [...storeyIndexes].reverse() as index (index)}
-        <button type="button" class:active={index === activeStoreyIndex} onclick={() => selectStorey(index)}>
-          {#if floors.some((floor) => floor.index === index && floor.roof)}
-            <span class="key-roof"></span>
-          {/if}
-          {index === 0 ? 'Ground' : index + 1}
-        </button>
-      {/each}
+      <div class="mt-1 flex flex-col gap-1 border-t pt-2">
+        {#each [...storeyIndexes].reverse() as index (index)}
+          <Button
+            variant={index === activeStoreyIndex ? 'secondary' : 'ghost'}
+            size="sm"
+            class="justify-start"
+            aria-current={index === activeStoreyIndex ? 'true' : undefined}
+            onclick={() => selectStorey(index)}
+          >
+            {#if floors.some((floor) => floor.index === index && floor.roof)}
+              <Triangle class="text-muted-foreground" />
+            {:else}
+              <Layers class="text-muted-foreground" />
+            {/if}
+            {index === 0 ? 'Ground' : `Storey ${index + 1}`}
+          </Button>
+        {/each}
+      </div>
     </nav>
+  <div class="pointer-events-none absolute bottom-3 left-[9.25rem] z-10">
+    <PlanNavigator
+      {turn}
+      bearing={document.plot.northBearingDeg}
+      {zoom}
+      aligned={compassAligned}
+      canSquare={selectedWallId !== null}
+      onTurn={setTurn}
+      onSquare={squareToSelectedWall}
+      onZoomIn={() => zoomBy(1.4)}
+      onZoomOut={() => zoomBy(1 / 1.4)}
+      onFit={fitView}
+      onClearReference={() => chooseSelection({})}
+    />
+  </div>
   <svg
     bind:this={svgEl}
     class="canvas"
+    class:panning={spaceHeld || panning !== null}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
     onpointerdown={onSvgPointerDown}
@@ -1439,6 +1710,8 @@
     onpointerup={onSvgPointerUp}
     onpointercancel={onSvgPointerUp}
     ondblclick={onSvgDoubleClick}
+    onwheel={onWheel}
+    onauxclick={(event) => event.preventDefault()}
   >
     <defs>
       <clipPath id="plan-plot-clip">
@@ -1452,6 +1725,7 @@
         </clipPath>
       {/if}
     </defs>
+    <g bind:this={contentEl} transform={viewMatrix}>
     <rect
       x={bounds.minX}
       y={bounds.minZ}
@@ -1464,7 +1738,7 @@
       points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
       fill="#e7e5e4"
       stroke="#18181b"
-      stroke-width="0.06"
+      stroke-width={s(0.06)}
     />
     {#if selectedEdge !== null}
       {@const a = plotRing[selectedEdge]}
@@ -1476,7 +1750,7 @@
           x2={b[0]}
           y2={b[1]}
           stroke="#2563eb"
-          stroke-width="0.08"
+          stroke-width={s(0.08)}
           pointer-events="none"
         />
       {/if}
@@ -1490,7 +1764,7 @@
             x2={line.x2}
             y2={line.z2}
             stroke="#93c5fd"
-            stroke-width="0.012"
+            stroke-width={s(0.012)}
           />
         {/each}
       </g>
@@ -1503,8 +1777,8 @@
           x2={trace.x2}
           y2={trace.z2}
           stroke="#0891b2"
-          stroke-width="0.03"
-          stroke-dasharray="0.12 0.08"
+          stroke-width={s(0.03)}
+          stroke-dasharray={dash(0.12, 0.08)}
           pointer-events="none"
         />
       {/each}
@@ -1515,7 +1789,7 @@
           d={contours.minor}
           fill="none"
           stroke="#7c6a58"
-          stroke-width="0.016"
+          stroke-width={s(0.016)}
           stroke-linecap="round"
         />
       {/if}
@@ -1524,7 +1798,7 @@
           d={contours.major}
           fill="none"
           stroke="#3f3428"
-          stroke-width="0.032"
+          stroke-width={s(0.032)}
           stroke-linecap="round"
         />
       {/if}
@@ -1536,8 +1810,8 @@
             points={pointsAttr(ring.map((point) => [point.x, point.z]))}
             fill="none"
             stroke="#a8a29e"
-            stroke-width="0.04"
-            stroke-dasharray="0.18 0.12"
+            stroke-width={s(0.04)}
+            stroke-dasharray={dash(0.18, 0.12)}
             pointer-events="none"
           />
         {/if}
@@ -1551,7 +1825,7 @@
               fill-opacity="0.28"
               fill-rule="evenodd"
               stroke="#5e666e"
-              stroke-width="0.04"
+              stroke-width={s(0.04)}
             />
           {/each}
         </g>
@@ -1562,8 +1836,8 @@
             points={pointsAttr(plate.ring.map((point) => [point.x, point.z]))}
             fill={plateFill(plate.floorId, plate.index)}
             stroke="#78716c"
-            stroke-width="0.045"
-            stroke-dasharray="0.16 0.1"
+            stroke-width={s(0.045)}
+            stroke-dasharray={dash(0.16, 0.1)}
             pointer-events={tool === 'select' ? 'fill' : 'none'}
             onpointerdown={(event) => {
               if (tool !== 'select') return
@@ -1598,7 +1872,7 @@
               x2={hip.b.x}
               y2={hip.b.z}
               stroke="#3d4450"
-              stroke-width="0.035"
+              stroke-width={s(0.035)}
               stroke-linecap="round"
             />
           {/each}
@@ -1613,7 +1887,7 @@
               x2={line.x2}
               y2={line.z2}
               stroke="#93c5fd"
-              stroke-width="0.012"
+              stroke-width={s(0.012)}
             />
           {/each}
         </g>
@@ -1658,7 +1932,7 @@
             ])}
             class="stair-foot"
           />
-          <circle cx={item.stair.x} cy={item.stair.z} r="0.08" class="stair-foot" />
+          <circle cx={item.stair.x} cy={item.stair.z} r={s(0.08)} class="stair-foot" />
         {/each}
         {#if stairPreview}
           <polygon
@@ -1675,8 +1949,8 @@
           {#each entry.layout.spaces as resolved (resolved.space.id)}
             {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
             <text
-              x={at.x}
-              y={at.z - labelSize * 0.35}
+              transform={upright(at.x, at.z)}
+              y={-labelSize * 0.35}
               font-size={labelSize}
               text-anchor="middle"
               class="room-name"
@@ -1685,8 +1959,8 @@
               {resolved.space.name}
             </text>
             <text
-              x={at.x}
-              y={at.z + labelSize * 0.8}
+              transform={upright(at.x, at.z)}
+              y={labelSize * 0.8}
               font-size={labelSize * 0.8}
               text-anchor="middle"
               class="room-area"
@@ -1697,7 +1971,7 @@
           {/each}
           {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
             {@const at = ringLabelPoint(cell.net)}
-            <text x={at.x} y={at.z + labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
+            <text transform={upright(at.x, at.z)} y={labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
               {areaFormat.format(cell.netArea)} m²
             </text>
           {/each}
@@ -1713,8 +1987,8 @@
             x2={b.x}
             y2={b.z}
             stroke="#666"
-            stroke-width="0.02"
-            stroke-dasharray="0.2 0.15"
+            stroke-width={s(0.02)}
+            stroke-dasharray={dash(0.2, 0.15)}
           />
         {/if}
       {/each}
@@ -1730,7 +2004,7 @@
                 x2={b.x}
                 y2={b.z}
                 stroke="#b91c1c"
-                stroke-width="0.06"
+                stroke-width={s(0.06)}
                 stroke-linecap="round"
                 pointer-events="none"
               />
@@ -1748,7 +2022,7 @@
             x2={b.x}
             y2={b.z}
             stroke={wall.id === selectedWallId ? '#2563eb' : 'transparent'}
-            stroke-width={wall.id === selectedWallId ? 0.08 : 0.14}
+            stroke-width={s(wall.id === selectedWallId ? 0.08 : 0.14)}
             stroke-linecap="round"
             pointer-events={tool === 'select' ? 'stroke' : 'none'}
             onpointerdown={(e) => {
@@ -1769,7 +2043,7 @@
           x2={outlineReference.bx}
           y2={outlineReference.bz}
           stroke="#2563eb"
-          stroke-width="0.08"
+          stroke-width={s(0.08)}
           pointer-events="none"
         />
       {/if}
@@ -1782,35 +2056,31 @@
             x2={next.x}
             y2={next.z}
             stroke={rectanglePreview.allowed ? '#2563eb' : '#b91c1c'}
-            stroke-width="0.04"
-            stroke-dasharray="0.15 0.1"
+            stroke-width={s(0.04)}
+            stroke-dasharray={dash(0.15, 0.1)}
             pointer-events="none"
           />
         {/each}
         {#if rectanglePreview.widthLabel}
           <text
-            x={rectanglePreview.widthLabel.x}
-            y={rectanglePreview.widthLabel.z}
+            transform={upright(rectanglePreview.widthLabel.x, rectanglePreview.widthLabel.z, rectanglePreview.widthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${rectanglePreview.widthLabel.rotate} ${rectanglePreview.widthLabel.x} ${rectanglePreview.widthLabel.z})`}
           >
             {rectanglePreview.widthLabel.text}
           </text>
         {/if}
         {#if rectanglePreview.depthLabel}
           <text
-            x={rectanglePreview.depthLabel.x}
-            y={rectanglePreview.depthLabel.z}
+            transform={upright(rectanglePreview.depthLabel.x, rectanglePreview.depthLabel.z, rectanglePreview.depthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${rectanglePreview.depthLabel.rotate} ${rectanglePreview.depthLabel.x} ${rectanglePreview.depthLabel.z})`}
           >
             {rectanglePreview.depthLabel.text}
           </text>
@@ -1820,7 +2090,7 @@
         <circle
           cx={previewLine.x1}
           cy={previewLine.z1}
-          r="0.18"
+          r={s(0.18)}
           fill="#2563eb"
           pointer-events="none"
         />
@@ -1830,8 +2100,8 @@
           x2={previewLine.x2}
           y2={previewLine.z2}
           stroke={previewLine.allowed ? '#2563eb' : '#b91c1c'}
-          stroke-width="0.04"
-          stroke-dasharray="0.15 0.1"
+          stroke-width={s(0.04)}
+          stroke-dasharray={dash(0.15, 0.1)}
           pointer-events="none"
         />
         {#if previewLine.angle?.path}
@@ -1839,16 +2109,15 @@
             d={previewLine.angle.path}
             fill="none"
             stroke="#2563eb"
-            stroke-width="0.03"
+            stroke-width={s(0.03)}
             pointer-events="none"
           />
         {/if}
         {#if previewLine.angle}
           <text
-            x={previewLine.angle.x}
-            y={previewLine.angle.z}
+            transform={upright(previewLine.angle.x, previewLine.angle.z)}
             fill="#1d4ed8"
-            font-size="0.42"
+            font-size={s(0.42)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
@@ -1858,14 +2127,12 @@
         {/if}
         {#if previewLine.lengthLabel}
           <text
-            x={previewLine.lengthLabel.x}
-            y={previewLine.lengthLabel.z}
+            transform={upright(previewLine.lengthLabel.x, previewLine.lengthLabel.z, previewLine.lengthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${previewLine.lengthLabel.rotate} ${previewLine.lengthLabel.x} ${previewLine.lengthLabel.z})`}
           >
             {previewLine.lengthLabel.text}
           </text>
@@ -1875,23 +2142,22 @@
         <circle
           cx={corner.x}
           cy={corner.z}
-          r={hoveredCorner?.id === corner.id ? 0.28 : 0.16}
+          r={s(hoveredCorner?.id === corner.id ? 0.28 : 0.16)}
           fill={hoveredCorner?.id === corner.id ? '#2563eb' : '#18181b'}
           pointer-events="none"
         />
       {/each}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
-          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width="0.04" />
+          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
           <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="translate(-0.39 -0.39) scale(0.0325)" />
         </g>
       {/if}
       {#if rotateLabel}
         <text
-          x={rotateLabel.x}
-          y={rotateLabel.z}
+          transform={upright(rotateLabel.x, rotateLabel.z)}
           fill="#1d4ed8"
-          font-size="0.42"
+          font-size={s(0.42)}
           text-anchor="middle"
           dominant-baseline="middle"
           pointer-events="none"
@@ -1903,40 +2169,40 @@
         <circle
           cx={rectanglePreview.corners[2].x}
           cy={rectanglePreview.corners[2].z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if previewLine?.wallSnap || previewLine?.nodeSnap}
         <circle
           cx={previewLine.x2}
           cy={previewLine.z2}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if hoveredBelow}
         <circle
           cx={hoveredBelow.x}
           cy={hoveredBelow.z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if hoveredWall}
         <circle
           cx={hoveredWall.x}
           cy={hoveredWall.z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {/if}
@@ -1947,210 +2213,207 @@
           r={CORNER_SNAP_M}
           fill="none"
           stroke="#93c5fd"
-          stroke-width="0.025"
+          stroke-width={s(0.025)}
           pointer-events="none"
         />
       {/if}
     {/if}
-    <g
-      class="compass"
-      transform={`translate(${compassAt.x} ${compassAt.z})`}
-      onpointerdown={alignToCompass}
-    >
-      <title>North-south</title>
-      <circle r="1.05" fill="transparent" />
-      <line
-        x1="-0.7"
-        y1="0"
-        x2="0.7"
-        y2="0"
-        stroke={compassAligned ? '#2563eb' : '#71717a'}
-        stroke-width="0.045"
-        stroke-linecap="round"
-      />
-      <line
-        x1="0"
-        y1="-0.7"
-        x2="0"
-        y2="0.7"
-        stroke={compassAligned ? '#2563eb' : '#71717a'}
-        stroke-width={compassAligned ? '0.08' : '0.05'}
-        stroke-linecap="round"
-      />
-      <polygon
-        points="0,0.98 -0.16,0.68 0.16,0.68"
-        fill={compassAligned ? '#2563eb' : '#71717a'}
-      />
-      <text
-        x="0"
-        y="1.35"
-        fill={compassAligned ? '#2563eb' : '#71717a'}
-        font-size="0.42"
-        text-anchor="middle"
-        dominant-baseline="middle"
-      >
-        N
-      </text>
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
-      <aside class="inspector" aria-label="Stair">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Stair">
+        <h2 class="font-semibold">Stair</h2>
         <p>
           {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
             .treads} goings of {Math.round(chosenStair.layout.going * 1000)} mm, {checkFormat.format(
             chosenStair.layout.length,
           )} m long.
         </p>
-        <p class="hint">
+        <p class="text-muted-foreground">
           Laid out to SANS 10400 Part M: risers at most {Math.round(MAX_RISER_M * 1000)} mm, goings at least {Math.round(
             MIN_GOING_M * 1000,
           )} mm.
         </p>
-        <label>
-          Width
-          <input
+        <div class="grid gap-1.5">
+          <Label for="stair-width">Width (mm)</Label>
+          <Input
+            id="stair-width"
             type="number"
             min="600"
             step="50"
             value={Math.round(chosenStair.stair.width * 1000)}
             onchange={(event) => patchChosenStair({ width: Number(event.currentTarget.value) / 1000 })}
           />
-        </label>
-        <button type="button" onclick={turnChosenStair}>Turn around</button>
-        <button type="button" onclick={removeChosenStair}>Remove stair</button>
+        </div>
+        <div class="grid gap-2">
+          <Button variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
+          <Button variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
+        </div>
       </aside>
     {/if}
     {#if selectedRoom && !roofFloor}
-      <aside class="inspector" aria-label="Room">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Room">
         {#if selectedRoom.resolved}
           {@const resolved = selectedRoom.resolved}
-          <label>
-            Name
-            <input
-              type="text"
+          <div class="grid gap-1.5">
+            <Label for="room-name">Name</Label>
+            <Input
+              id="room-name"
               value={resolved.space.name}
               onchange={(event) => patchSelectedSpace({ name: event.currentTarget.value })}
             />
-          </label>
-          <label>
-            Use
-            <select
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Use</Label>
+            <Select.Root
+              type="single"
               value={resolved.space.type}
-              onchange={(event) => patchSelectedSpace({ type: event.currentTarget.value as RoomType })}
+              onValueChange={(next) => patchSelectedSpace({ type: next as RoomType })}
             >
-              {#each ROOM_TYPES as option (option.type)}
-                <option value={option.type}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            Floor finish
-            <select
+              <Select.Trigger class="w-full">{roomTypeLabel(resolved.space.type)}</Select.Trigger>
+              <Select.Content>
+                {#each ROOM_TYPES as option (option.type)}
+                  <Select.Item value={option.type}>{option.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Floor finish</Label>
+            <Select.Root
+              type="single"
               value={resolved.space.finish}
-              onchange={(event) => patchSelectedSpace({ finish: event.currentTarget.value as FloorFinish })}
+              onValueChange={(next) => patchSelectedSpace({ finish: next as FloorFinish })}
             >
-              {#each Object.entries(FINISH_LABEL) as [finish, label] (finish)}
-                <option value={finish}>{label}</option>
-              {/each}
-            </select>
-          </label>
-          <p class="area">
-            {areaFormat.format(resolved.area)} m² inside the walls{resolved.cells.length > 1
+              <Select.Trigger class="w-full">{FINISH_LABEL[resolved.space.finish]}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(FINISH_LABEL) as [finish, label] (finish)}
+                  <Select.Item value={finish}>{label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <p>
+            <span class="text-lg font-semibold">{areaFormat.format(resolved.area)} m²</span>
+            <span class="text-muted-foreground">inside the walls{resolved.cells.length > 1
               ? `, in ${resolved.cells.length} parts`
-              : ''}
+              : ''}</span>
           </p>
           {#if selectedChecks}
-            <section class="checks" aria-label="SANS 10400 checks">
-              <h3>SANS 10400</h3>
+            <section class="grid gap-2 border-t pt-3" aria-label="SANS 10400 checks">
+              <h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">SANS 10400</h3>
               {#each selectedChecks.checks as item (item.id)}
-                <p class:short={!item.ok}>
-                  <span class="mark">{item.ok ? 'Meets' : 'Short'}</span>
-                  {item.label}: {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}, needs {checkFormat.format(
-                    item.required,
-                  )}{item.unit === '%' ? '%' : ` ${item.unit}`} (Part {item.part})
-                </p>
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div>{item.label}</div>
+                    <div class="text-xs text-muted-foreground">
+                      needs {checkFormat.format(item.required)}{item.unit === '%' ? '%' : ` ${item.unit}`} · Part {item.part}
+                    </div>
+                  </div>
+                  <Badge
+                    variant={item.ok ? 'secondary' : 'outline'}
+                    class={item.ok ? '' : 'border-amber-600/40 text-amber-700'}
+                  >
+                    {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}
+                  </Badge>
+                </div>
               {/each}
             </section>
           {:else if !isHabitable(resolved.space.type)}
-            <p class="hint">Not a habitable room, so the daylight and size checks do not apply.</p>
+            <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
-          <p class="hint">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
+          <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
-          <p class="area">{areaFormat.format(selectedRoom.cell.netArea)} m² inside the walls</p>
-          <label>
-            Use
-            <select bind:value={newRoomType}>
-              {#each ROOM_TYPES as option (option.type)}
-                <option value={option.type}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
-          <button type="button" onclick={nameSelectedRoom}>Name this room</button>
+          <p>
+            <span class="text-lg font-semibold">{areaFormat.format(selectedRoom.cell.netArea)} m²</span>
+            <span class="text-muted-foreground">inside the walls</span>
+          </p>
+          <div class="grid gap-1.5">
+            <Label>Use</Label>
+            <Select.Root type="single" bind:value={newRoomType}>
+              <Select.Trigger class="w-full">{roomTypeLabel(newRoomType)}</Select.Trigger>
+              <Select.Content>
+                {#each ROOM_TYPES as option (option.type)}
+                  <Select.Item value={option.type}>{option.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <Button onclick={nameSelectedRoom}>Name this room</Button>
         {/if}
       </aside>
     {/if}
     {#if roofFloor}
-      <aside class="inspector" aria-label="Roof">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Roof">
+        <h2 class="font-semibold">Roof</h2>
         {#if roofFloor.roof}
-          <label>
-            Form
-            <select
-              value={roofFloor.roof.form ?? 'hip'}
-              onchange={(event) => setRoofForm(event.currentTarget.value as RoofForm)}
-            >
-              <option value="hip">Hip</option>
-              <option value="gable">Gable</option>
-              <option value="mono">Mono-pitch</option>
-            </select>
-          </label>
-          {#if (roofFloor.roof.form ?? 'hip') !== 'hip'}
-            <button type="button" onclick={turnRoof}>
-              {roofFloor.roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
-            </button>
+          {@const roof = roofFloor.roof}
+          <div class="grid gap-1.5">
+            <Label>Form</Label>
+            <Select.Root type="single" value={roof.form ?? 'hip'} onValueChange={(next) => setRoofForm(next as RoofForm)}>
+              <Select.Trigger class="w-full">{ROOF_FORMS[roof.form ?? 'hip']}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(ROOF_FORMS) as [form, label] (form)}
+                  <Select.Item value={form}>{label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if (roof.form ?? 'hip') !== 'hip'}
+            <Button variant="outline" onclick={turnRoof}>
+              <RotateCw />{roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
+            </Button>
           {/if}
-          <label>
-            Covering
-            <select
-              value={roofFloor.roof.covering ?? DEFAULT_COVERING}
-              onchange={(event) => setRoofCovering(event.currentTarget.value as RoofCovering)}
+          <div class="grid gap-1.5">
+            <Label>Covering</Label>
+            <Select.Root
+              type="single"
+              value={roof.covering ?? DEFAULT_COVERING}
+              onValueChange={(next) => setRoofCovering(next as RoofCovering)}
             >
-              {#each COVERINGS as option (option.id)}
-                <option value={option.id}>{option.name}</option>
-              {/each}
-            </select>
-          </label>
-          {#if roofFloor.roof.pitchDeg < coveringOf(roofFloor.roof).minPitchDeg}
-            <p class="hint short-pitch">
-              {coveringOf(roofFloor.roof).name} usually need at least {coveringOf(roofFloor.roof).minPitchDeg}°. Check the
-              manufacturer's minimum.
+              <Select.Trigger class="w-full">{coveringOf(roof).name}</Select.Trigger>
+              <Select.Content>
+                {#each COVERINGS as option (option.id)}
+                  <Select.Item value={option.id}>{option.name}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="grid gap-1.5">
+              <Label for="roof-pitch">Pitch (°)</Label>
+              <Input
+                id="roof-pitch"
+                type="number"
+                min="1"
+                max="89"
+                step="1"
+                value={roof.pitchDeg}
+                onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
+              />
+            </div>
+            <div class="grid gap-1.5">
+              <Label for="roof-eaves">Eaves (mm)</Label>
+              <Input
+                id="roof-eaves"
+                type="number"
+                min="0"
+                step="10"
+                value={Math.round(roof.eaves * 1000)}
+                onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
+              />
+            </div>
+          </div>
+          {#if roof.pitchDeg < coveringOf(roof).minPitchDeg}
+            <p class="text-amber-700">
+              {coveringOf(roof).name} usually need at least {coveringOf(roof).minPitchDeg}°. Check the manufacturer's
+              minimum.
             </p>
           {/if}
-          <label>
-            Pitch
-            <input
-              type="number"
-              min="1"
-              max="89"
-              step="1"
-              value={roofFloor.roof.pitchDeg}
-              onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
-            />
-            °
-          </label>
-          <label>
-            Eaves
-            <input
-              type="number"
-              min="0"
-              step="10"
-              value={Math.round(roofFloor.roof.eaves * 1000)}
-              onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
-            />
-            mm
-          </label>
-          <button type="button" onclick={removeRoof}>Remove roof</button>
+          <Button variant="destructive" onclick={removeRoof}>Remove roof</Button>
         {:else}
-          <button type="button" onclick={addRoof}>Add roof</button>
+          <p class="text-muted-foreground">This storey is an empty plate on the walls below.</p>
+          <Button onclick={addRoof}>Add roof</Button>
         {/if}
       </aside>
     {/if}
@@ -2167,52 +2430,6 @@
     background: #f4f4f5;
   }
 
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem 1rem;
-    padding: 0.5rem 0.75rem;
-    background: #fff;
-    border-bottom: 1px solid #e4e4e7;
-    font-family: system-ui, sans-serif;
-    font-size: 0.875rem;
-  }
-
-  .tools {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  button {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  button.active {
-    border-color: #2563eb;
-    background: #eff6ff;
-  }
-
-  select.system {
-    margin-left: 0.4rem;
-    padding: 0.3rem 0.4rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: inherit;
-  }
-
-  button:disabled {
-    cursor: default;
-    opacity: 0.45;
-  }
-
   .stage {
     display: flex;
     flex: 1;
@@ -2225,32 +2442,11 @@
     flex-direction: column;
     justify-content: flex-end;
     gap: 0.35rem;
-    width: 6.5rem;
+    width: 8.5rem;
     flex-shrink: 0;
     padding: 0.75rem 0.5rem;
-    background: #fff;
-    border-right: 1px solid #e4e4e7;
-  }
-
-  .key button {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.2rem;
-    width: 100%;
-  }
-
-  .key .action {
-    font-size: 0.75rem;
-    line-height: 1.2;
-  }
-
-  .key-roof {
-    width: 0;
-    height: 0;
-    border-left: 0.45rem solid transparent;
-    border-right: 0.45rem solid transparent;
-    border-bottom: 0.32rem solid #5e666e;
+    background: var(--background);
+    border-right: 1px solid var(--border);
   }
 
   .canvas {
@@ -2262,49 +2458,8 @@
     cursor: crosshair;
   }
 
-  .inspector {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-    width: 9.5rem;
-    padding: 0.75rem;
-    background: #fff;
-    border-left: 1px solid #e4e4e7;
-    font-family: system-ui, sans-serif;
-    font-size: 0.875rem;
-  }
-
-  .inspector label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .inspector input,
-  .inspector select {
-    width: 100%;
-    box-sizing: border-box;
-    font: inherit;
-    padding: 0.2rem 0.35rem;
-  }
-
-  .inspector p {
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .inspector .hint.short-pitch {
-    color: #b45309;
-  }
-
-  .inspector .hint {
-    color: #71717a;
-    font-size: 0.8125rem;
+  .canvas.panning {
+    cursor: grab;
   }
 
   .room-name {
@@ -2361,42 +2516,8 @@
     fill: #b45309;
   }
 
-  .checks {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid #e4e4e7;
-  }
-
-  .checks h3 {
-    margin: 0;
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #71717a;
-  }
-
-  .checks p {
-    font-size: 0.8125rem;
-  }
-
-  .checks .mark {
-    display: block;
-    font-weight: 600;
-    color: #15803d;
-  }
-
-  .checks .short .mark {
-    color: #b45309;
-  }
-
   .rotate {
     cursor: grab;
-  }
-
-  .compass {
-    cursor: pointer;
   }
 
 </style>

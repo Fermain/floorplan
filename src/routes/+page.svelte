@@ -6,14 +6,9 @@
   import { onMount } from 'svelte'
   import { Button } from '$lib/components/ui/button'
   import * as Card from '$lib/components/ui/card'
-  import * as Dialog from '$lib/components/ui/dialog'
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
-  import { Input } from '$lib/components/ui/input'
-  import { Label } from '$lib/components/ui/label'
-  import * as Select from '$lib/components/ui/select'
-  import { WALL_SYSTEMS, DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
-  import type { Document, WallSystemId } from '$lib/model/types'
-  import { fixtureDocument } from '$lib/plot/fixture'
+  import type { Document } from '$lib/model/types'
+  import { resolve } from '$app/paths'
   import { sectionHref } from '$lib/routes/links'
   import {
     deleteProject,
@@ -29,9 +24,6 @@
   let projects = $state<ProjectSummary[]>([])
   let last = $state<string | null>(null)
   let loaded = $state(false)
-  let creating = $state(false)
-  let name = $state('')
-  let system = $state<WallSystemId>(DEFAULT_WALL_SYSTEM_ID)
   let problem = $state('')
 
   async function refresh() {
@@ -47,19 +39,6 @@
   const recent = $derived(projects.find((project) => project.id === last) ?? null)
 
   const updated = new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
-
-  async function create(event: SubmitEvent) {
-    event.preventDefault()
-    const document = fixtureDocument()
-    document.building.wallSystemId = system
-    const saved = await saveProject(null, name || 'Untitled house', document)
-    if (!saved.ok) {
-      problem = saved.reason
-      return
-    }
-    creating = false
-    await goto(sectionHref(saved.project.id, 'plan'))
-  }
 
   async function duplicate(project: ProjectSummary) {
     const opened = await openProject(project.id)
@@ -105,21 +84,12 @@
           <Upload />
           Open file
         </Button>
-        <Button
-          onclick={() => {
-            name = ''
-            problem = ''
-            creating = true
-          }}
-        >
-          <Plus />
-          New project
-        </Button>
+        <Button href={`${resolve('/new')}?step=site`}><Plus />New project</Button>
         <input id="project-file" class="hidden" type="file" accept=".json,application/json" onchange={importFile} />
       </div>
     </div>
 
-    {#if problem && !creating}
+    {#if problem}
       <p class="text-sm text-destructive">{problem}</p>
     {/if}
 
@@ -174,38 +144,3 @@
     </Card.Root>
   </div>
 </div>
-
-<Dialog.Root bind:open={creating}>
-  <Dialog.Content class="sm:max-w-md">
-    <form class="grid gap-4" onsubmit={create}>
-      <Dialog.Header>
-        <Dialog.Title>New project</Dialog.Title>
-        <Dialog.Description>Starts on the sample plot. You can import your own on the Site page.</Dialog.Description>
-      </Dialog.Header>
-      <div class="grid gap-1.5">
-        <Label for="project-name">Name</Label>
-        <Input id="project-name" placeholder="Untitled house" bind:value={name} autofocus />
-      </div>
-      <div class="grid gap-1.5">
-        <Label>Walls</Label>
-        <Select.Root type="single" bind:value={system}>
-          <Select.Trigger class="w-full">
-            {WALL_SYSTEMS.find((item) => item.id === system)?.name}
-          </Select.Trigger>
-          <Select.Content>
-            {#each WALL_SYSTEMS as item (item.id)}
-              <Select.Item value={item.id}>{item.name}</Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-      {#if problem}
-        <p class="text-sm text-destructive">{problem}</p>
-      {/if}
-      <Dialog.Footer>
-        <Button type="button" variant="outline" onclick={() => (creating = false)}>Cancel</Button>
-        <Button type="submit">Create</Button>
-      </Dialog.Footer>
-    </form>
-  </Dialog.Content>
-</Dialog.Root>
