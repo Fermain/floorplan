@@ -33,12 +33,20 @@ export function deckThickness(): number {
   return Math.min(FLOOR_TO_FLOOR - WALL_HEAD, MAX_DECK_THICKNESS_M)
 }
 
-export function deckPolygons(floor: Floor): DeckPolygon[] {
+export function deckPolygons(floor: Floor, voids: Ring[] = []): DeckPolygon[] {
   const pieces = floor.walls.length > 0 ? wallPieces(floor) : []
   for (const ring of floor.outline ?? []) {
     if (ring.length >= 3) pieces.push(offsetOutward(ring, -CAVITY_FACE_M))
   }
-  return unionRings(pieces.filter((ring) => ring.length >= 3))
+  const polygons = unionRings(pieces.filter((ring) => ring.length >= 3))
+  if (voids.length === 0) return polygons
+  return polygons.map((polygon) => ({
+    ...polygon,
+    holes: [
+      ...polygon.holes,
+      ...voids.filter((ring) => ring.every((point) => pointInRing(polygon.outer, point.x, point.z))),
+    ],
+  }))
 }
 
 function wallPieces(floor: Floor): Ring[] {

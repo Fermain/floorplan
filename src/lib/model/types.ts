@@ -70,6 +70,15 @@ export type Space = {
   seeds: { x: number; z: number }[]
 }
 
+export type Stair = {
+  id: string
+  x: number
+  z: number
+  dx: number
+  dz: number
+  width: number
+}
+
 export type Floor = {
   id: string
   index: number
@@ -79,6 +88,7 @@ export type Floor = {
   walls: Wall[]
   roomFinishes: Record<string, string>
   spaces?: Space[]
+  stairs?: Stair[]
   outline?: { x: number; z: number }[][]
   roof?: Roof
 }

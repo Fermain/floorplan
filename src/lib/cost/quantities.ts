@@ -7,6 +7,7 @@ import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
 import type { Document, Floor, FloorFinish, OpeningKind } from '../model/types'
 import { layoutSpaces } from '../geometry/spaces'
+import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { assumptionsOf, rateOf } from './rates'
 
 export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof'
@@ -242,7 +243,7 @@ export function takeoff(doc: Document): QuantityLine[] {
   let slabArea = 0
   for (const floor of doc.building.floors) {
     if (floor.index === 0 || floor.roof) continue
-    slabArea += deckPolygons(floor).reduce((sum, polygon) => sum + polygonArea(polygon), 0)
+    slabArea += deckPolygons(floor, stairVoids(doc, floor)).reduce((sum, polygon) => sum + polygonArea(polygon), 0)
   }
   if (slabArea > 0) {
     const thickness = deckThickness()
@@ -253,6 +254,26 @@ export function takeoff(doc: Document): QuantityLine[] {
       note: `${round(slabArea, 1)} m² at ${mm(thickness)} mm`,
       unit: 'm³',
       quantity: round(slabArea * thickness * waste, 2),
+      rateKey: 'concrete-m3',
+    })
+  }
+
+  let stairVolume = 0
+  let stairCount = 0
+  for (const floor of doc.building.floors) {
+    for (const stair of floor.stairs ?? []) {
+      stairVolume += stairConcreteM3(stair, floor.index)
+      stairCount += 1
+    }
+  }
+  if (stairCount > 0) {
+    drafts.push({
+      id: 'stairs',
+      group: 'Concrete',
+      label: 'Stairs',
+      note: `${stairCount} straight ${stairCount === 1 ? 'flight' : 'flights'}, waisted slab`,
+      unit: 'm³',
+      quantity: round(stairVolume * waste, 2),
       rateKey: 'concrete-m3',
     })
   }

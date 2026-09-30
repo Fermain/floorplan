@@ -18,6 +18,9 @@
   import { FINISH_LABEL } from '../../lib/cost/quantities'
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
+  import { MAX_RISER_M, MIN_GOING_M, stairLayout, stairVoids } from '../../lib/geometry/stairs'
+  import type { Stair } from '../../lib/model/types'
+  import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
     storeyFootprint,
@@ -62,7 +65,7 @@
   import { roofableFloor, storeyAddTarget } from './storey'
   import { plotBounds, pointsAttr, ringPath } from './svg'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -115,6 +118,8 @@
   let selectedPlateRing = $state<number | null>(null)
   let selectedCell = $state<{ floorId: string; x: number; z: number } | null>(null)
   let newRoomType = $state<RoomType>('bedroom')
+  let pendingStair = $state<{ floorId: string; x: number; z: number } | null>(null)
+  let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
   let activeStoreyIndex = $state(0)
 
@@ -433,6 +438,11 @@
   }
 
   function cancelDraw() {
+    if (pendingStair) {
+      pendingStair = null
+      errorMessage = null
+      return
+    }
     if (!pendingDraw) return
     pendingDraw = null
     chainOriginId = null
@@ -470,8 +480,10 @@
     plateFloorId?: string | null
     plateRing?: number | null
     cell?: { floorId: string; x: number; z: number } | null
+    stair?: { floorId: string; id: string } | null
   }) {
     selectedCell = next.cell ?? null
+    selectedStair = next.stair ?? null
     selectedWallId = next.wallId ?? null
     selectedEdge = next.edge ?? null
     selectedOutline = next.outline ?? null
@@ -510,6 +522,11 @@
       }
     }
 
+    if (tool === 'draw-stair') {
+      placeStairPoint(plan)
+      return
+    }
+
     if (tool === 'select') {
       if (beginNodeDrag(activeFloor, plan, event)) return
       const id = pickWall(activeFloor, plan.x, plan.z)
@@ -519,6 +536,11 @@
         return
       }
       if (pickOutline(plan.x, plan.z)) return
+      const stair = stairAt(plan.x, plan.z)
+      if (stair) {
+        chooseSelection({ stair })
+        return
+      }
       const room = roomAtPoint(activeFloor, plan.x, plan.z)
       if (room) {
         const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
@@ -781,6 +803,7 @@
 
   function setTool(next: Tool) {
     tool = next
+    pendingStair = null
     pendingDraw = null
     chainOriginId = null
     moveDrag = null
@@ -1131,7 +1154,98 @@
     moveDrag?.traces.length ? moveDrag.traces : (rectanglePreview?.traces ?? previewLine?.traces ?? []),
   )
 
+  const levelStairs = $derived(
+    levelFloors.flatMap((floor) =>
+      (floor.stairs ?? []).map((stair) => ({ floorId: floor.id, stair, layout: stairLayout(stair, floor.index) })),
+    ),
+  )
+  const levelVoids = $derived(levelFloors.flatMap((floor) => stairVoids(document, floor)))
+
+  const chosenStair = $derived.by(() => {
+    const pick = selectedStair
+    if (!pick) return null
+    return levelStairs.find((item) => item.stair.id === pick.id) ?? null
+  })
+
+  function stairAt(x: number, z: number): { floorId: string; id: string } | null {
+    const hit = levelStairs.find((item) => pointInRing(item.layout.footprint, x, z))
+    return hit ? { floorId: hit.floorId, id: hit.stair.id } : null
+  }
+
+  function stairDirection(floor: Floor, from: { x: number; z: number }, to: { x: number; z: number }) {
+    const grid = highlightedDirection(floor)
+    const length = grid ? Math.hypot(grid.dx, grid.dz) : 0
+    const u = grid && length > 1e-9 ? { x: grid.dx / length, z: grid.dz / length } : { x: 1, z: 0 }
+    const candidates = [u, { x: -u.x, z: -u.z }, { x: -u.z, z: u.x }, { x: u.z, z: -u.x }]
+    const dx = to.x - from.x
+    const dz = to.z - from.z
+    return candidates.reduce((best, item) => (item.x * dx + item.z * dz > best.x * dx + best.z * dz ? item : best))
+  }
+
+  const stairPreview = $derived.by(() => {
+    const pending = pendingStair
+    const pointer = pointerPlan
+    if (tool !== 'draw-stair' || !pending || !pointer || !activeFloor) return null
+    if (Math.hypot(pointer.x - pending.x, pointer.z - pending.z) < 0.2) return null
+    const floor = floors.find((item) => item.id === pending.floorId)
+    if (!floor) return null
+    const dir = stairDirection(activeFloor, pending, pointer)
+    const stair: Stair = { id: 'preview', x: pending.x, z: pending.z, dx: dir.x, dz: dir.z, width: 0.9 }
+    return { stair, layout: stairLayout(stair, floor.index) }
+  })
+
+  function placeStairPoint(plan: { x: number; z: number }) {
+    if (!activeFloor) return
+    const pending = pendingStair
+    if (!pending) {
+      const floorId = floorIdForPoint(plan.x, plan.z)
+      if (!floorId) {
+        errorMessage = 'Click inside a room to start the stair.'
+        return
+      }
+      pendingStair = { floorId, x: plan.x, z: plan.z }
+      errorMessage = null
+      return
+    }
+    const preview = stairPreview
+    if (!preview) return
+    const result = documentStore.addStair(pending.floorId, pending.x, pending.z, preview.stair.dx, preview.stair.dz)
+    if (!applyResult(result)) return
+    pendingStair = null
+    const placed = result.document.building.floors.find((floor) => floor.id === pending.floorId)?.stairs?.at(-1)
+    setTool('select')
+    if (placed) chooseSelection({ stair: { floorId: pending.floorId, id: placed.id } })
+  }
+
+  function patchChosenStair(patch: Partial<Pick<Stair, 'width' | 'x' | 'z' | 'dx' | 'dz'>>) {
+    const chosen = chosenStair
+    if (!chosen) return
+    applyResult(documentStore.updateStair(chosen.floorId, chosen.stair.id, patch))
+  }
+
+  function turnChosenStair() {
+    const chosen = chosenStair
+    if (!chosen) return
+    const { stair, layout } = chosen
+    patchChosenStair({
+      x: stair.x + stair.dx * layout.length,
+      z: stair.z + stair.dz * layout.length,
+      dx: -stair.dx,
+      dz: -stair.dz,
+    })
+  }
+
+  function removeChosenStair() {
+    const chosen = chosenStair
+    if (!chosen) return
+    if (applyResult(documentStore.removeStair(chosen.floorId, chosen.stair.id))) chooseSelection({})
+  }
+
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-stair') {
+      if (!pendingStair) return 'Click where the bottom step starts. A stair needs a storey above it.'
+      return 'Click the direction the stair climbs.'
+    }
     if (tool === 'select') {
       if (rotateDrag) {
         const deg = turnLabel(rotateDrag.angle)
@@ -1217,6 +1331,7 @@
       <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
         Logical
       </button>
+      <button type="button" class:active={tool === 'draw-stair'} onclick={() => setTool('draw-stair')}>Stair</button>
       <select
         class="system"
         aria-label="Wall system for new walls"
@@ -1459,6 +1574,44 @@
       {#each wallPolygons as poly, i (i)}
         <polygon points={pointsAttr(poly)} fill="#333" stroke="none" />
       {/each}
+      <g class="stairs" pointer-events="none">
+        {#each levelVoids as ring, i (i)}
+          <polygon points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))} class="stair-void" />
+        {/each}
+        {#each levelStairs as item (item.stair.id)}
+          {@const top = {
+            x: item.stair.x + item.stair.dx * item.layout.length,
+            z: item.stair.z + item.stair.dz * item.layout.length,
+          }}
+          <polygon
+            points={pointsAttr(item.layout.footprint.map((p) => [p.x, p.z] as SvgPoint))}
+            class="stair-flight"
+            class:chosen={selectedStair?.id === item.stair.id}
+          />
+          {#each item.layout.nosings as line, i (i)}
+            <line x1={line.a.x} y1={line.a.z} x2={line.b.x} y2={line.b.z} class="stair-nosing" />
+          {/each}
+          <line x1={item.stair.x} y1={item.stair.z} x2={top.x} y2={top.z} class="stair-arrow" />
+          <polygon
+            points={pointsAttr([
+              [top.x, top.z],
+              [top.x - item.stair.dx * 0.3 - item.stair.dz * 0.14, top.z - item.stair.dz * 0.3 + item.stair.dx * 0.14],
+              [top.x - item.stair.dx * 0.3 + item.stair.dz * 0.14, top.z - item.stair.dz * 0.3 - item.stair.dx * 0.14],
+            ])}
+            class="stair-foot"
+          />
+          <circle cx={item.stair.x} cy={item.stair.z} r="0.08" class="stair-foot" />
+        {/each}
+        {#if stairPreview}
+          <polygon
+            points={pointsAttr(stairPreview.layout.footprint.map((p) => [p.x, p.z] as SvgPoint))}
+            class="stair-flight preview"
+          />
+          {#each stairPreview.layout.nosings as line, i (i)}
+            <line x1={line.a.x} y1={line.a.z} x2={line.b.x} y2={line.b.z} class="stair-nosing" />
+          {/each}
+        {/if}
+      </g>
       <g class="room-labels" pointer-events="none">
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
@@ -1782,6 +1935,33 @@
       </text>
     </g>
   </svg>
+    {#if chosenStair && !roofFloor}
+      <aside class="inspector" aria-label="Stair">
+        <p>
+          {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
+            .treads} goings of {Math.round(chosenStair.layout.going * 1000)} mm, {checkFormat.format(
+            chosenStair.layout.length,
+          )} m long.
+        </p>
+        <p class="hint">
+          Laid out to SANS 10400 Part M: risers at most {Math.round(MAX_RISER_M * 1000)} mm, goings at least {Math.round(
+            MIN_GOING_M * 1000,
+          )} mm.
+        </p>
+        <label>
+          Width
+          <input
+            type="number"
+            min="600"
+            step="50"
+            value={Math.round(chosenStair.stair.width * 1000)}
+            onchange={(event) => patchChosenStair({ width: Number(event.currentTarget.value) / 1000 })}
+          />
+        </label>
+        <button type="button" onclick={turnChosenStair}>Turn around</button>
+        <button type="button" onclick={removeChosenStair}>Remove stair</button>
+      </aside>
+    {/if}
     {#if selectedRoom && !roofFloor}
       <aside class="inspector" aria-label="Room">
         {#if selectedRoom.resolved}
@@ -2041,6 +2221,44 @@
   .room-area {
     fill: #52525b;
     font-family: system-ui, sans-serif;
+  }
+
+  .stair-flight {
+    fill: #fafaf9;
+    stroke: #52525b;
+    stroke-width: 0.03;
+  }
+
+  .stair-flight.chosen {
+    fill: #eff6ff;
+    stroke: #2563eb;
+  }
+
+  .stair-flight.preview {
+    fill: rgba(37, 99, 235, 0.08);
+    stroke: #2563eb;
+    stroke-dasharray: 0.15 0.1;
+  }
+
+  .stair-nosing {
+    stroke: #71717a;
+    stroke-width: 0.015;
+  }
+
+  .stair-arrow {
+    stroke: #27272a;
+    stroke-width: 0.025;
+  }
+
+  .stair-foot {
+    fill: #27272a;
+  }
+
+  .stair-void {
+    fill: rgba(255, 255, 255, 0.6);
+    stroke: #71717a;
+    stroke-width: 0.025;
+    stroke-dasharray: 0.2 0.12;
   }
 
   .room-name.short,

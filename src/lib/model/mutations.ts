@@ -13,6 +13,7 @@ import {
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
+import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -32,6 +33,7 @@ import type {
   Roof,
   RoomType,
   Space,
+  Stair,
   Wall,
   WallSkin,
   WallSystemId,
@@ -282,6 +284,49 @@ export function updateSpace(
   const next = patch.name === undefined ? patch : { ...patch, name: patch.name.trim() }
   const spaces = (floor.spaces ?? []).map((space) => (space.id === spaceId ? { ...space, ...next } : space))
   return ok(replaceFloor(document, { ...floor, spaces }))
+}
+
+export function addStair(
+  document: Document,
+  floorId: string,
+  x: number,
+  z: number,
+  dx: number,
+  dz: number,
+  width = DEFAULT_STAIR_WIDTH_M,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const length = Math.hypot(dx, dz)
+  if (length < EPS) return fail(document, 'stair needs a direction')
+  const stair: Stair = { id: newId('stair'), x, z, dx: dx / length, dz: dz / length, width }
+  const problem = stairFitProblem(document, floor, stair)
+  if (problem) return fail(document, problem)
+  return ok(replaceFloor(document, { ...floor, stairs: [...(floor.stairs ?? []), stair] }))
+}
+
+export function updateStair(
+  document: Document,
+  floorId: string,
+  stairId: string,
+  patch: Partial<Pick<Stair, 'width' | 'x' | 'z' | 'dx' | 'dz'>>,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const existing = floor.stairs?.find((stair) => stair.id === stairId)
+  if (!existing) return fail(document, 'stair not found')
+  const stair = { ...existing, ...patch }
+  const problem = stairFitProblem(document, floor, stair)
+  if (problem) return fail(document, problem)
+  const stairs = (floor.stairs ?? []).map((item) => (item.id === stairId ? stair : item))
+  return ok(replaceFloor(document, { ...floor, stairs }))
+}
+
+export function removeStair(document: Document, floorId: string, stairId: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  if (!floor.stairs?.some((stair) => stair.id === stairId)) return fail(document, 'stair not found')
+  return ok(replaceFloor(document, { ...floor, stairs: floor.stairs.filter((stair) => stair.id !== stairId) }))
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {

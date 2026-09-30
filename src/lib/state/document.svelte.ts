@@ -88,5 +88,8 @@ export const documentStore = {
   joinCell: bind(mutations.joinCell),
   leaveCell: bind(mutations.leaveCell),
   updateSpace: bind(mutations.updateSpace),
+  addStair: bind(mutations.addStair),
+  updateStair: bind(mutations.updateStair),
+  removeStair: bind(mutations.removeStair),
   setAssumption: bind(mutations.setAssumption),
 }

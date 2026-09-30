@@ -31,6 +31,8 @@
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { buildRoofGeometry, masonryReach, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { stairVoids } from '../../lib/geometry/stairs'
+  import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -61,6 +63,7 @@
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = { key: string; geometry: BufferGeometry; y: number }
+  type StairMesh = { key: string; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
 
@@ -71,6 +74,7 @@
   let wallMeshes = $state<WallMeshes[]>([])
   let floorSlabs = $state<FloorSlab[]>([])
   let roofMeshes = $state<RoofMesh[]>([])
+  let stairMeshes = $state<StairMesh[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -176,12 +180,14 @@
     }
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     const roofs = roofsFor(pad)
+    const stairs = stairsFor(pad)
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
     floorSlabs = slabs
     roofMeshes = roofs
+    stairMeshes = stairs
     return () => {
       ground.dispose()
       minor?.dispose()
@@ -196,6 +202,7 @@
       }
       for (const slab of slabs) slab.geometry.dispose()
       for (const roof of roofs) roof.geometry.dispose()
+      for (const stair of stairs) stair.geometry.dispose()
     }
   })
 
@@ -228,6 +235,22 @@
         geometry,
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
+    }
+    return meshes
+  }
+
+  function stairsFor(pad: ReturnType<typeof groundPad>): StairMesh[] {
+    const meshes: StairMesh[] = []
+    for (const floor of doc.building.floors) {
+      for (const stair of floor.stairs ?? []) {
+        const geometry = buildStairGeometry(stair, floor.index)
+        if (!geometry) continue
+        meshes.push({
+          key: stair.id,
+          geometry,
+          y: floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)),
+        })
+      }
     }
     return meshes
   }
@@ -284,7 +307,7 @@
     const decks: FloorSlab[] = []
     for (const floor of floors) {
       if (floor.index === 0 || floor.roof) continue
-      const polygons = deckPolygons(floor)
+      const polygons = deckPolygons(floor, stairVoids(doc, floor))
       const grade = deckGrade(floor, pad, polygons)
       polygons.forEach((polygon, index) => {
         if (polygon.outer.length < 3) return
@@ -431,6 +454,12 @@
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}
         />
+      </T.Mesh>
+    {/each}
+
+    {#each stairMeshes as stair (stair.key)}
+      <T.Mesh geometry={stair.geometry} position.y={stair.y} castShadow receiveShadow>
+        <T.MeshStandardMaterial color="#b8b2a7" roughness={0.9} />
       </T.Mesh>
     {/each}
 
