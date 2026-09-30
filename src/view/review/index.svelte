@@ -4,6 +4,7 @@
   import { summerSolstice, winterSolstice } from '../../lib/solar/sun'
 
   const YEAR = 2026
+  const SAST_OFFSET_HOURS = 2
   const UTC_MONTHS = [
     'January',
     'February',
@@ -48,7 +49,7 @@
         base.getUTCFullYear(),
         base.getUTCMonth(),
         base.getUTCDate(),
-        hourOfDay,
+        hourOfDay - SAST_OFFSET_HOURS,
         minute,
         0,
       ),
@@ -68,7 +69,7 @@
   const activeLabel = $derived(solsticeKind === 'summer' ? summerLabel : winterLabel)
 
   $effect(() => {
-    onStatus?.({ text: `${activeLabel}, hour ${hour} UTC`, error: false })
+    onStatus?.({ text: `${activeLabel}, ${String(hour).padStart(2, '0')}:00 SAST`, error: false })
     return () => onStatus?.({ text: '', error: false })
   })
 </script>
@@ -76,7 +77,7 @@
 <div class="root">
   <div class="bar">
     <label class="scrub">
-      Hour (UTC)
+      Hour (SAST)
       <input type="range" min="0" max="24" step="1" bind:value={hour} />
       <span class="hour">{hour}</span>
     </label>
