@@ -1,6 +1,6 @@
 import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../geometry/deck'
 import { groundPad, SURFACE_BED_THICKNESS_M } from '../geometry/pad'
-import { masonryReach, roofFacesForFloor, type RoofVertex } from '../geometry/roof'
+import { masonryReach, roofFacesForFloor, roofInfills, type RoofVertex } from '../geometry/roof'
 import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
@@ -8,6 +8,7 @@ import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } f
 import type { Document, Floor, FloorFinish, OpeningKind } from '../model/types'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
+import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 
 export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof'
@@ -95,10 +96,10 @@ function faceArea(face: RoofVertex[]): number {
 }
 
 function floorBelow(doc: Document, floor: Floor): Floor | undefined {
-  return doc.building.floors.find((item) => item.unitId === floor.unitId && item.index === floor.index - 1)
+  return supportingFloor(doc, floor)
 }
 
-type MasonryTally = { whole: number; cut: number }
+type MasonryTally = { whole: number; cut: number; gable: number }
 
 export function takeoff(doc: Document): QuantityLine[] {
   const assumptions = assumptionsOf(doc.costing)
@@ -116,7 +117,7 @@ export function takeoff(doc: Document): QuantityLine[] {
       if (wall.skin === 'logical') continue
       const system = systemOf(wall)
       const schedule = scheduleWall(floor, wall)
-      const tally = masonry.get(system.unitKey) ?? { whole: 0, cut: 0 }
+      const tally = masonry.get(system.unitKey) ?? { whole: 0, cut: 0, gable: 0 }
       tally.whole += schedule.wholeBricks
       tally.cut += schedule.cutBricks
       masonry.set(system.unitKey, tally)
@@ -144,16 +145,32 @@ export function takeoff(doc: Document): QuantityLine[] {
     }
   }
 
+  for (const floor of doc.building.floors) {
+    if (!floor.roof || floor.index === 0) continue
+    const below = floorBelow(doc, floor)
+    if (!below) continue
+    const reach = masonryReach(below.walls)
+    for (const infill of roofInfills(below, floor, floor.roof, reach)) {
+      const system = systemOf(infill.wall)
+      const perLeaf = infill.area / (system.moduleLength * system.courseHeight)
+      const tally = masonry.get(system.unitKey) ?? { whole: 0, cut: 0, gable: 0 }
+      tally.gable += Math.ceil(perLeaf * system.leaves)
+      masonry.set(system.unitKey, tally)
+      mortarM3 += infill.area * system.leaves * system.leafThickness * mortarFraction(system)
+    }
+  }
+
   for (const system of WALL_SYSTEMS) {
     const tally = masonry.get(system.unitKey)
     if (!tally) continue
     masonry.delete(system.unitKey)
-    const total = tally.whole + tally.cut
+    const total = tally.whole + tally.cut + tally.gable
+    const gables = tally.gable > 0 ? `, ${tally.gable} in gables` : ''
     drafts.push({
       id: `unit:${system.unitKey}`,
       group: 'Masonry',
       label: system.unitName,
-      note: `${tally.whole} whole, ${tally.cut} cut, ${assumptions.wastePct}% waste`,
+      note: `${tally.whole} whole, ${tally.cut} cut${gables}, ${assumptions.wastePct}% waste`,
       unit: 'each',
       quantity: Math.ceil(total * waste),
       rateKey: `unit:${system.unitKey}`,

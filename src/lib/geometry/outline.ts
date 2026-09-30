@@ -97,7 +97,7 @@ function lineIntersection(
   return { x: origin.x + directionA.x * t, z: origin.z + directionA.z * t }
 }
 
-function clean(ring: Ring): Ring {
+export function clean(ring: Ring): Ring {
   const points: Ring = []
   for (const point of ring) {
     const previous = points[points.length - 1]

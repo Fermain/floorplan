@@ -65,6 +65,19 @@ export function storeyFootprint(document: Document, floor: Floor): Ring[] | null
   return structureRings(below)
 }
 
+export function supportingFloor(document: Document, floor: Floor): Floor | undefined {
+  if (floor.index === 0 || !floor.unitId) return undefined
+  if (floor.index === 1) {
+    const ground = document.building.floors.find((item) => item.index === 0)
+    if (!ground) return undefined
+    const corners = ground.corners.filter((corner) => corner.unitId === floor.unitId)
+    const ids = new Set(corners.map((corner) => corner.id))
+    const walls = ground.walls.filter((wall) => ids.has(wall.startCornerId) && ids.has(wall.endCornerId))
+    return { ...ground, corners, walls }
+  }
+  return document.building.floors.find((item) => item.unitId === floor.unitId && item.index === floor.index - 1)
+}
+
 export function storeyUnderlay(document: Document, activeIndex: number): Ring[] {
   if (activeIndex <= 0) return []
   const ground = document.building.floors.find((floor) => floor.index === 0)

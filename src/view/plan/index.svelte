@@ -27,8 +27,9 @@
     storeyUnderlay,
     MAX_STOREYS,
     topStoreyIndex,
+    supportingFloor,
   } from '../../lib/model/stories'
-  import type { Floor, FloorFinish, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
+  import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { DEFAULT_ROOF_EAVES, DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
@@ -70,6 +71,7 @@
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
   const PLOT_MARGIN_M = 2.4
+  const MONO_ROOF_PITCH_DEG = 10
 
   type PendingDraw = {
     startCornerId?: string
@@ -154,7 +156,7 @@
   const roofDrawings = $derived(
     levelFloors.flatMap((floor) => {
       if (!floor.roof) return []
-      const below = floors.find((item) => item.unitId === floor.unitId && item.index === floor.index - 1)
+      const below = supportingFloor(document, floor)
       return [
         {
           floorId: floor.id,
@@ -850,6 +852,22 @@
     const floor = roofFloor
     if (!floor || floor.roof) return
     applyResult(documentStore.setRoof(floor.id, { pitchDeg: DEFAULT_ROOF_PITCH_DEG, eaves: DEFAULT_ROOF_EAVES }))
+  }
+
+  function setRoofForm(form: RoofForm) {
+    const floor = roofFloor
+    if (!floor?.roof) return
+    const current = floor.roof
+    const pitchDeg =
+      form === 'mono' ? MONO_ROOF_PITCH_DEG : (current.form ?? 'hip') === 'mono' ? DEFAULT_ROOF_PITCH_DEG : current.pitchDeg
+    applyResult(documentStore.setRoof(floor.id, { ...current, form, turns: 0, pitchDeg }))
+  }
+
+  function turnRoof() {
+    const floor = roofFloor
+    if (!floor?.roof) return
+    const limit = floor.roof.form === 'gable' ? 2 : 4
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, turns: ((floor.roof.turns ?? 0) + 1) % limit }))
   }
 
   function setRoofPitch(value: number) {
@@ -2034,6 +2052,22 @@
     {#if roofFloor}
       <aside class="inspector" aria-label="Roof">
         {#if roofFloor.roof}
+          <label>
+            Form
+            <select
+              value={roofFloor.roof.form ?? 'hip'}
+              onchange={(event) => setRoofForm(event.currentTarget.value as RoofForm)}
+            >
+              <option value="hip">Hip</option>
+              <option value="gable">Gable</option>
+              <option value="mono">Mono-pitch</option>
+            </select>
+          </label>
+          {#if (roofFloor.roof.form ?? 'hip') !== 'hip'}
+            <button type="button" onclick={turnRoof}>
+              {roofFloor.roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
+            </button>
+          {/if}
           <label>
             Pitch
             <input

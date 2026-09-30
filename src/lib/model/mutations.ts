@@ -643,6 +643,8 @@ export function setRoof(document: Document, floorId: string, roof: Roof | null):
   if (!(floor.outline ?? []).some((ring) => ring.length >= 3)) return fail(document, 'storey has no plate')
   if (!(roof.pitchDeg > 0 && roof.pitchDeg < 90)) return fail(document, 'pitch out of range')
   if (!(roof.eaves >= 0)) return fail(document, 'eaves out of range')
+  if (roof.form !== undefined && !['hip', 'gable', 'mono'].includes(roof.form)) return fail(document, 'unknown roof form')
+  if (roof.turns !== undefined && !Number.isInteger(roof.turns)) return fail(document, 'roof turns must be whole')
   return ok(replaceFloor(document, { ...floor, roof }))
 }
 

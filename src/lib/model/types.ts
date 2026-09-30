@@ -93,9 +93,13 @@ export type Floor = {
   roof?: Roof
 }
 
+export type RoofForm = 'hip' | 'gable' | 'mono'
+
 export type Roof = {
   pitchDeg: number
   eaves: number
+  form?: RoofForm
+  turns?: number
 }
 
 export type Building = {

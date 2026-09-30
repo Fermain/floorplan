@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addOpening, addWallRing, nameCell, setAssumption, setRate, updateSpace } from '../model/mutations'
+import { addOpening, addStorey, addWallRing, nameCell, setAssumption, setRate, setRoof, updateSpace } from '../model/mutations'
 import type { Document, WallSystemId } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
 import { scheduleWall } from '../geometry/schedule'
@@ -110,6 +110,23 @@ describe('takeoff', () => {
     const tiles = line(doc, 'finish:tiles')!
     expect(tiles.quantity).toBeCloseTo(Math.round((4 - 0.262) ** 2 * 1.05 * 10) / 10, 6)
     expect(line(doc, 'finish:screed')).toBeUndefined()
+  })
+
+  it('adds the bricks in the gable ends of a roof over the first storey', () => {
+    let doc = room()
+    const ground = doc.building.floors[0]
+    doc = addStorey(doc, ground.id, ground.corners[0].id).document
+    const upper = doc.building.floors.find((floor) => floor.index === 1)!
+    const before = line(doc, 'unit:clay-brick')!.quantity
+    const hip = setRoof(doc, upper.id, { pitchDeg: 30, eaves: 0.3 })
+    expect(hip.ok).toBe(true)
+    expect(line(hip.document, 'unit:clay-brick')!.quantity).toBe(before)
+    const gable = setRoof(doc, upper.id, { pitchDeg: 30, eaves: 0.3, form: 'gable' })
+    expect(gable.ok).toBe(true)
+    const bricks = line(gable.document, 'unit:clay-brick')!
+    expect(bricks.quantity).toBeGreaterThan(before)
+    expect(bricks.note).toMatch(/in gables/)
+    expect(line(gable.document, 'roof-covering')!.quantity).toBeGreaterThan(16)
   })
 
   it('refuses a negative rate', () => {

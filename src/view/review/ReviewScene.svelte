@@ -30,8 +30,9 @@
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { buildRoofGeometry, masonryReach, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { buildInfillGeometry, buildRoofGeometry, masonryReach, roofInfills, WALL_HEAD_M } from '../../lib/geometry/roof'
   import { stairVoids } from '../../lib/geometry/stairs'
+  import { supportingFloor } from '../../lib/model/stories'
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
@@ -62,7 +63,7 @@
     panels: OpeningPanelMesh[]
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
-  type RoofMesh = { key: string; geometry: BufferGeometry; y: number }
+  type RoofMesh = { key: string; geometry: BufferGeometry; infill: BufferGeometry | null; y: number }
   type StairMesh = { key: string; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
@@ -201,7 +202,10 @@
         for (const panel of wall.panels) panel.geometry.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
-      for (const roof of roofs) roof.geometry.dispose()
+      for (const roof of roofs) {
+        roof.geometry.dispose()
+        roof.infill?.dispose()
+      }
       for (const stair of stairs) stair.geometry.dispose()
     }
   })
@@ -223,16 +227,17 @@
     for (const floor of doc.building.floors) {
       const roof = floor.roof
       if (!roof || floor.index === 0) continue
-      const below = doc.building.floors.find(
-        (item) => item.unitId === floor.unitId && item.index === floor.index - 1,
-      )
-      const geometry = buildRoofGeometry(floor, roof, masonryReach(below?.walls ?? []))
+      const below = supportingFloor(doc, floor)
+      const reach = masonryReach(below?.walls ?? [])
+      const geometry = buildRoofGeometry(floor, roof, reach)
       if (!geometry) continue
+      const infill = below ? buildInfillGeometry(roofInfills(below, floor, roof, reach)) : null
       const grade = below ? supportGrade(below, pad) : outlineGrade(floor, pad)
       const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
       meshes.push({
         key: floor.id,
         geometry,
+        infill,
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }
@@ -467,6 +472,11 @@
       <T.Mesh geometry={roof.geometry} position.y={roof.y} castShadow>
         <T.MeshStandardMaterial color="#5e666e" roughness={0.84} side={DoubleSide} />
       </T.Mesh>
+      {#if roof.infill}
+        <T.Mesh geometry={roof.infill} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color="#9a8b79" roughness={0.9} side={DoubleSide} />
+        </T.Mesh>
+      {/if}
     {/each}
 
     {#each wallMeshes as wall (wall.key)}
