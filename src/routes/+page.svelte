@@ -105,16 +105,22 @@
           <Upload />
           Open file
         </Button>
-        <Button
-          onclick={() => {
-            name = ''
-            problem = ''
-            creating = true
+        <Dialog.Root
+          bind:open={creating}
+          onOpenChange={(open) => {
+            if (open) {
+              name = ''
+              problem = ''
+            }
           }}
         >
-          <Plus />
-          New project
-        </Button>
+          <Dialog.Trigger>
+            {#snippet child({ props })}
+              <Button {...props}><Plus />New project</Button>
+            {/snippet}
+          </Dialog.Trigger>
+          {@render newProject()}
+        </Dialog.Root>
         <input id="project-file" class="hidden" type="file" accept=".json,application/json" onchange={importFile} />
       </div>
     </div>
@@ -175,7 +181,7 @@
   </div>
 </div>
 
-<Dialog.Root bind:open={creating}>
+{#snippet newProject()}
   <Dialog.Content class="sm:max-w-md">
     <form class="grid gap-4" onsubmit={create}>
       <Dialog.Header>
@@ -208,4 +214,4 @@
       </Dialog.Footer>
     </form>
   </Dialog.Content>
-</Dialog.Root>
+{/snippet}

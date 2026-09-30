@@ -1,5 +1,21 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import BrickWall from '@lucide/svelte/icons/brick-wall'
+  import Footprints from '@lucide/svelte/icons/footprints'
+  import Layers from '@lucide/svelte/icons/layers'
+  import Minus from '@lucide/svelte/icons/minus'
+  import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
+  import Plus from '@lucide/svelte/icons/plus'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
+  import SquareDashed from '@lucide/svelte/icons/square-dashed'
+  import Triangle from '@lucide/svelte/icons/triangle'
+  import { Badge } from '$lib/components/ui/badge'
+  import { Button } from '$lib/components/ui/button'
+  import { Input } from '$lib/components/ui/input'
+  import { Label } from '$lib/components/ui/label'
+  import * as Select from '$lib/components/ui/select'
+  import { Separator } from '$lib/components/ui/separator'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { SvelteSet } from 'svelte/reactivity'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
@@ -75,6 +91,7 @@
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
   const PLOT_MARGIN_M = 2.4
+  const ROOF_FORMS: Record<RoofForm, string> = { hip: 'Hip', gable: 'Gable', mono: 'Mono-pitch' }
   const MONO_ROOF_PITCH_DEG = 10
 
   type PendingDraw = {
@@ -1382,31 +1399,52 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="bar">
-    <div class="tools">
-      <button type="button" class:active={tool === 'select'} onclick={() => setTool('select')}>Select</button>
-      <button type="button" class:active={tool === 'draw-double'} onclick={() => setTool('draw-double')}>Wall</button>
-      <button type="button" class:active={tool === 'draw-logical'} onclick={() => setTool('draw-logical')}>
-        Logical
-      </button>
-      <button type="button" class:active={tool === 'draw-stair'} onclick={() => setTool('draw-stair')}>Stair</button>
-      <select
-        class="system"
-        aria-label="Wall system for new walls"
+  <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5">
+    <ToggleGroup.Root
+      type="single"
+      variant="outline"
+      size="sm"
+      value={tool === 'draw-rect' ? 'draw-double' : tool}
+      onValueChange={(next) => {
+        if (next) setTool(next as Tool)
+      }}
+      aria-label="Tool"
+    >
+      <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)">
+        <MousePointer2 />Select
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle.">
+        <BrickWall />Wall
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything">
+        <SquareDashed />Logical
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair">
+        <Footprints />Stair
+      </ToggleGroup.Item>
+    </ToggleGroup.Root>
+    <Separator orientation="vertical" class="h-5" />
+    <div class="flex items-center gap-2 text-sm">
+      <span class="text-muted-foreground">New walls</span>
+      <Select.Root
+        type="single"
         value={drawSystem.id}
-        onchange={(event) => documentStore.setDefaultWallSystem(event.currentTarget.value as WallSystemId)}
+        onValueChange={(next) => documentStore.setDefaultWallSystem(next as WallSystemId)}
       >
-        {#each WALL_SYSTEMS as choice (choice.id)}
-          <option value={choice.id}>{choice.name}</option>
-        {/each}
-      </select>
+        <Select.Trigger size="sm" class="w-48" aria-label="Wall system for new walls">{drawSystem.name}</Select.Trigger>
+        <Select.Content>
+          {#each WALL_SYSTEMS as choice (choice.id)}
+            <Select.Item value={choice.id}>{choice.name}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
     </div>
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">
-      <button
-        type="button"
-        class="action"
+      <Button
+        variant="outline"
+        size="sm"
         disabled={!storeyTarget || atStoreyLimit}
         title={!storeyTarget
           ? 'Select a closed building first.'
@@ -1415,19 +1453,31 @@
             : 'Lay a floor on the selected building.'}
         onclick={addStorey}
       >
-        Add storey
-      </button>
+        <Plus />Storey
+      </Button>
       {#if storeyUnitId}
-        <button type="button" class="action" onclick={removeStorey}>Remove storey</button>
+        <Button variant="ghost" size="sm" class="text-muted-foreground" onclick={removeStorey}>
+          <Minus />Remove
+        </Button>
       {/if}
-      {#each [...storeyIndexes].reverse() as index (index)}
-        <button type="button" class:active={index === activeStoreyIndex} onclick={() => selectStorey(index)}>
-          {#if floors.some((floor) => floor.index === index && floor.roof)}
-            <span class="key-roof"></span>
-          {/if}
-          {index === 0 ? 'Ground' : index + 1}
-        </button>
-      {/each}
+      <div class="mt-1 flex flex-col gap-1 border-t pt-2">
+        {#each [...storeyIndexes].reverse() as index (index)}
+          <Button
+            variant={index === activeStoreyIndex ? 'secondary' : 'ghost'}
+            size="sm"
+            class="justify-start"
+            aria-current={index === activeStoreyIndex ? 'true' : undefined}
+            onclick={() => selectStorey(index)}
+          >
+            {#if floors.some((floor) => floor.index === index && floor.roof)}
+              <Triangle class="text-muted-foreground" />
+            {:else}
+              <Layers class="text-muted-foreground" />
+            {/if}
+            {index === 0 ? 'Ground' : `Storey ${index + 1}`}
+          </Button>
+        {/each}
+      </div>
     </nav>
   <svg
     bind:this={svgEl}
@@ -1994,163 +2044,199 @@
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
-      <aside class="inspector" aria-label="Stair">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Stair">
+        <h2 class="font-semibold">Stair</h2>
         <p>
           {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
             .treads} goings of {Math.round(chosenStair.layout.going * 1000)} mm, {checkFormat.format(
             chosenStair.layout.length,
           )} m long.
         </p>
-        <p class="hint">
+        <p class="text-muted-foreground">
           Laid out to SANS 10400 Part M: risers at most {Math.round(MAX_RISER_M * 1000)} mm, goings at least {Math.round(
             MIN_GOING_M * 1000,
           )} mm.
         </p>
-        <label>
-          Width
-          <input
+        <div class="grid gap-1.5">
+          <Label for="stair-width">Width (mm)</Label>
+          <Input
+            id="stair-width"
             type="number"
             min="600"
             step="50"
             value={Math.round(chosenStair.stair.width * 1000)}
             onchange={(event) => patchChosenStair({ width: Number(event.currentTarget.value) / 1000 })}
           />
-        </label>
-        <button type="button" onclick={turnChosenStair}>Turn around</button>
-        <button type="button" onclick={removeChosenStair}>Remove stair</button>
+        </div>
+        <div class="grid gap-2">
+          <Button variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
+          <Button variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
+        </div>
       </aside>
     {/if}
     {#if selectedRoom && !roofFloor}
-      <aside class="inspector" aria-label="Room">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Room">
         {#if selectedRoom.resolved}
           {@const resolved = selectedRoom.resolved}
-          <label>
-            Name
-            <input
-              type="text"
+          <div class="grid gap-1.5">
+            <Label for="room-name">Name</Label>
+            <Input
+              id="room-name"
               value={resolved.space.name}
               onchange={(event) => patchSelectedSpace({ name: event.currentTarget.value })}
             />
-          </label>
-          <label>
-            Use
-            <select
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Use</Label>
+            <Select.Root
+              type="single"
               value={resolved.space.type}
-              onchange={(event) => patchSelectedSpace({ type: event.currentTarget.value as RoomType })}
+              onValueChange={(next) => patchSelectedSpace({ type: next as RoomType })}
             >
-              {#each ROOM_TYPES as option (option.type)}
-                <option value={option.type}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            Floor finish
-            <select
+              <Select.Trigger class="w-full">{roomTypeLabel(resolved.space.type)}</Select.Trigger>
+              <Select.Content>
+                {#each ROOM_TYPES as option (option.type)}
+                  <Select.Item value={option.type}>{option.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Floor finish</Label>
+            <Select.Root
+              type="single"
               value={resolved.space.finish}
-              onchange={(event) => patchSelectedSpace({ finish: event.currentTarget.value as FloorFinish })}
+              onValueChange={(next) => patchSelectedSpace({ finish: next as FloorFinish })}
             >
-              {#each Object.entries(FINISH_LABEL) as [finish, label] (finish)}
-                <option value={finish}>{label}</option>
-              {/each}
-            </select>
-          </label>
-          <p class="area">
-            {areaFormat.format(resolved.area)} m² inside the walls{resolved.cells.length > 1
+              <Select.Trigger class="w-full">{FINISH_LABEL[resolved.space.finish]}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(FINISH_LABEL) as [finish, label] (finish)}
+                  <Select.Item value={finish}>{label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <p>
+            <span class="text-lg font-semibold">{areaFormat.format(resolved.area)} m²</span>
+            <span class="text-muted-foreground">inside the walls{resolved.cells.length > 1
               ? `, in ${resolved.cells.length} parts`
-              : ''}
+              : ''}</span>
           </p>
           {#if selectedChecks}
-            <section class="checks" aria-label="SANS 10400 checks">
-              <h3>SANS 10400</h3>
+            <section class="grid gap-2 border-t pt-3" aria-label="SANS 10400 checks">
+              <h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">SANS 10400</h3>
               {#each selectedChecks.checks as item (item.id)}
-                <p class:short={!item.ok}>
-                  <span class="mark">{item.ok ? 'Meets' : 'Short'}</span>
-                  {item.label}: {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}, needs {checkFormat.format(
-                    item.required,
-                  )}{item.unit === '%' ? '%' : ` ${item.unit}`} (Part {item.part})
-                </p>
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div>{item.label}</div>
+                    <div class="text-xs text-muted-foreground">
+                      needs {checkFormat.format(item.required)}{item.unit === '%' ? '%' : ` ${item.unit}`} · Part {item.part}
+                    </div>
+                  </div>
+                  <Badge
+                    variant={item.ok ? 'secondary' : 'outline'}
+                    class={item.ok ? '' : 'border-amber-600/40 text-amber-700'}
+                  >
+                    {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}
+                  </Badge>
+                </div>
               {/each}
             </section>
           {:else if !isHabitable(resolved.space.type)}
-            <p class="hint">Not a habitable room, so the daylight and size checks do not apply.</p>
+            <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
-          <p class="hint">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
+          <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
-          <p class="area">{areaFormat.format(selectedRoom.cell.netArea)} m² inside the walls</p>
-          <label>
-            Use
-            <select bind:value={newRoomType}>
-              {#each ROOM_TYPES as option (option.type)}
-                <option value={option.type}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
-          <button type="button" onclick={nameSelectedRoom}>Name this room</button>
+          <p>
+            <span class="text-lg font-semibold">{areaFormat.format(selectedRoom.cell.netArea)} m²</span>
+            <span class="text-muted-foreground">inside the walls</span>
+          </p>
+          <div class="grid gap-1.5">
+            <Label>Use</Label>
+            <Select.Root type="single" bind:value={newRoomType}>
+              <Select.Trigger class="w-full">{roomTypeLabel(newRoomType)}</Select.Trigger>
+              <Select.Content>
+                {#each ROOM_TYPES as option (option.type)}
+                  <Select.Item value={option.type}>{option.label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <Button onclick={nameSelectedRoom}>Name this room</Button>
         {/if}
       </aside>
     {/if}
     {#if roofFloor}
-      <aside class="inspector" aria-label="Roof">
+      <aside class="absolute inset-y-0 right-0 z-10 flex w-64 flex-col gap-4 overflow-y-auto border-l bg-background p-4 text-sm" aria-label="Roof">
+        <h2 class="font-semibold">Roof</h2>
         {#if roofFloor.roof}
-          <label>
-            Form
-            <select
-              value={roofFloor.roof.form ?? 'hip'}
-              onchange={(event) => setRoofForm(event.currentTarget.value as RoofForm)}
-            >
-              <option value="hip">Hip</option>
-              <option value="gable">Gable</option>
-              <option value="mono">Mono-pitch</option>
-            </select>
-          </label>
-          {#if (roofFloor.roof.form ?? 'hip') !== 'hip'}
-            <button type="button" onclick={turnRoof}>
-              {roofFloor.roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
-            </button>
+          {@const roof = roofFloor.roof}
+          <div class="grid gap-1.5">
+            <Label>Form</Label>
+            <Select.Root type="single" value={roof.form ?? 'hip'} onValueChange={(next) => setRoofForm(next as RoofForm)}>
+              <Select.Trigger class="w-full">{ROOF_FORMS[roof.form ?? 'hip']}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(ROOF_FORMS) as [form, label] (form)}
+                  <Select.Item value={form}>{label}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if (roof.form ?? 'hip') !== 'hip'}
+            <Button variant="outline" onclick={turnRoof}>
+              <RotateCw />{roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
+            </Button>
           {/if}
-          <label>
-            Covering
-            <select
-              value={roofFloor.roof.covering ?? DEFAULT_COVERING}
-              onchange={(event) => setRoofCovering(event.currentTarget.value as RoofCovering)}
+          <div class="grid gap-1.5">
+            <Label>Covering</Label>
+            <Select.Root
+              type="single"
+              value={roof.covering ?? DEFAULT_COVERING}
+              onValueChange={(next) => setRoofCovering(next as RoofCovering)}
             >
-              {#each COVERINGS as option (option.id)}
-                <option value={option.id}>{option.name}</option>
-              {/each}
-            </select>
-          </label>
-          {#if roofFloor.roof.pitchDeg < coveringOf(roofFloor.roof).minPitchDeg}
-            <p class="hint short-pitch">
-              {coveringOf(roofFloor.roof).name} usually need at least {coveringOf(roofFloor.roof).minPitchDeg}°. Check the
-              manufacturer's minimum.
+              <Select.Trigger class="w-full">{coveringOf(roof).name}</Select.Trigger>
+              <Select.Content>
+                {#each COVERINGS as option (option.id)}
+                  <Select.Item value={option.id}>{option.name}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="grid gap-1.5">
+              <Label for="roof-pitch">Pitch (°)</Label>
+              <Input
+                id="roof-pitch"
+                type="number"
+                min="1"
+                max="89"
+                step="1"
+                value={roof.pitchDeg}
+                onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
+              />
+            </div>
+            <div class="grid gap-1.5">
+              <Label for="roof-eaves">Eaves (mm)</Label>
+              <Input
+                id="roof-eaves"
+                type="number"
+                min="0"
+                step="10"
+                value={Math.round(roof.eaves * 1000)}
+                onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
+              />
+            </div>
+          </div>
+          {#if roof.pitchDeg < coveringOf(roof).minPitchDeg}
+            <p class="text-amber-700">
+              {coveringOf(roof).name} usually need at least {coveringOf(roof).minPitchDeg}°. Check the manufacturer's
+              minimum.
             </p>
           {/if}
-          <label>
-            Pitch
-            <input
-              type="number"
-              min="1"
-              max="89"
-              step="1"
-              value={roofFloor.roof.pitchDeg}
-              onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
-            />
-            °
-          </label>
-          <label>
-            Eaves
-            <input
-              type="number"
-              min="0"
-              step="10"
-              value={Math.round(roofFloor.roof.eaves * 1000)}
-              onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
-            />
-            mm
-          </label>
-          <button type="button" onclick={removeRoof}>Remove roof</button>
+          <Button variant="destructive" onclick={removeRoof}>Remove roof</Button>
         {:else}
-          <button type="button" onclick={addRoof}>Add roof</button>
+          <p class="text-muted-foreground">This storey is an empty plate on the walls below.</p>
+          <Button onclick={addRoof}>Add roof</Button>
         {/if}
       </aside>
     {/if}
@@ -2167,52 +2253,6 @@
     background: #f4f4f5;
   }
 
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem 1rem;
-    padding: 0.5rem 0.75rem;
-    background: #fff;
-    border-bottom: 1px solid #e4e4e7;
-    font-family: system-ui, sans-serif;
-    font-size: 0.875rem;
-  }
-
-  .tools {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  button {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  button.active {
-    border-color: #2563eb;
-    background: #eff6ff;
-  }
-
-  select.system {
-    margin-left: 0.4rem;
-    padding: 0.3rem 0.4rem;
-    border: 1px solid #d4d4d8;
-    border-radius: 4px;
-    background: #fff;
-    font: inherit;
-  }
-
-  button:disabled {
-    cursor: default;
-    opacity: 0.45;
-  }
-
   .stage {
     display: flex;
     flex: 1;
@@ -2225,32 +2265,11 @@
     flex-direction: column;
     justify-content: flex-end;
     gap: 0.35rem;
-    width: 6.5rem;
+    width: 8.5rem;
     flex-shrink: 0;
     padding: 0.75rem 0.5rem;
-    background: #fff;
-    border-right: 1px solid #e4e4e7;
-  }
-
-  .key button {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.2rem;
-    width: 100%;
-  }
-
-  .key .action {
-    font-size: 0.75rem;
-    line-height: 1.2;
-  }
-
-  .key-roof {
-    width: 0;
-    height: 0;
-    border-left: 0.45rem solid transparent;
-    border-right: 0.45rem solid transparent;
-    border-bottom: 0.32rem solid #5e666e;
+    background: var(--background);
+    border-right: 1px solid var(--border);
   }
 
   .canvas {
@@ -2260,51 +2279,6 @@
     min-height: 0;
     touch-action: none;
     cursor: crosshair;
-  }
-
-  .inspector {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-    width: 9.5rem;
-    padding: 0.75rem;
-    background: #fff;
-    border-left: 1px solid #e4e4e7;
-    font-family: system-ui, sans-serif;
-    font-size: 0.875rem;
-  }
-
-  .inspector label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .inspector input,
-  .inspector select {
-    width: 100%;
-    box-sizing: border-box;
-    font: inherit;
-    padding: 0.2rem 0.35rem;
-  }
-
-  .inspector p {
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .inspector .hint.short-pitch {
-    color: #b45309;
-  }
-
-  .inspector .hint {
-    color: #71717a;
-    font-size: 0.8125rem;
   }
 
   .room-name {
@@ -2359,36 +2333,6 @@
   .room-name.short,
   .room-area.short {
     fill: #b45309;
-  }
-
-  .checks {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid #e4e4e7;
-  }
-
-  .checks h3 {
-    margin: 0;
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #71717a;
-  }
-
-  .checks p {
-    font-size: 0.8125rem;
-  }
-
-  .checks .mark {
-    display: block;
-    font-weight: 600;
-    color: #15803d;
-  }
-
-  .checks .short .mark {
-    color: #b45309;
   }
 
   .rotate {
