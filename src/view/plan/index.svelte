@@ -14,7 +14,6 @@
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
   import * as Select from '$lib/components/ui/select'
-  import { Separator } from '$lib/components/ui/separator'
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { SvelteSet } from 'svelte/reactivity'
   import { contourPlanPaths } from '../../lib/geometry/contours'
@@ -49,8 +48,8 @@
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING } from '../../lib/geometry/coverings'
   import type { RoofCovering } from '../../lib/model/types'
-  import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin, WallSystemId } from '../../lib/model/types'
-  import { DEFAULT_WALL_SYSTEM_ID, WALL_SYSTEMS, wallSystem } from '../../lib/model/systems'
+  import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
+  import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
   import { DEFAULT_ROOF_PITCH_DEG } from '../../lib/plot/fixture'
   import { projectDefaults } from '../../lib/model/defaults'
@@ -1432,22 +1431,6 @@
         <Footprints />Stair
       </ToggleGroup.Item>
     </ToggleGroup.Root>
-    <Separator orientation="vertical" class="h-5" />
-    <div class="flex items-center gap-2 text-sm">
-      <span class="text-muted-foreground">New walls</span>
-      <Select.Root
-        type="single"
-        value={drawSystem.id}
-        onValueChange={(next) => documentStore.setDefaultWallSystem(next as WallSystemId)}
-      >
-        <Select.Trigger size="sm" class="w-48" aria-label="Wall system for new walls">{drawSystem.name}</Select.Trigger>
-        <Select.Content>
-          {#each WALL_SYSTEMS as choice (choice.id)}
-            <Select.Item value={choice.id}>{choice.name}</Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-    </div>
   </div>
   <div class="stage">
     <nav class="key" aria-label="Storeys">

@@ -19,7 +19,9 @@
   import { defaultsProblem } from '$lib/model/defaults'
   import { wallSystem } from '$lib/model/systems'
   import { loadHeightfield, loadPlot } from '$lib/plot/load'
-  import { documentFromSite, levelGround, samplePlot } from '$lib/plot/samples'
+  import { DEFAULT_SAMPLE_ID, documentFromSample, documentFromSite, levelGround, samplePlot } from '$lib/plot/samples'
+  import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
+  import Zap from '@lucide/svelte/icons/zap'
   import { homeHref, sectionHref } from '$lib/routes/links'
   import { draft, draftDefaults, resetDraft } from '$lib/state/newProject.svelte'
   import { saveProject } from '$lib/state/projects'
@@ -111,6 +113,19 @@
     await goto(sectionHref(saved.project.id, 'plan'))
   }
 
+  async function quickStart() {
+    creating = true
+    const document = documentFromSample(DEFAULT_SAMPLE_ID, DEFAULT_WALL_SYSTEM_ID, {})
+    const saved = await saveProject(null, draft.name || 'Untitled house', document)
+    creating = false
+    if (!saved.ok) {
+      problem = saved.reason
+      return
+    }
+    resetDraft()
+    await goto(sectionHref(saved.project.id, 'plan'))
+  }
+
   const mm = (m: number) => Math.round(m * 1000)
 </script>
 
@@ -148,6 +163,14 @@
   </header>
 
   <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background px-4 py-3">
+      <p class="text-sm text-muted-foreground">
+        In a hurry? Start on a level plot with standard defaults, and change anything later on the Project page.
+      </p>
+      <Button variant="secondary" size="sm" disabled={creating} onclick={() => void quickStart()}>
+        <Zap />Start with defaults
+      </Button>
+    </div>
     {#if step === 'site'}
       <div>
         <h1 class="text-xl font-semibold">Where are you building?</h1>

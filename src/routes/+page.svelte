@@ -6,14 +6,8 @@
   import { onMount } from 'svelte'
   import { Button } from '$lib/components/ui/button'
   import * as Card from '$lib/components/ui/card'
-  import * as Dialog from '$lib/components/ui/dialog'
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
-  import { Input } from '$lib/components/ui/input'
-  import { Label } from '$lib/components/ui/label'
-  import * as Select from '$lib/components/ui/select'
-  import { WALL_SYSTEMS, DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
-  import type { Document, WallSystemId } from '$lib/model/types'
-  import { DEFAULT_SAMPLE_ID, documentFromSample, SAMPLE_PLOTS, samplePlot, type SamplePlotId } from '$lib/plot/samples'
+  import type { Document } from '$lib/model/types'
   import { resolve } from '$app/paths'
   import { sectionHref } from '$lib/routes/links'
   import {
@@ -30,10 +24,6 @@
   let projects = $state<ProjectSummary[]>([])
   let last = $state<string | null>(null)
   let loaded = $state(false)
-  let creating = $state(false)
-  let name = $state('')
-  let system = $state<WallSystemId>(DEFAULT_WALL_SYSTEM_ID)
-  let site = $state<SamplePlotId>(DEFAULT_SAMPLE_ID)
   let problem = $state('')
 
   async function refresh() {
@@ -49,18 +39,6 @@
   const recent = $derived(projects.find((project) => project.id === last) ?? null)
 
   const updated = new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
-
-  async function create(event: SubmitEvent) {
-    event.preventDefault()
-    const document = documentFromSample(site, system, {})
-    const saved = await saveProject(null, name || 'Untitled house', document)
-    if (!saved.ok) {
-      problem = saved.reason
-      return
-    }
-    creating = false
-    await goto(sectionHref(saved.project.id, 'plan'))
-  }
 
   async function duplicate(project: ProjectSummary) {
     const opened = await openProject(project.id)
@@ -106,27 +84,12 @@
           <Upload />
           Open file
         </Button>
-        <Dialog.Root
-          bind:open={creating}
-          onOpenChange={(open) => {
-            if (open) {
-              name = ''
-              problem = ''
-            }
-          }}
-        >
-          <Dialog.Trigger>
-            {#snippet child({ props })}
-              <Button {...props}><Plus />New project</Button>
-            {/snippet}
-          </Dialog.Trigger>
-          {@render newProject()}
-        </Dialog.Root>
+        <Button href={`${resolve('/new')}?step=site`}><Plus />New project</Button>
         <input id="project-file" class="hidden" type="file" accept=".json,application/json" onchange={importFile} />
       </div>
     </div>
 
-    {#if problem && !creating}
+    {#if problem}
       <p class="text-sm text-destructive">{problem}</p>
     {/if}
 
@@ -181,59 +144,3 @@
     </Card.Root>
   </div>
 </div>
-
-{#snippet newProject()}
-  <Dialog.Content class="sm:max-w-md">
-    <form class="grid gap-4" onsubmit={create}>
-      <Dialog.Header>
-        <Dialog.Title>New project</Dialog.Title>
-        <Dialog.Description>Sensible defaults for a small house. Change any of them later on the Project page.</Dialog.Description>
-      </Dialog.Header>
-      <div class="grid gap-1.5">
-        <Label for="project-name">Name</Label>
-        <Input id="project-name" placeholder="Untitled house" bind:value={name} autofocus />
-      </div>
-      <div class="grid gap-1.5">
-        <Label>Plot</Label>
-        <Select.Root type="single" bind:value={site}>
-          <Select.Trigger class="w-full">{samplePlot(site).name}</Select.Trigger>
-          <Select.Content>
-            {#each SAMPLE_PLOTS as item (item.id)}
-              <Select.Item value={item.id} label={item.name}>
-                <div>
-                  <div>{item.name}</div>
-                  <div class="text-xs text-muted-foreground">{item.place}</div>
-                </div>
-              </Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-      <div class="grid gap-1.5">
-        <Label>Walls</Label>
-        <Select.Root type="single" bind:value={system}>
-          <Select.Trigger class="w-full">
-            {WALL_SYSTEMS.find((item) => item.id === system)?.name}
-          </Select.Trigger>
-          <Select.Content>
-            {#each WALL_SYSTEMS as item (item.id)}
-              <Select.Item value={item.id}>{item.name}</Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-      {#if problem}
-        <p class="text-sm text-destructive">{problem}</p>
-      {/if}
-      <Dialog.Footer class="sm:justify-between">
-        <Button type="button" variant="link" class="px-0" href={`${resolve('/new')}?step=site`}>
-          Step through every option…
-        </Button>
-        <div class="flex gap-2">
-          <Button type="button" variant="outline" onclick={() => (creating = false)}>Cancel</Button>
-          <Button type="submit">Create</Button>
-        </div>
-      </Dialog.Footer>
-    </form>
-  </Dialog.Content>
-{/snippet}
