@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
@@ -83,11 +84,15 @@
   let {
     selectedWallId = $bindable<string | null>(null),
     activeFloorId = $bindable(''),
+    storey: activeStoreyIndex = $bindable(0),
+    focusSpace = null,
     onStatus,
     onFocus,
   }: {
     selectedWallId?: string | null
     activeFloorId?: string
+    storey?: number
+    focusSpace?: string | null
     onStatus?: (status: { text: string; error: boolean }) => void
     onFocus?: (wallId: string) => void
   } = $props()
@@ -125,7 +130,6 @@
   let pendingStair = $state<{ floorId: string; x: number; z: number } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
-  let activeStoreyIndex = $state(0)
 
   $effect(() => {
     const floors = documentStore.document.building.floors
@@ -179,6 +183,20 @@
       roomFinishes: Object.assign({}, ...levelFloors.map((floor) => floor.roomFinishes)),
       spaces: levelFloors.flatMap((floor) => floor.spaces ?? []),
     }
+  })
+
+  $effect(() => {
+    const spaceId = focusSpace
+    if (!spaceId) return
+    const floor = documentStore.document.building.floors.find((item) =>
+      (item.spaces ?? []).some((space) => space.id === spaceId),
+    )
+    const seed = floor?.spaces?.find((space) => space.id === spaceId)?.seeds[0]
+    if (!floor || !seed) return
+    untrack(() => {
+      activeStoreyIndex = floor.index
+      chooseSelection({ cell: { floorId: floor.id, x: seed.x, z: seed.z } })
+    })
   })
 
   const levelLayouts = $derived(levelFloors.map((floor) => ({ floorId: floor.id, layout: layoutSpaces(floor) })))
