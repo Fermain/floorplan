@@ -33,6 +33,10 @@ export const DEFAULT_RATES: Record<string, number> = {
   'finish:timber': 650,
   'finish:vinyl': 300,
   'finish:carpet': 280,
+  'fence:palisade': 650,
+  'fence:mesh': 320,
+  'fence:precast': 420,
+  'fence:timber': 560,
 }
 
 export function assumptionsOf(costing: Costing | undefined): CostAssumptions {

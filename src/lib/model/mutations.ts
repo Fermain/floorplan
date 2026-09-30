@@ -16,6 +16,7 @@ import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
 import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
+import { fenceProblem } from './fences'
 import { roomKey } from './rooms'
 import {
   blankStorey,
@@ -26,6 +27,7 @@ import {
 import type {
   CostAssumptions,
   Document,
+  Fence,
   Floor,
   Heightfield,
   MutationResult,
@@ -343,6 +345,30 @@ export function removeStair(document: Document, floorId: string, stairId: string
   if (!floor) return fail(document, 'floor not found')
   if (!floor.stairs?.some((stair) => stair.id === stairId)) return fail(document, 'stair not found')
   return ok(replaceFloor(document, { ...floor, stairs: floor.stairs.filter((stair) => stair.id !== stairId) }))
+}
+
+export function setFence(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  fence: Fence | null,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin !== 'logical') return fail(document, 'only a logical wall can carry a fence')
+  if (fence) {
+    const problem = fenceProblem(fence)
+    if (problem) return fail(document, problem)
+  }
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    if (fence) return { ...item, fence: { ...fence } }
+    const { fence: _removed, ...rest } = item
+    return rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {

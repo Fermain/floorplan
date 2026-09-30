@@ -31,6 +31,16 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame } from './wallFrame'
+  import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
+  import {
+    DEFAULT_FENCE_HEIGHT_M,
+    FENCE_MAX_HEIGHT_M,
+    FENCE_MIN_HEIGHT_M,
+    FENCES,
+    fencePosts,
+    fenceSpec,
+  } from '../../lib/model/fences'
+  import type { FenceType } from '../../lib/model/types'
 
   interface Props {
     wallId?: string
@@ -92,12 +102,47 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     return Math.round(m * 1000)
   }
 
+  const logical = $derived(wall?.skin === 'logical')
+  const fence = $derived(logical ? wall?.fence : undefined)
+
   const frame = $derived.by(() => {
     if (!floor || !wall) {
       return undefined
     }
+    if (logical) return computeWallElevationFrame(floor, wall, Math.max(1.2, (fence?.height ?? 0) + 0.4))
     return computeWallElevationFrame(floor, wall)
   })
+
+  const fenceParts = $derived.by((): FencePart[] => {
+    if (!floor || !wall || !fence) return []
+    const line = fenceFrame(floor, wall)
+    return line ? buildFenceParts(line, fence, () => 0) : []
+  })
+
+  $effect(() => {
+    const parts = fenceParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  function chooseFence(next: string) {
+    if (!floor || !wall) return
+    if (next === 'none') {
+      documentStore.setFence(floor.id, wall.id, null)
+      return
+    }
+    documentStore.setFence(floor.id, wall.id, {
+      type: next as FenceType,
+      height: fence?.height ?? DEFAULT_FENCE_HEIGHT_M,
+    })
+  }
+
+  function setFenceHeightMm(value: number) {
+    if (!floor || !wall || !fence || !Number.isFinite(value)) return
+    const height = Math.min(FENCE_MAX_HEIGHT_M, Math.max(FENCE_MIN_HEIGHT_M, value / 1000))
+    documentStore.setFence(floor.id, wall.id, { ...fence, height })
+  }
 
   const widthKind = $derived(editingOpening?.kind ?? insertTool)
 
@@ -242,7 +287,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   function onViewportPointerDown(event: PointerEvent) {
-    if (!locked || !floor || !wall || !frame) return
+    if (!locked || !floor || !wall || !frame || logical) return
     const uv = uvFromEvent(event)
     if (!uv) return
     readout = uv
@@ -325,6 +370,15 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   function focusStatus(): { text: string; error: boolean } {
     if (!wall || !frame) return { text: '', error: false }
+    if (logical) {
+      if (!fence) return { text: 'A logical wall marks a line without building it. Choose a fence to build one.', error: false }
+      const spec = fenceSpec(fence.type)
+      const posts = fencePosts(frame.length, spec).length
+      return {
+        text: `${spec.name}, ${mm(fence.height)} mm high: ${posts} posts over ${frame.length.toFixed(2)} m.`,
+        error: false,
+      }
+    }
     if (widthLimits && !widthAllowed) {
       const noun =
         widthKind === 'garage'
@@ -425,6 +479,41 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   {#if !wall || !frame}
     <p class="empty">No wall selected</p>
   {:else}
+    {#if logical}
+      <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
+        <div class="flex items-center gap-2">
+          <span class="text-muted-foreground">Fence</span>
+          <Select.Root type="single" value={fence?.type ?? 'none'} onValueChange={chooseFence}>
+            <Select.Trigger size="sm" class="w-44" aria-label="Fence">
+              {fence ? fenceSpec(fence.type).name : 'None'}
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="none">None</Select.Item>
+              {#each FENCES as option (option.id)}
+                <Select.Item value={option.id}>{option.name}</Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        {#if fence}
+          <Separator orientation="vertical" class="h-5" />
+          <label class="flex items-center gap-2">
+            <span class="text-muted-foreground">Height</span>
+            <Input
+              class="h-7 w-20"
+              type="number"
+              min={mm(FENCE_MIN_HEIGHT_M)}
+              max={mm(FENCE_MAX_HEIGHT_M)}
+              step="100"
+              value={mm(fence.height)}
+              onchange={(event) => setFenceHeightMm(Number(event.currentTarget.value))}
+            />
+            <span class="text-muted-foreground">mm</span>
+          </label>
+          <span class="text-muted-foreground">{fenceSpec(fence.type).text}</span>
+        {/if}
+      </div>
+    {:else}
     <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
       <div class="flex items-center gap-2">
         <span class="text-muted-foreground">Place</span>
@@ -484,6 +573,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         </Select.Root>
       </div>
     </div>
+    {/if}
     <div class="scene">
       <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
         {locked ? 'Perspective' : 'Fixed view'}
@@ -506,6 +596,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         frameGeometry={wallModel.frame}
         glassGeometry={wallModel.glass}
         panelMeshes={wallModel.panels}
+        {fenceParts}
         {orthoCamera}
         {onOrthoCamera}
       />
@@ -513,10 +604,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         <ElevationDimensions
           length={frame.length}
           height={frame.height}
-          head={WALL_HEAD}
-          openings={displayWall.openings}
+          head={logical ? (fence?.height ?? 0) : WALL_HEAD}
+          openings={logical ? [] : displayWall.openings}
           selectedId={selectedOpeningId}
-          floorLevel={floor?.index === 0 ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
+          floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
         />
       {/if}
       </div>

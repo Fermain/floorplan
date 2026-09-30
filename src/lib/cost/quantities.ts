@@ -11,8 +11,9 @@ import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
+import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -28,7 +29,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -340,6 +341,32 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm²',
       quantity: round(area * waste, 1),
       rateKey: `roof:${spec.id}`,
+    })
+  }
+
+  const fences = new Map<string, { length: number; area: number; posts: number }>()
+  for (const floor of doc.building.floors) {
+    for (const wall of floor.walls) {
+      if (wall.skin !== 'logical' || !wall.fence) continue
+      const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+      const tally = fences.get(wall.fence.type) ?? { length: 0, area: 0, posts: 0 }
+      tally.length += length
+      tally.area += length * wall.fence.height
+      tally.posts += fencePosts(length, fenceSpec(wall.fence.type)).length
+      fences.set(wall.fence.type, tally)
+    }
+  }
+  for (const spec of FENCES) {
+    const tally = fences.get(spec.id)
+    if (!tally) continue
+    drafts.push({
+      id: `fence:${spec.id}`,
+      group: 'Fencing',
+      label: spec.name,
+      note: `${round(tally.length, 1)} m long, ${tally.posts} posts`,
+      unit: 'm²',
+      quantity: round(tally.area * waste, 1),
+      rateKey: `fence:${spec.id}`,
     })
   }
 

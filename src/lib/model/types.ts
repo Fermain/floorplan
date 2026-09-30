@@ -37,12 +37,20 @@ export type WallSkin = 'single' | 'double' | 'logical'
 
 export type WallSystemId = 'clay-cavity' | 'clay-solid' | 'clay-single' | 'maxi-140' | 'block-140' | 'block-90'
 
+export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber'
+
+export type Fence = {
+  type: FenceType
+  height: number
+}
+
 export type Wall = {
   id: string
   startCornerId: string
   endCornerId: string
   skin: WallSkin
   systemId?: WallSystemId
+  fence?: Fence
   openings: Opening[]
 }
 
