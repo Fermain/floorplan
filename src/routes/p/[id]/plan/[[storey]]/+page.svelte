@@ -46,6 +46,7 @@
   bind:selectedWallId
   bind:activeFloorId
   focusSpace={room}
+  viewKey={id}
   onStatus={(status) => statusLine.set(status)}
   onFocus={(wallId) => void goto(wallHref(id, wallId))}
 />

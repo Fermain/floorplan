@@ -85,6 +85,7 @@
   } from './gesture'
   import { roofableFloor, storeyAddTarget } from './storey'
   import { plotBounds, pointsAttr, ringPath } from './svg'
+  import PlanNavigator from './PlanNavigator.svelte'
 
   type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'select'
 
@@ -104,6 +105,7 @@
     activeFloorId = $bindable(''),
     storey: activeStoreyIndex = $bindable(0),
     focusSpace = null,
+    viewKey = '',
     onStatus,
     onFocus,
   }: {
@@ -111,6 +113,7 @@
     activeFloorId?: string
     storey?: number
     focusSpace?: string | null
+    viewKey?: string
     onStatus?: (status: { text: string; error: boolean }) => void
     onFocus?: (wallId: string) => void
   } = $props()
@@ -286,10 +289,215 @@
   }
 
   const bounds = $derived(plotBounds(plotRing, PLOT_MARGIN_M))
-  const labelSize = $derived((bounds.maxX - bounds.minX) / 52)
-  const viewBox = $derived(
-    `${bounds.minX} ${bounds.minZ} ${bounds.maxX - bounds.minX} ${bounds.maxZ - bounds.minZ}`,
-  )
+
+  let turn = $state(0)
+  let zoom = $state(1)
+  let centre = $state<{ x: number; y: number } | null>(null)
+  let contentEl = $state<SVGGElement | undefined>(undefined)
+  let canvasSize = $state({ width: 1, height: 1 })
+
+  const viewMatrix = $derived(`rotate(${turn}) scale(1 -1)`)
+
+  function toScreen(x: number, z: number): { x: number; y: number } {
+    const a = (turn * Math.PI) / 180
+    const fy = -z
+    return { x: x * Math.cos(a) - fy * Math.sin(a), y: x * Math.sin(a) + fy * Math.cos(a) }
+  }
+
+  const fitBox = $derived.by(() => {
+    const corners = [
+      toScreen(bounds.minX, bounds.minZ),
+      toScreen(bounds.maxX, bounds.minZ),
+      toScreen(bounds.maxX, bounds.maxZ),
+      toScreen(bounds.minX, bounds.maxZ),
+    ]
+    const xs = corners.map((c) => c.x)
+    const ys = corners.map((c) => c.y)
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+  })
+
+  const view = $derived.by(() => {
+    const aspect = canvasSize.width / Math.max(1, canvasSize.height)
+    let w = fitBox.w
+    let h = fitBox.h
+    if (w / h < aspect) w = h * aspect
+    else h = w / aspect
+    w /= zoom
+    h /= zoom
+    const c = centre ?? { x: fitBox.x + fitBox.w / 2, y: fitBox.y + fitBox.h / 2 }
+    return { x: c.x - w / 2, y: c.y - h / 2, w, h, c }
+  })
+
+  const viewBox = $derived(`${view.x} ${view.y} ${view.w} ${view.h}`)
+  const labelSize = $derived((bounds.maxX - bounds.minX) / 52 / zoom)
+
+  const screenAxis = $derived({ dx: Math.cos((turn * Math.PI) / 180), dz: Math.sin((turn * Math.PI) / 180) })
+
+  const MIN_ZOOM = 0.5
+  const MAX_ZOOM = 40
+  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number } } | null>(null)
+  let spaceHeld = $state(false)
+
+  $effect(() => {
+    const svg = svgEl
+    if (!svg) return
+    const observer = new ResizeObserver(() => {
+      canvasSize = { width: svg.clientWidth || 1, height: svg.clientHeight || 1 }
+    })
+    observer.observe(svg)
+    return () => observer.disconnect()
+  })
+
+  $effect(() => {
+    const key = viewKey
+    if (!key) return
+    untrack(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(`floorplan:view:${key}`) ?? 'null')
+        if (saved && Number.isFinite(saved.turn) && Number.isFinite(saved.zoom)) {
+          turn = saved.turn
+          zoom = saved.zoom
+          centre = saved.centre ?? null
+        }
+      } catch {
+        return
+      }
+    })
+  })
+
+  $effect(() => {
+    const key = viewKey
+    const snapshot = JSON.stringify({ turn, zoom, centre })
+    if (!key) return
+    try {
+      localStorage.setItem(`floorplan:view:${key}`, snapshot)
+    } catch {
+      return
+    }
+  })
+
+  $effect(() => {
+    const down = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (event.code === 'Space') {
+        spaceHeld = true
+        event.preventDefault()
+      }
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.code === 'Space') spaceHeld = false
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  })
+
+  function pixelsToView(): number {
+    return view.w / Math.max(1, canvasSize.width)
+  }
+
+  function viewPointAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    const svg = svgEl
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    return {
+      x: view.x + (clientX - rect.left) * pixelsToView(),
+      y: view.y + (clientY - rect.top) * pixelsToView(),
+    }
+  }
+
+  function zoomAt(clientX: number, clientY: number, factor: number) {
+    const anchor = viewPointAt(clientX, clientY)
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor))
+    if (!anchor || next === zoom) return
+    const c = view.c
+    centre = { x: anchor.x + (c.x - anchor.x) * (zoom / next), y: anchor.y + (c.y - anchor.y) * (zoom / next) }
+    zoom = next
+  }
+
+  function zoomBy(factor: number) {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor))
+    centre = view.c
+    zoom = next
+  }
+
+  function fitView() {
+    zoom = 1
+    centre = null
+  }
+
+  function setTurn(next: number) {
+    const planCentre = untrack(() => {
+      const a = (turn * Math.PI) / 180
+      const c = view.c
+      return { x: c.x * Math.cos(a) + c.y * Math.sin(a), z: -(-c.x * Math.sin(a) + c.y * Math.cos(a)) }
+    })
+    turn = ((next % 360) + 360) % 360
+    if (centre) centre = toScreen(planCentre.x, planCentre.z)
+  }
+
+  function onWheel(event: WheelEvent) {
+    event.preventDefault()
+    const pinch = event.ctrlKey || event.metaKey
+    const notched = event.deltaMode === 1 || (!pinch && event.deltaX === 0 && Math.abs(event.deltaY) >= 50 && Number.isInteger(event.deltaY))
+    if (pinch || notched) {
+      const raw = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
+      const amount = Math.max(-0.5, Math.min(0.5, raw * (pinch ? 0.01 : 0.0015)))
+      zoomAt(event.clientX, event.clientY, Math.exp(-amount))
+      return
+    }
+    const k = pixelsToView()
+    const c = view.c
+    centre = { x: c.x + event.deltaX * k, y: c.y + event.deltaY * k }
+  }
+
+  function startPan(event: PointerEvent): boolean {
+    if (!(event.button === 1 || (event.button === 0 && spaceHeld))) return false
+    event.preventDefault()
+    svgEl?.setPointerCapture(event.pointerId)
+    panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: view.c }
+    return true
+  }
+
+  function movePan(event: PointerEvent): boolean {
+    const pan = panning
+    if (!pan || pan.pointerId !== event.pointerId) return false
+    const k = pixelsToView()
+    centre = { x: pan.from.x - (event.clientX - pan.x) * k, y: pan.from.y - (event.clientY - pan.y) * k }
+    return true
+  }
+
+  function endPan(event: PointerEvent): boolean {
+    const pan = panning
+    if (!pan || pan.pointerId !== event.pointerId) return false
+    panning = null
+    if (svgEl?.hasPointerCapture(event.pointerId)) svgEl.releasePointerCapture(event.pointerId)
+    return true
+  }
+
+  function s(size: number): number {
+    return size / zoom
+  }
+
+  function dash(on: number, off: number): string {
+    return `${on / zoom} ${off / zoom}`
+  }
+
+  function readable(angle: number): number {
+    let a = ((((angle + 180) % 360) + 360) % 360) - 180
+    if (a > 90) a -= 180
+    if (a <= -90) a += 180
+    return a
+  }
+
+  function upright(x: number, z: number, planAngle?: number): string {
+    const along = planAngle === undefined ? 0 : readable(turn - planAngle)
+    return `translate(${x} ${z}) scale(1 -1) rotate(${-turn}) rotate(${along})`
+  }
 
   const displayFloor = $derived(activeFloor ? previewFloor(activeFloor, rotateDrag, moveDrag) : undefined)
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
@@ -327,7 +535,7 @@
     const pt = svg.createSVGPoint()
     pt.x = clientX
     pt.y = clientY
-    const ctm = svg.getScreenCTM()
+    const ctm = (contentEl ?? svg).getScreenCTM()
     if (!ctm) return null
     const local = pt.matrixTransform(ctm.inverse())
     return { x: local.x, z: local.y }
@@ -513,10 +721,6 @@
     onFocus?.(id)
   }
 
-  function alignToCompass(event: PointerEvent) {
-    event.stopPropagation()
-    chooseSelection({})
-  }
 
   function onPlanContextMenu(event: MouseEvent) {
     event.preventDefault()
@@ -544,6 +748,7 @@
   }
 
   function onSvgPointerDown(event: PointerEvent) {
+    if (startPan(event)) return
     if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
       cancelDraw()
       return
@@ -705,6 +910,7 @@
   }
 
   function onSvgPointerMove(event: PointerEvent) {
+    if (movePan(event)) return
     const svg = svgEl
     if (!svg) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
@@ -745,6 +951,7 @@
   }
 
   function onSvgPointerUp(event: PointerEvent) {
+    if (endPan(event)) return
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
@@ -1066,7 +1273,7 @@
       if (Math.hypot(dx, dz) < 1e-9) return null
       return { dx, dz }
     }
-    if (selectedEdge === null) return null
+    if (selectedEdge === null) return turn === 0 ? null : screenAxis
     const ring = plotRing
     const a = ring[selectedEdge]
     const b = ring[(selectedEdge + 1) % ring.length]
@@ -1221,17 +1428,23 @@
       const b = ring[(selectedEdge + 1) % ring.length]
       if (a && b) return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
     }
-    return gridFromSegment(0, 0, 0, 1, bounds)
+    return gridFromSegment(0, 0, screenAxis.dx, screenAxis.dz, bounds)
   })
 
   const compassAligned = $derived(
     selectedWallId === null && selectedOutline === null && selectedEdge === null,
   )
 
-  const compassAt = $derived({
-    x: bounds.minX + 1.15,
-    z: bounds.maxZ - 1.15,
-  })
+  function squareToSelectedWall() {
+    const floor = activeFloor
+    const wall = floor?.walls.find((item) => item.id === selectedWallId)
+    const a = wall && floor ? cornerById(floor.corners, wall.startCornerId) : undefined
+    const b = wall && floor ? cornerById(floor.corners, wall.endCornerId) : undefined
+    if (!a || !b) return
+    const along = (Math.atan2(b.z - a.z, b.x - a.x) * 180) / Math.PI
+    const options = [along, along + 180, along - 180, along + 360]
+    setTurn(options.reduce((best, item) => (Math.abs(item - turn) < Math.abs(best - turn) ? item : best)))
+  }
 
   const snapTraces = $derived(
     moveDrag?.traces.length ? moveDrag.traces : (rectanglePreview?.traces ?? previewLine?.traces ?? []),
@@ -1471,9 +1684,25 @@
         {/each}
       </div>
     </nav>
+  <div class="pointer-events-none absolute bottom-3 left-[9.25rem] z-10">
+    <PlanNavigator
+      {turn}
+      bearing={document.plot.northBearingDeg}
+      {zoom}
+      aligned={compassAligned}
+      canSquare={selectedWallId !== null}
+      onTurn={setTurn}
+      onSquare={squareToSelectedWall}
+      onZoomIn={() => zoomBy(1.4)}
+      onZoomOut={() => zoomBy(1 / 1.4)}
+      onFit={fitView}
+      onClearReference={() => chooseSelection({})}
+    />
+  </div>
   <svg
     bind:this={svgEl}
     class="canvas"
+    class:panning={spaceHeld || panning !== null}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
     onpointerdown={onSvgPointerDown}
@@ -1481,6 +1710,8 @@
     onpointerup={onSvgPointerUp}
     onpointercancel={onSvgPointerUp}
     ondblclick={onSvgDoubleClick}
+    onwheel={onWheel}
+    onauxclick={(event) => event.preventDefault()}
   >
     <defs>
       <clipPath id="plan-plot-clip">
@@ -1494,6 +1725,7 @@
         </clipPath>
       {/if}
     </defs>
+    <g bind:this={contentEl} transform={viewMatrix}>
     <rect
       x={bounds.minX}
       y={bounds.minZ}
@@ -1506,7 +1738,7 @@
       points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
       fill="#e7e5e4"
       stroke="#18181b"
-      stroke-width="0.06"
+      stroke-width={s(0.06)}
     />
     {#if selectedEdge !== null}
       {@const a = plotRing[selectedEdge]}
@@ -1518,7 +1750,7 @@
           x2={b[0]}
           y2={b[1]}
           stroke="#2563eb"
-          stroke-width="0.08"
+          stroke-width={s(0.08)}
           pointer-events="none"
         />
       {/if}
@@ -1532,7 +1764,7 @@
             x2={line.x2}
             y2={line.z2}
             stroke="#93c5fd"
-            stroke-width="0.012"
+            stroke-width={s(0.012)}
           />
         {/each}
       </g>
@@ -1545,8 +1777,8 @@
           x2={trace.x2}
           y2={trace.z2}
           stroke="#0891b2"
-          stroke-width="0.03"
-          stroke-dasharray="0.12 0.08"
+          stroke-width={s(0.03)}
+          stroke-dasharray={dash(0.12, 0.08)}
           pointer-events="none"
         />
       {/each}
@@ -1557,7 +1789,7 @@
           d={contours.minor}
           fill="none"
           stroke="#7c6a58"
-          stroke-width="0.016"
+          stroke-width={s(0.016)}
           stroke-linecap="round"
         />
       {/if}
@@ -1566,7 +1798,7 @@
           d={contours.major}
           fill="none"
           stroke="#3f3428"
-          stroke-width="0.032"
+          stroke-width={s(0.032)}
           stroke-linecap="round"
         />
       {/if}
@@ -1578,8 +1810,8 @@
             points={pointsAttr(ring.map((point) => [point.x, point.z]))}
             fill="none"
             stroke="#a8a29e"
-            stroke-width="0.04"
-            stroke-dasharray="0.18 0.12"
+            stroke-width={s(0.04)}
+            stroke-dasharray={dash(0.18, 0.12)}
             pointer-events="none"
           />
         {/if}
@@ -1593,7 +1825,7 @@
               fill-opacity="0.28"
               fill-rule="evenodd"
               stroke="#5e666e"
-              stroke-width="0.04"
+              stroke-width={s(0.04)}
             />
           {/each}
         </g>
@@ -1604,8 +1836,8 @@
             points={pointsAttr(plate.ring.map((point) => [point.x, point.z]))}
             fill={plateFill(plate.floorId, plate.index)}
             stroke="#78716c"
-            stroke-width="0.045"
-            stroke-dasharray="0.16 0.1"
+            stroke-width={s(0.045)}
+            stroke-dasharray={dash(0.16, 0.1)}
             pointer-events={tool === 'select' ? 'fill' : 'none'}
             onpointerdown={(event) => {
               if (tool !== 'select') return
@@ -1640,7 +1872,7 @@
               x2={hip.b.x}
               y2={hip.b.z}
               stroke="#3d4450"
-              stroke-width="0.035"
+              stroke-width={s(0.035)}
               stroke-linecap="round"
             />
           {/each}
@@ -1655,7 +1887,7 @@
               x2={line.x2}
               y2={line.z2}
               stroke="#93c5fd"
-              stroke-width="0.012"
+              stroke-width={s(0.012)}
             />
           {/each}
         </g>
@@ -1700,7 +1932,7 @@
             ])}
             class="stair-foot"
           />
-          <circle cx={item.stair.x} cy={item.stair.z} r="0.08" class="stair-foot" />
+          <circle cx={item.stair.x} cy={item.stair.z} r={s(0.08)} class="stair-foot" />
         {/each}
         {#if stairPreview}
           <polygon
@@ -1717,8 +1949,8 @@
           {#each entry.layout.spaces as resolved (resolved.space.id)}
             {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
             <text
-              x={at.x}
-              y={at.z - labelSize * 0.35}
+              transform={upright(at.x, at.z)}
+              y={-labelSize * 0.35}
               font-size={labelSize}
               text-anchor="middle"
               class="room-name"
@@ -1727,8 +1959,8 @@
               {resolved.space.name}
             </text>
             <text
-              x={at.x}
-              y={at.z + labelSize * 0.8}
+              transform={upright(at.x, at.z)}
+              y={labelSize * 0.8}
               font-size={labelSize * 0.8}
               text-anchor="middle"
               class="room-area"
@@ -1739,7 +1971,7 @@
           {/each}
           {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
             {@const at = ringLabelPoint(cell.net)}
-            <text x={at.x} y={at.z + labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
+            <text transform={upright(at.x, at.z)} y={labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
               {areaFormat.format(cell.netArea)} m²
             </text>
           {/each}
@@ -1755,8 +1987,8 @@
             x2={b.x}
             y2={b.z}
             stroke="#666"
-            stroke-width="0.02"
-            stroke-dasharray="0.2 0.15"
+            stroke-width={s(0.02)}
+            stroke-dasharray={dash(0.2, 0.15)}
           />
         {/if}
       {/each}
@@ -1772,7 +2004,7 @@
                 x2={b.x}
                 y2={b.z}
                 stroke="#b91c1c"
-                stroke-width="0.06"
+                stroke-width={s(0.06)}
                 stroke-linecap="round"
                 pointer-events="none"
               />
@@ -1790,7 +2022,7 @@
             x2={b.x}
             y2={b.z}
             stroke={wall.id === selectedWallId ? '#2563eb' : 'transparent'}
-            stroke-width={wall.id === selectedWallId ? 0.08 : 0.14}
+            stroke-width={s(wall.id === selectedWallId ? 0.08 : 0.14)}
             stroke-linecap="round"
             pointer-events={tool === 'select' ? 'stroke' : 'none'}
             onpointerdown={(e) => {
@@ -1811,7 +2043,7 @@
           x2={outlineReference.bx}
           y2={outlineReference.bz}
           stroke="#2563eb"
-          stroke-width="0.08"
+          stroke-width={s(0.08)}
           pointer-events="none"
         />
       {/if}
@@ -1824,35 +2056,31 @@
             x2={next.x}
             y2={next.z}
             stroke={rectanglePreview.allowed ? '#2563eb' : '#b91c1c'}
-            stroke-width="0.04"
-            stroke-dasharray="0.15 0.1"
+            stroke-width={s(0.04)}
+            stroke-dasharray={dash(0.15, 0.1)}
             pointer-events="none"
           />
         {/each}
         {#if rectanglePreview.widthLabel}
           <text
-            x={rectanglePreview.widthLabel.x}
-            y={rectanglePreview.widthLabel.z}
+            transform={upright(rectanglePreview.widthLabel.x, rectanglePreview.widthLabel.z, rectanglePreview.widthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${rectanglePreview.widthLabel.rotate} ${rectanglePreview.widthLabel.x} ${rectanglePreview.widthLabel.z})`}
           >
             {rectanglePreview.widthLabel.text}
           </text>
         {/if}
         {#if rectanglePreview.depthLabel}
           <text
-            x={rectanglePreview.depthLabel.x}
-            y={rectanglePreview.depthLabel.z}
+            transform={upright(rectanglePreview.depthLabel.x, rectanglePreview.depthLabel.z, rectanglePreview.depthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${rectanglePreview.depthLabel.rotate} ${rectanglePreview.depthLabel.x} ${rectanglePreview.depthLabel.z})`}
           >
             {rectanglePreview.depthLabel.text}
           </text>
@@ -1862,7 +2090,7 @@
         <circle
           cx={previewLine.x1}
           cy={previewLine.z1}
-          r="0.18"
+          r={s(0.18)}
           fill="#2563eb"
           pointer-events="none"
         />
@@ -1872,8 +2100,8 @@
           x2={previewLine.x2}
           y2={previewLine.z2}
           stroke={previewLine.allowed ? '#2563eb' : '#b91c1c'}
-          stroke-width="0.04"
-          stroke-dasharray="0.15 0.1"
+          stroke-width={s(0.04)}
+          stroke-dasharray={dash(0.15, 0.1)}
           pointer-events="none"
         />
         {#if previewLine.angle?.path}
@@ -1881,16 +2109,15 @@
             d={previewLine.angle.path}
             fill="none"
             stroke="#2563eb"
-            stroke-width="0.03"
+            stroke-width={s(0.03)}
             pointer-events="none"
           />
         {/if}
         {#if previewLine.angle}
           <text
-            x={previewLine.angle.x}
-            y={previewLine.angle.z}
+            transform={upright(previewLine.angle.x, previewLine.angle.z)}
             fill="#1d4ed8"
-            font-size="0.42"
+            font-size={s(0.42)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
@@ -1900,14 +2127,12 @@
         {/if}
         {#if previewLine.lengthLabel}
           <text
-            x={previewLine.lengthLabel.x}
-            y={previewLine.lengthLabel.z}
+            transform={upright(previewLine.lengthLabel.x, previewLine.lengthLabel.z, previewLine.lengthLabel.rotate)}
             fill="#1d4ed8"
-            font-size="0.38"
+            font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
             pointer-events="none"
-            transform={`rotate(${previewLine.lengthLabel.rotate} ${previewLine.lengthLabel.x} ${previewLine.lengthLabel.z})`}
           >
             {previewLine.lengthLabel.text}
           </text>
@@ -1917,23 +2142,22 @@
         <circle
           cx={corner.x}
           cy={corner.z}
-          r={hoveredCorner?.id === corner.id ? 0.28 : 0.16}
+          r={s(hoveredCorner?.id === corner.id ? 0.28 : 0.16)}
           fill={hoveredCorner?.id === corner.id ? '#2563eb' : '#18181b'}
           pointer-events="none"
         />
       {/each}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
-          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width="0.04" />
+          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
           <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="translate(-0.39 -0.39) scale(0.0325)" />
         </g>
       {/if}
       {#if rotateLabel}
         <text
-          x={rotateLabel.x}
-          y={rotateLabel.z}
+          transform={upright(rotateLabel.x, rotateLabel.z)}
           fill="#1d4ed8"
-          font-size="0.42"
+          font-size={s(0.42)}
           text-anchor="middle"
           dominant-baseline="middle"
           pointer-events="none"
@@ -1945,40 +2169,40 @@
         <circle
           cx={rectanglePreview.corners[2].x}
           cy={rectanglePreview.corners[2].z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if previewLine?.wallSnap || previewLine?.nodeSnap}
         <circle
           cx={previewLine.x2}
           cy={previewLine.z2}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if hoveredBelow}
         <circle
           cx={hoveredBelow.x}
           cy={hoveredBelow.z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {:else if hoveredWall}
         <circle
           cx={hoveredWall.x}
           cy={hoveredWall.z}
-          r="0.22"
+          r={s(0.22)}
           fill="none"
           stroke="#2563eb"
-          stroke-width="0.045"
+          stroke-width={s(0.045)}
           pointer-events="none"
         />
       {/if}
@@ -1989,50 +2213,11 @@
           r={CORNER_SNAP_M}
           fill="none"
           stroke="#93c5fd"
-          stroke-width="0.025"
+          stroke-width={s(0.025)}
           pointer-events="none"
         />
       {/if}
     {/if}
-    <g
-      class="compass"
-      transform={`translate(${compassAt.x} ${compassAt.z})`}
-      onpointerdown={alignToCompass}
-    >
-      <title>North-south</title>
-      <circle r="1.05" fill="transparent" />
-      <line
-        x1="-0.7"
-        y1="0"
-        x2="0.7"
-        y2="0"
-        stroke={compassAligned ? '#2563eb' : '#71717a'}
-        stroke-width="0.045"
-        stroke-linecap="round"
-      />
-      <line
-        x1="0"
-        y1="-0.7"
-        x2="0"
-        y2="0.7"
-        stroke={compassAligned ? '#2563eb' : '#71717a'}
-        stroke-width={compassAligned ? '0.08' : '0.05'}
-        stroke-linecap="round"
-      />
-      <polygon
-        points="0,0.98 -0.16,0.68 0.16,0.68"
-        fill={compassAligned ? '#2563eb' : '#71717a'}
-      />
-      <text
-        x="0"
-        y="1.35"
-        fill={compassAligned ? '#2563eb' : '#71717a'}
-        font-size="0.42"
-        text-anchor="middle"
-        dominant-baseline="middle"
-      >
-        N
-      </text>
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
@@ -2273,6 +2458,10 @@
     cursor: crosshair;
   }
 
+  .canvas.panning {
+    cursor: grab;
+  }
+
   .room-name {
     fill: #27272a;
     font-family: system-ui, sans-serif;
@@ -2329,10 +2518,6 @@
 
   .rotate {
     cursor: grab;
-  }
-
-  .compass {
-    cursor: pointer;
   }
 
 </style>
