@@ -1,5 +1,5 @@
 import { EPS, wallLength } from './geom'
-import { applyExistingWallSplits, findWallCrossings } from './intersect'
+import { applyExistingWallSplits, cornersOnSegment, findWallCrossings } from './intersect'
 import { newId } from './id'
 import {
   applyAligned,
@@ -90,11 +90,14 @@ export function addWall(
   const refreshedEnd = workingFloor.corners.find((c) => c.id === endCornerId)!
 
   const chain: { id: string; x: number; z: number }[] = [{ ...refreshedStart }]
-  const splitPoints = hits.map((h) => ({
-    t: h.tOnNew,
-    x: h.x,
-    z: h.z,
-  }))
+  const splitPoints = [
+    ...hits.map((h) => ({ t: h.tOnNew, x: h.x, z: h.z })),
+    ...cornersOnSegment(workingFloor.corners, start.x, start.z, end.x, end.z).map(({ corner, t }) => ({
+      t,
+      x: corner.x,
+      z: corner.z,
+    })),
+  ]
   splitPoints.sort((a, b) => a.t - b.t)
   for (const p of splitPoints) {
     const existing = workingFloor.corners.find(
@@ -114,7 +117,13 @@ export function addWall(
   for (let i = 0; i < chain.length - 1; i++) {
     const a = chain[i]
     const b = chain[i + 1]
-    if (Math.hypot(a.x - b.x, a.z - b.z) <= EPS) continue
+    if (a.id === b.id || Math.hypot(a.x - b.x, a.z - b.z) <= EPS) continue
+    const joined = newWalls.some(
+      (w) =>
+        (w.startCornerId === a.id && w.endCornerId === b.id) ||
+        (w.startCornerId === b.id && w.endCornerId === a.id),
+    )
+    if (joined) continue
     newWalls.push({
       id: newId('wall'),
       startCornerId: a.id,

@@ -115,6 +115,21 @@ export function findWallCrossings(
   return hits
 }
 
+export function cornersOnSegment(
+  corners: Corner[],
+  x0: number,
+  z0: number,
+  x1: number,
+  z1: number,
+): { corner: Corner; t: number }[] {
+  const found: { corner: Corner; t: number }[] = []
+  for (const corner of corners) {
+    const proj = interiorProjection(x0, z0, x1, z1, corner.x, corner.z)
+    if (proj) found.push({ corner, t: proj.t })
+  }
+  return found.sort((a, b) => a.t - b.t)
+}
+
 export function splitWallAt(
   wall: Wall,
   splitDistance: number,

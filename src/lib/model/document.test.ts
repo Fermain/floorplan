@@ -199,6 +199,77 @@ describe('addWallRing', () => {
     expect(placed.reason).toBe('wall outside plot')
     expect(placed.document).toEqual(d)
   })
+
+  function withWall(x0: number, z0: number, x1: number, z1: number) {
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    d = (addCorner(d, fid, x0, z0) as { document: typeof d }).document
+    d = (addCorner(d, fid, x1, z1) as { document: typeof d }).document
+    const [a, b] = d.building.floors[0].corners
+    const r = addWall(d, fid, a.id, b.id, 'double')
+    expect(r.ok).toBe(true)
+    return { d: r.document, fid, a, b }
+  }
+
+  function linkCount(floor: ReturnType<typeof fixtureDocument>['building']['floors'][number]) {
+    return new Set(floor.walls.map((w) => [w.startCornerId, w.endCornerId].sort().join('|'))).size
+  }
+
+  it('reuses an existing wall that one side lies on', () => {
+    const { d, fid, a, b } = withWall(4, 4, 4, 10)
+    const placed = addWallRing(
+      d,
+      fid,
+      [
+        { x: 4, z: 4, cornerId: a.id },
+        { x: 10, z: 4 },
+        { x: 10, z: 10 },
+        { x: 4, z: 10, cornerId: b.id },
+      ],
+      'double',
+    )
+    expect(placed.ok).toBe(true)
+    const floor = placed.document.building.floors[0]
+    expect(floor.walls).toHaveLength(4)
+    expect(linkCount(floor)).toBe(4)
+    expect(deriveRooms(floor)).toHaveLength(1)
+  })
+
+  it('joins a side that only partly overlaps an existing wall', () => {
+    const { d, fid } = withWall(4, 2, 4, 7)
+    const placed = addWallRing(
+      d,
+      fid,
+      [
+        { x: 4, z: 4 },
+        { x: 10, z: 4 },
+        { x: 10, z: 10 },
+        { x: 4, z: 10 },
+      ],
+      'double',
+    )
+    expect(placed.ok).toBe(true)
+    const floor = placed.document.building.floors[0]
+    const onLine = floor.walls
+      .map((w) => [w.startCornerId, w.endCornerId].map((id) => floor.corners.find((c) => c.id === id)!))
+      .filter(([s, e]) => Math.abs(s.x - 4) < 1e-6 && Math.abs(e.x - 4) < 1e-6)
+    const covered = onLine.reduce((sum, [s, e]) => sum + Math.abs(e.z - s.z), 0)
+    expect(covered).toBeCloseTo(8, 6)
+    expect(floor.walls).toHaveLength(6)
+    expect(deriveRooms(floor)).toHaveLength(1)
+  })
+
+  it('joins a new wall to a corner it passes through', () => {
+    const { d, fid, b } = withWall(4, 4, 7, 7)
+    let next = (addCorner(d, fid, 7, 10) as { document: typeof d }).document
+    next = (addCorner(next, fid, 7, 4) as { document: typeof d }).document
+    const [, , top, bottom] = next.building.floors[0].corners
+    const r = addWall(next, fid, bottom.id, top.id, 'double')
+    expect(r.ok).toBe(true)
+    const floor = r.document.building.floors[0]
+    expect(floor.walls).toHaveLength(3)
+    expect(floor.walls.filter((w) => w.startCornerId === b.id || w.endCornerId === b.id)).toHaveLength(3)
+  })
 })
 
 describe('document store undo', () => {
