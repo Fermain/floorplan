@@ -50,7 +50,6 @@ export function segmentInsideRings(
 }
 
 export function storeyFootprint(document: Document, floor: Floor): Ring[] | null {
-  if (floor.outline && floor.outline.length > 0) return floor.outline
   if (floor.index === 0 || !floor.unitId) return null
   const ground = document.building.floors.find((item) => item.index === 0)
   if (floor.index === 1) {
@@ -304,9 +303,30 @@ function plateRings(floor: Floor, cornerIds?: string[]): Ring[] {
     const rooms = componentRings(floor, cornerIds)
     if (rooms.length > 0) return rooms
   }
-  const rooms = structureRings(floor)
-  if (rooms.length > 0) return rooms
-  return (floor.outline ?? []).map((ring) => ring.map((point) => ({ x: point.x, z: point.z })))
+  return structureRings(floor)
+}
+
+function sameRings(a: Ring[], b: Ring[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every(
+    (ring, i) =>
+      ring.length === b[i].length &&
+      ring.every((point, j) => Math.abs(point.x - b[i][j].x) < 1e-9 && Math.abs(point.z - b[i][j].z) < 1e-9),
+  )
+}
+
+// An upper storey stands on the rooms enclosed below it, solid or logical walls alike, never on open floor.
+export function syncOutlines(document: Document): Document {
+  let changed = false
+  const floors = document.building.floors.map((floor) => {
+    const footprint = storeyFootprint(document, floor)
+    if (footprint === null) return floor
+    const outline = footprint.map((ring) => ring.map((point) => ({ x: point.x, z: point.z })))
+    if (sameRings(floor.outline ?? [], outline)) return floor
+    changed = true
+    return { ...floor, outline }
+  })
+  return changed ? { ...document, building: { ...document.building, floors } } : document
 }
 
 export function blankStorey(outline: Ring[], unitId: string, index: number): Floor {

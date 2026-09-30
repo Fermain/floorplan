@@ -1624,8 +1624,15 @@
 
   const planHint = $derived.by(() => {
     if (drawHintBody) return drawHintBody
+    if (activeStoreyIndex > 0) {
+      const floating = levelFloors.find((floor) => !(floor.outline ?? []).some((ring) => ring.length >= 3))
+      if (floating?.roof) {
+        return 'This roof has nothing to stand on. Enclose rooms on the storey below, with solid or logical walls.'
+      }
+      if (floating) return 'Nothing is enclosed on the storey below, so this storey has no floor to stand on.'
+    }
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
-      return 'A wall on this storey does not land on a wall below.'
+      return 'A wall on this storey does not land on a wall below. A logical wall below can carry it.'
     }
     if (storeyHasLongSolidWall(levelFloors)) {
       return 'A straight wall is longer than 8 m and wants a movement joint.'

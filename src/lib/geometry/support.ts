@@ -84,9 +84,8 @@ export function wallLandsOnBelow(document: Document, floor: Floor, wall: Wall): 
   if (!below) return false
 
   for (const lowerWall of below.walls) {
-    if (lowerWall.skin === 'logical') continue
     if (!wallBelongsToUnit(below, lowerWall, unitId)) continue
-    const tolerance = systemOf(lowerWall).leafThickness / 2
+    const tolerance = systemOf(lowerWall.skin === 'logical' ? wall : lowerWall).leafThickness / 2
     const lower = wallCenterline(below, lowerWall)
     if (lower && centerlineCarriedBy(upper, lower, tolerance)) return true
   }

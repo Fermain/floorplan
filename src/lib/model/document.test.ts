@@ -702,6 +702,12 @@ describe('storeys', () => {
     let d = rectInsidePlot(fixtureDocument())
     const fid = floorId(d)
     for (let i = 1; i < MAX_STOREYS; i++) {
+      const top = d.building.floors.find((floor) => floor.index === i - 1)!
+      if (i > 1) {
+        const walled = addWallRing(d, top.id, [{ x: 4, z: 4 }, { x: 10, z: 4 }, { x: 10, z: 10 }, { x: 4, z: 10 }], 'double')
+        expect(walled.ok).toBe(true)
+        d = walled.document
+      }
       const corner = d.building.floors[0].corners[0].id
       const added = addStorey(d, fid, corner)
       expect(added.ok).toBe(true)
