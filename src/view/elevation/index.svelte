@@ -480,11 +480,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     <p class="empty">No wall selected</p>
   {:else}
     {#if logical}
-      <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
-        <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
+        <div class="flex min-w-0 items-center gap-2">
           <span class="text-muted-foreground">Fence</span>
           <Select.Root type="single" value={fence?.type ?? 'none'} onValueChange={chooseFence}>
-            <Select.Trigger size="sm" class="w-44" aria-label="Fence">
+            <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="Fence">
               {fence ? fenceSpec(fence.type).name : 'None'}
             </Select.Trigger>
             <Select.Content>
@@ -496,7 +496,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </Select.Root>
         </div>
         {#if fence}
-          <Separator orientation="vertical" class="h-5" />
+          <Separator orientation="vertical" class="hidden h-5 sm:block" />
           <label class="flex items-center gap-2">
             <span class="text-muted-foreground">Height</span>
             <Input
@@ -510,15 +510,15 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
             />
             <span class="text-muted-foreground">mm</span>
           </label>
-          <span class="text-muted-foreground">{fenceSpec(fence.type).text}</span>
+          <span class="min-w-0 basis-full text-muted-foreground sm:basis-auto">{fenceSpec(fence.type).text}</span>
         {/if}
       </div>
     {:else}
-    <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
       <div class="flex items-center gap-2">
         <span class="text-muted-foreground">Place</span>
         <Select.Root type="single" value={insertTool} onValueChange={(next) => chooseInsert(next as OpeningKind)}>
-          <Select.Trigger size="sm" class="w-40" aria-label="Opening to place">
+          <Select.Trigger size="sm" class="w-32 sm:w-40" aria-label="Opening to place">
             {insertChoices.find((choice) => choice.kind === insertTool)?.label}
           </Select.Trigger>
           <Select.Content>
@@ -529,11 +529,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         </Select.Root>
       </div>
       {#if widthLimits && widthAllowed}
-        <Separator orientation="vertical" class="h-5" />
-        <label class="flex items-center gap-2">
-          <span class="text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
+        <Separator orientation="vertical" class="hidden h-5 sm:block" />
+        <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+          <span class="shrink-0 text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
           <input
-            class="w-32 accent-primary"
+            class="min-w-0 flex-1 accent-primary sm:w-32 sm:flex-none"
             type="range"
             min={widthLimits.min}
             max={widthLimits.max}
@@ -561,10 +561,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       {#if editingOpening}
         <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
-      <div class="ml-auto flex items-center gap-2">
+      <div class="flex w-full min-w-0 items-center gap-2 sm:ml-auto sm:w-auto">
         <span class="text-muted-foreground">Wall</span>
         <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
-          <Select.Trigger size="sm" class="w-48" aria-label="Wall system">{system.name}</Select.Trigger>
+          <Select.Trigger size="sm" class="w-full sm:w-48" aria-label="Wall system">{system.name}</Select.Trigger>
           <Select.Content>
             {#each WALL_SYSTEMS as choice (choice.id)}
               <Select.Item value={choice.id}>{choice.name}</Select.Item>

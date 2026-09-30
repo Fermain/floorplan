@@ -79,7 +79,7 @@
 </script>
 
 <div class="root">
-  <div class="flex flex-wrap items-center gap-3 border-b bg-background px-3 py-1.5 text-sm">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
     <ToggleGroup.Root
       type="single"
       variant="outline"
@@ -93,11 +93,11 @@
       <ToggleGroup.Item value="summer" aria-label="Summer solstice"><Sun />Summer</ToggleGroup.Item>
       <ToggleGroup.Item value="winter" aria-label="Winter solstice"><Snowflake />Winter</ToggleGroup.Item>
     </ToggleGroup.Root>
-    <Separator orientation="vertical" class="h-5" />
-    <label class="flex items-center gap-2">
+    <Separator orientation="vertical" class="hidden h-5 sm:block" />
+    <label class="flex min-w-0 basis-full items-center gap-2 sm:basis-auto sm:flex-1">
       <span class="text-muted-foreground">Time</span>
-      <input class="w-48 accent-primary" type="range" min="0" max="24" step="1" bind:value={hour} />
-      <span class="whitespace-nowrap tabular-nums">{String(hour).padStart(2, '0')}:00 SAST</span>
+      <input class="min-w-0 flex-1 accent-primary sm:max-w-48" type="range" min="0" max="24" step="1" bind:value={hour} />
+      <span class="shrink-0 tabular-nums">{String(hour).padStart(2, '0')}:00 SAST</span>
     </label>
   </div>
   <div class="viewport">

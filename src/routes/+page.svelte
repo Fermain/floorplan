@@ -72,8 +72,8 @@
   }
 </script>
 
-<div class="min-h-screen bg-muted/40">
-  <div class="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+<div class="min-h-dvh bg-muted/40">
+  <div class="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Floorplan</h1>
@@ -113,11 +113,11 @@
       </Card.Header>
       <Card.Content class="p-0">
         {#if loaded && projects.length === 0}
-          <p class="px-6 pb-6 text-sm text-muted-foreground">No projects yet. Start one with New project.</p>
+          <p class="px-4 pb-6 text-sm text-muted-foreground sm:px-6">No projects yet. Start one with New project.</p>
         {/if}
         <ul class="divide-y">
           {#each projects as project (project.id)}
-            <li class="flex items-center gap-3 px-6 py-3">
+            <li class="flex items-center gap-3 px-4 py-3 sm:px-6">
               <a class="min-w-0 flex-1" href={sectionHref(project.id, 'plan')}>
                 <div class="truncate font-medium">{project.name}</div>
                 <div class="text-xs text-muted-foreground">Edited {updated.format(project.updatedAt)}</div>
