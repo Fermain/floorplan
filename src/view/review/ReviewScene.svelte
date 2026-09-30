@@ -30,7 +30,8 @@
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
-  import { buildInfillGeometry, buildRoofGeometry, masonryReach, roofInfills, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { buildRoofGeometry, masonryReach, roofInfills, WALL_HEAD_M } from '../../lib/geometry/roof'
+  import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
   import { supportingFloor } from '../../lib/model/stories'
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
@@ -63,7 +64,12 @@
     panels: OpeningPanelMesh[]
   }
   type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
-  type RoofMesh = { key: string; geometry: BufferGeometry; infill: BufferGeometry | null; y: number }
+  type RoofMesh = {
+    key: string
+    geometry: BufferGeometry
+    gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
+    y: number
+  }
   type StairMesh = { key: string; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
@@ -204,7 +210,8 @@
       for (const slab of slabs) slab.geometry.dispose()
       for (const roof of roofs) {
         roof.geometry.dispose()
-        roof.infill?.dispose()
+        roof.gable.body?.dispose()
+        roof.gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
     }
@@ -231,13 +238,15 @@
       const reach = masonryReach(below?.walls ?? [])
       const geometry = buildRoofGeometry(floor, roof, reach)
       if (!geometry) continue
-      const infill = below ? buildInfillGeometry(roofInfills(below, floor, roof, reach)) : null
+      const gable = below
+        ? buildGableGeometries(below, roofInfills(below, floor, roof, reach))
+        : { body: null, faces: null }
       const grade = below ? supportGrade(below, pad) : outlineGrade(floor, pad)
       const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
       meshes.push({
         key: floor.id,
         geometry,
-        infill,
+        gable,
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }
@@ -472,9 +481,14 @@
       <T.Mesh geometry={roof.geometry} position.y={roof.y} castShadow>
         <T.MeshStandardMaterial color="#5e666e" roughness={0.84} side={DoubleSide} />
       </T.Mesh>
-      {#if roof.infill}
-        <T.Mesh geometry={roof.infill} position.y={roof.y} castShadow>
-          <T.MeshStandardMaterial color="#9a8b79" roughness={0.9} side={DoubleSide} />
+      {#if roof.gable.body}
+        <T.Mesh geometry={roof.gable.body} position.y={roof.y} castShadow receiveShadow>
+          <T.MeshStandardMaterial color="#6e6256" />
+        </T.Mesh>
+      {/if}
+      {#if roof.gable.faces}
+        <T.Mesh geometry={roof.gable.faces} position.y={roof.y} castShadow receiveShadow>
+          <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
         </T.Mesh>
       {/if}
     {/each}

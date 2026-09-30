@@ -199,13 +199,54 @@ describe('gable and mono-pitch roofs', () => {
     expect(Math.max(...heights) - Math.min(...heights)).toBeCloseTo(span * tan, 6)
   })
 
-  it('builds the gable ends up to the roof, and nothing under a hip', () => {
-    const gables = roofInfills(below, plate, { pitchDeg: pitch, eaves: 0.3, form: 'gable' }, reach)
+  it('builds the gable ends up to the roof in courses, and nothing under a hip', () => {
+    const roof = { pitchDeg: pitch, eaves: 0.3, form: 'gable' as const }
+    const gables = roofInfills(below, plate, roof, reach)
     expect(gables.map((infill) => infill.wall.id).sort()).toEqual(['bc', 'da'])
-    const rise = (6 / 2 + reach) * tan
-    expect(Math.max(...gables[0].outer.map((v) => v.y))).toBeCloseTo(rise, 6)
-    expect(gables[0].area).toBeCloseTo(6 * reach * tan + 0.5 * 6 * 3 * tan, 6)
+    const [end] = gables
+    const apex = (6 / 2) * tan
+    const top = Math.max(...end.blocks.flatMap((block) => block.poly.map((p) => p.y)))
+    expect(top).toBeCloseTo(apex, 6)
+    expect(end.area).toBeCloseTo(0.5 * 6 * 3 * tan, 1)
     expect(roofInfills(below, plate, { pitchDeg: pitch, eaves: 0.3 }, reach)).toEqual([])
+  })
+
+  it('keeps every gable unit under the roof', () => {
+    const gables = roofInfills(below, plate, { pitchDeg: pitch, eaves: 0.3, form: 'gable' }, reach)
+    const half = 3 + reach + 0.3
+    const roofAt = (z: number) => (half - Math.abs(z - 3)) * tan - 0.3 * tan
+    for (const infill of gables) {
+      const toZ = infill.wall.id === 'bc' ? (u: number) => u : (u: number) => 6 - u
+      for (const block of infill.blocks) {
+        for (const p of [...block.poly, ...block.face]) {
+          expect(p.y).toBeLessThanOrEqual(roofAt(toZ(p.u)) - reach * tan + 1e-9)
+        }
+      }
+    }
+  })
+
+  it('lays the gable in the units and bond of the wall below', () => {
+    const blockBelow: Floor = {
+      ...below,
+      walls: below.walls.map((wall) => ({ ...wall, skin: 'single' as const, systemId: 'block-140' as const })),
+    }
+    const [end] = roofInfills(blockBelow, plate, { pitchDeg: pitch, eaves: 0.3, form: 'gable' }, 0.07)
+    for (const block of end.blocks) {
+      const us = block.poly.map((p) => p.u)
+      expect(Math.max(...us) - Math.min(...us)).toBeLessThanOrEqual(0.4 + 1e-9)
+      const ys = block.poly.map((p) => p.y)
+      expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(0.2 + 1e-9)
+    }
+    const starts = (course: number) =>
+      end.blocks
+        .filter((block) => block.course === course)
+        .map((block) => Math.min(...block.poly.map((p) => p.u)))
+        .sort((a, b) => a - b)
+    const courses = [...new Set(end.blocks.map((block) => block.course))].sort((a, b) => a - b)
+    expect(courses.length).toBeGreaterThan(3)
+    const even = starts(courses[0]).map((u) => Math.round(((u % 0.4) + 0.4) % 0.4 * 1000))
+    const odd = starts(courses[1]).map((u) => Math.round(((u % 0.4) + 0.4) % 0.4 * 1000))
+    expect(new Set(even.slice(1))).not.toEqual(new Set(odd.slice(1)))
   })
 
   it('raises the high wall and the two sides of a mono-pitch', () => {

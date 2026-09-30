@@ -7,7 +7,8 @@ import {
 } from 'three'
 import { deriveRooms } from '../model/rooms'
 import { signedPolygonArea } from '../model/geom'
-import { pointInRing } from './pad'
+import { gableBlocks, polygonArea, type GableBlock } from './gable'
+import { systemOf } from '../model/systems'
 import type { Floor, Roof, Wall } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
 import { unionRings, type DeckPolygon } from './deck'
@@ -162,92 +163,33 @@ export function roofFacesForFloor(floor: Floor, roof: Roof, reach = DEFAULT_REAC
   return roofSurface(floor, roof, reach).faces
 }
 
-export type RoofInfill = { wall: Wall; outer: RoofVertex[]; inner: RoofVertex[]; area: number }
+export type RoofInfill = { wall: Wall; blocks: GableBlock[]; area: number }
 
 export function roofInfills(below: Floor, floor: Floor, roof: Roof, reach = DEFAULT_REACH): RoofInfill[] {
   const { heightAt } = roofSurface(floor, roof, reach)
   if (!heightAt) return []
-  const cells = deriveRooms(below)
   const count = new Map<string, number>()
-  const edges: { wall: Wall; a: PlanPoint; b: PlanPoint; ring: Ring }[] = []
-  for (const room of cells) {
-    const ring: Ring = room.cornerIds.map((id) => {
-      const corner = below.corners.find((item) => item.id === id)!
-      return { x: corner.x, z: corner.z }
-    })
+  const walls = new Map<string, Wall>()
+  for (const room of deriveRooms(below)) {
     for (let i = 0; i < room.cornerIds.length; i++) {
       const wall = wallBetween(below, room.cornerIds[i], room.cornerIds[(i + 1) % room.cornerIds.length])
       if (!wall || wall.skin === 'logical') continue
       count.set(wall.id, (count.get(wall.id) ?? 0) + 1)
-      edges.push({ wall, a: ring[i], b: ring[(i + 1) % ring.length], ring })
+      walls.set(wall.id, wall)
     }
   }
   const infills: RoofInfill[] = []
-  for (const edge of edges) {
-    if (count.get(edge.wall.id) !== 1) continue
-    const dx = edge.b.x - edge.a.x
-    const dz = edge.b.z - edge.a.z
-    const length = Math.hypot(dx, dz)
-    if (length < 1e-6) continue
-    let normal = { x: dz / length, z: -dx / length }
-    const mid = { x: (edge.a.x + edge.b.x) / 2, z: (edge.a.z + edge.b.z) / 2 }
-    if (pointInRing(edge.ring, mid.x + normal.x * 0.05, mid.z + normal.z * 0.05)) normal = { x: -normal.x, z: -normal.z }
-    const wallReachOut = wallReach(edge.wall)
-    const face = (offset: number) => {
-      const at = (t: number) => ({
-        x: edge.a.x + dx * t + normal.x * offset,
-        z: edge.a.z + dz * t + normal.z * offset,
-      })
-      const samples = [0, 1]
-      const ha = heightAt(at(0))
-      const hb = heightAt(at(1))
-      for (let k = 1; k < 32; k++) {
-        const t = k / 32
-        const h = heightAt(at(t))
-        const linear = ha + (hb - ha) * t
-        if (Math.abs(h - linear) > 1e-3) samples.push(t)
-      }
-      samples.sort((p, q) => p - q)
-      const top = samples.map((t) => {
-        const p = at(t)
-        return { x: p.x, y: Math.max(0, heightAt(p)), z: p.z }
-      })
-      return top
-    }
-    const outerTop = face(wallReachOut)
-    if (outerTop.every((p) => p.y < 1e-3)) continue
-    const innerTop = face(-wallReachOut)
-    const close = (top: RoofVertex[]) => [
-      { x: top[0].x, y: 0, z: top[0].z },
-      { x: top[top.length - 1].x, y: 0, z: top[top.length - 1].z },
-      ...[...top].reverse(),
-    ]
-    let area = 0
-    for (let i = 0; i < outerTop.length - 1; i++) {
-      const p = outerTop[i]
-      const q = outerTop[i + 1]
-      area += (Math.hypot(q.x - p.x, q.z - p.z) * (p.y + q.y)) / 2
-    }
-    infills.push({ wall: edge.wall, outer: close(outerTop), inner: close(innerTop), area })
+  for (const wall of walls.values()) {
+    if (count.get(wall.id) !== 1) continue
+    const blocks = gableBlocks(below, wall, heightAt, reach * Math.tan((roof.pitchDeg * Math.PI) / 180))
+    if (blocks.length === 0) continue
+    const leaves = Math.max(1, systemOf(wall).leaves)
+    const area = blocks.reduce((sum, block) => sum + polygonArea(block.poly), 0) / leaves
+    infills.push({ wall, blocks, area })
   }
   return infills
 }
 
-export function buildInfillGeometry(infills: RoofInfill[]): BufferGeometry | null {
-  const positions: number[] = []
-  for (const infill of infills) {
-    for (const polygon of [infill.outer, infill.inner]) {
-      for (let i = 1; i < polygon.length - 1; i++) {
-        for (const v of [polygon[0], polygon[i], polygon[i + 1]]) positions.push(v.x, v.y, v.z)
-      }
-    }
-  }
-  if (positions.length < 9) return null
-  const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-  geometry.computeVertexNormals()
-  return geometry
-}
 
 export type RoofPlan = {
   footprints: DeckPolygon[]

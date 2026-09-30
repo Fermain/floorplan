@@ -152,9 +152,8 @@ export function takeoff(doc: Document): QuantityLine[] {
     const reach = masonryReach(below.walls)
     for (const infill of roofInfills(below, floor, floor.roof, reach)) {
       const system = systemOf(infill.wall)
-      const perLeaf = infill.area / (system.moduleLength * system.courseHeight)
       const tally = masonry.get(system.unitKey) ?? { whole: 0, cut: 0, gable: 0 }
-      tally.gable += Math.ceil(perLeaf * system.leaves)
+      tally.gable += infill.blocks.length
       masonry.set(system.unitKey, tally)
       mortarM3 += infill.area * system.leaves * system.leafThickness * mortarFraction(system)
     }
