@@ -4,7 +4,8 @@ import type { Document } from '../model/types'
 import { FLOOR_TO_FLOOR, fixtureDocument } from '../plot/fixture'
 import { deckPolygons } from './deck'
 import { SURFACE_BED_TOP_ABOVE_DATUM_M } from './pad'
-import { MAX_RISER_M, MIN_GOING_M, stairConcreteM3, stairLayout, stairVoids } from './stairs'
+import { MAX_RISER_M, MIN_GOING_M, placeStair, stairConcreteM3, stairLayout, stairVoids } from './stairs'
+import { floorCells } from './spaces'
 
 function house(storeys: boolean): Document {
   const d = fixtureDocument()
@@ -92,5 +93,64 @@ describe('stairs', () => {
     const volume = stairConcreteM3({ id: 's', x: 0, z: 0, dx: 1, dz: 0, width: 1 }, 0)
     expect(volume).toBeGreaterThan(0.6)
     expect(volume).toBeLessThan(1)
+  })
+})
+
+describe('placing a stair', () => {
+  const east = { x: 1, z: 0 }
+
+  function netBounds(doc: Document) {
+    const cell = floorCells(doc.building.floors[0])[0]
+    const xs = cell.net.map((p) => p.x)
+    const zs = cell.net.map((p) => p.z)
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) }
+  }
+
+  function bounds(footprint: { x: number; z: number }[]) {
+    const xs = footprint.map((p) => p.x)
+    const zs = footprint.map((p) => p.z)
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) }
+  }
+
+  it('lays its long side against a wall it is held near', () => {
+    const doc = house(true)
+    const room = netBounds(doc)
+    const placed = placeStair(doc, doc.building.floors[0], { x: 7, z: room.minZ + 0.5 }, east)
+    expect(placed.snap).toBe('side')
+    expect(placed.problem).toBeNull()
+    expect(bounds(placed.layout.footprint).minZ).toBeCloseTo(room.minZ, 1)
+    expect(Math.abs(placed.stair.dx)).toBeCloseTo(1, 9)
+  })
+
+  it('puts its short end against a wall when held half a flight out', () => {
+    const doc = house(true)
+    const room = netBounds(doc)
+    const layout = stairLayout({ id: 's', x: 0, z: 0, dx: 1, dz: 0, width: 0.9 }, 0)
+    const placed = placeStair(doc, doc.building.floors[0], { x: room.minX + layout.length / 2, z: 7 }, east)
+    expect(placed.snap).toBe('end')
+    expect(bounds(placed.layout.footprint).minX).toBeCloseTo(room.minX, 1)
+    expect(placed.problem).toBeNull()
+  })
+
+  it('tucks into a corner and climbs the way it is turned', () => {
+    const doc = house(true)
+    const room = netBounds(doc)
+    const floor = doc.building.floors[0]
+    const tucked = placeStair(doc, floor, { x: room.minX + 0.3, z: room.minZ + 0.3 }, east)
+    expect(tucked.problem).toBeNull()
+    const box = bounds(tucked.layout.footprint)
+    expect(box.minX).toBeCloseTo(room.minX, 1)
+    expect(box.minZ).toBeCloseTo(room.minZ, 1)
+    expect(tucked.stair.dx).toBeCloseTo(1, 9)
+    const turned = placeStair(doc, floor, { x: room.minX + 0.3, z: room.minZ + 0.3 }, { x: -1, z: 0 })
+    expect(turned.stair.dx).toBeCloseTo(-1, 9)
+    expect(bounds(turned.layout.footprint)).toEqual(box)
+  })
+
+  it('floats free in the middle of a room and reports a stair with nowhere to go', () => {
+    const doc = house(false)
+    const placed = placeStair(doc, doc.building.floors[0], { x: 7, z: 7 }, east)
+    expect(placed.snap).toBeNull()
+    expect(placed.problem).toBe('add a storey above the stair first')
   })
 })

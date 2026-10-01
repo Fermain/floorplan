@@ -96,3 +96,81 @@ export function stairConcreteM3(stair: Stair, floorIndex: number): number {
   const waist = Math.hypot(layout.length, layout.rise) * STAIR_WAIST_M
   return stair.width * (triangles + waist)
 }
+
+export type StairSnap = 'side' | 'end' | null
+
+export type StairPlacement = { stair: Stair; layout: StairLayout; snap: StairSnap; problem: string | null }
+
+export const STAIR_SNAP_M = 0.6
+const STAIR_FACE_GAP_M = 0.005
+
+type Dir = { x: number; z: number }
+
+function dot(a: Dir, b: Dir): number {
+  return a.x * b.x + a.z * b.z
+}
+
+function stairFrom(centre: Dir, dir: Dir, width: number, length: number): Stair {
+  return {
+    id: 'preview',
+    x: centre.x - dir.x * (length / 2),
+    z: centre.z - dir.z * (length / 2),
+    dx: dir.x,
+    dz: dir.z,
+    width,
+  }
+}
+
+// The whole stair follows the pointer. Near a wall face it sits flush: its long side against the wall,
+// or, held about half a flight out, its short end. The preferred direction picks which way it climbs.
+export function placeStair(
+  doc: Document,
+  floor: Floor,
+  pointer: Dir,
+  preferred: Dir,
+  width = DEFAULT_STAIR_WIDTH_M,
+): StairPlacement {
+  const length = stairLayout({ id: '', x: 0, z: 0, dx: 1, dz: 0, width }, floor.index).length
+  const cell = floorCells(floor).find((item) => pointInRing(item.net, pointer.x, pointer.z))
+  let best: { stair: Stair; snap: StairSnap; score: number } | null = null
+  const ring = cell?.net ?? []
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    const edge = Math.hypot(b.x - a.x, b.z - a.z)
+    if (edge < 1e-6) continue
+    const t = { x: (b.x - a.x) / edge, z: (b.z - a.z) / edge }
+    let n = { x: -t.z, z: t.x }
+    const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
+    if (!pointInRing(ring, mid.x + n.x * 0.01, mid.z + n.z * 0.01)) n = { x: -n.x, z: -n.z }
+    for (const snap of ['side', 'end'] as const) {
+      const along = snap === 'side' ? length / 2 : width / 2
+      const across = snap === 'side' ? width / 2 : length / 2
+      if (edge < 2 * along - 1e-9) continue
+      const s = Math.min(edge - along, Math.max(along, dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)))
+      const centre = {
+        x: a.x + t.x * s + n.x * (across + STAIR_FACE_GAP_M),
+        z: a.z + t.z * s + n.z * (across + STAIR_FACE_GAP_M),
+      }
+      const score = Math.hypot(centre.x - pointer.x, centre.z - pointer.z)
+      if (score > length || (best && score >= best.score)) continue
+      const options = snap === 'side' ? [t, { x: -t.x, z: -t.z }] : [n, { x: -n.x, z: -n.z }]
+      const dir = dot(options[1], preferred) > dot(options[0], preferred) + 1e-9 ? options[1] : options[0]
+      const stair = stairFrom(centre, dir, width, length)
+      const { footprint } = stairLayout(stair, floor.index)
+      if (!footprint.every((point) => pointInRing(ring, point.x, point.z))) continue
+      best = { stair, snap, score }
+    }
+  }
+  // A free stair that would poke through a wall is pulled to the nearest flush spot instead.
+  const free = stairFrom(pointer, preferred, width, length)
+  const freeFits = ring.length > 0 && stairLayout(free, floor.index).footprint.every((point) => pointInRing(ring, point.x, point.z))
+  const snapped = best && (best.score <= STAIR_SNAP_M || !freeFits) ? best : null
+  const stair = snapped?.stair ?? free
+  return {
+    stair,
+    layout: stairLayout(stair, floor.index),
+    snap: snapped?.snap ?? null,
+    problem: stairFitProblem(doc, floor, stair),
+  }
+}

@@ -39,6 +39,10 @@
   import { supportingFloor } from '../../lib/model/stories'
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
+  import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
+  import { floorSupports, type SupportPoint } from '../../lib/model/supports'
+  import { wallSystem } from '../../lib/model/systems'
+  import type { SupportType } from '../../lib/model/types'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -90,6 +94,7 @@
   let roofMeshes = $state<RoofMesh[]>([])
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
+  let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -170,7 +175,20 @@
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
     const fences: { key: string; parts: FencePart[] }[] = []
+    const pillars: { key: string; parts: PillarPart[] }[] = []
+    const system = wallSystem(doc.building.wallSystemId)
     for (const floor of floors) {
+      const groups: Record<string, { type: SupportType; datum: number; spots: SupportPoint[] }> = {}
+      for (const spot of floorSupports(floor)) {
+        const wall = floor.walls.find((item) => item.id === spot.wallId)
+        const datum = wall ? floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0) : floor.datumHeight
+        const key = `${spot.support.type}@${datum}`
+        groups[key] ??= { type: spot.support.type, datum, spots: [] }
+        groups[key].spots.push(spot)
+      }
+      for (const [key, group] of Object.entries(groups)) {
+        pillars.push({ key: `${floor.id}:${key}`, parts: buildPillarParts(group.type, group.spots, system, group.datum) })
+      }
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') {
           const line = wall.fence ? fenceFrame(floor, wall) : null
@@ -217,7 +235,9 @@
     roofMeshes = roofs
     stairMeshes = stairs
     fenceMeshes = fences
+    pillarMeshes = pillars
     return () => {
+      for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
       minor?.dispose()
@@ -497,6 +517,14 @@
           polygonOffsetUnits={1}
         />
       </T.Mesh>
+    {/each}
+
+    {#each pillarMeshes as pillar (pillar.key)}
+      {#each pillar.parts as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.85} />
+        </T.Mesh>
+      {/each}
     {/each}
 
     {#each fenceMeshes as fence (fence.key)}

@@ -40,7 +40,18 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { FenceType } from '../../lib/model/types'
+  import type { FenceType, SupportType } from '../../lib/model/types'
+  import {
+    defaultSupport,
+    evenPositions,
+    SUPPORT_HEIGHT_M,
+    SUPPORT_MAX_SPACING_M,
+    SUPPORT_MIN_SPACING_M,
+    SUPPORTS,
+    supportSpec,
+  } from '../../lib/model/supports'
+  import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
+  import { wallSystem } from '../../lib/model/systems'
 
   interface Props {
     wallId?: string
@@ -104,19 +115,24 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   const logical = $derived(wall?.skin === 'logical')
   const fence = $derived(logical ? wall?.fence : undefined)
+  const support = $derived(logical ? wall?.support : undefined)
 
   const frame = $derived.by(() => {
     if (!floor || !wall) {
       return undefined
     }
-    if (logical) return computeWallElevationFrame(floor, wall, Math.max(1.2, (fence?.height ?? 0) + 0.4))
+    if (logical) {
+      const tallest = Math.max(fence?.height ?? 0, support ? SUPPORT_HEIGHT_M : 0)
+      return computeWallElevationFrame(floor, wall, Math.max(1.2, tallest + 0.4))
+    }
     return computeWallElevationFrame(floor, wall)
   })
 
   const fenceParts = $derived.by((): FencePart[] => {
     if (!floor || !wall || !fence) return []
     const line = fenceFrame(floor, wall)
-    return line ? buildFenceParts(line, fence, () => 0) : []
+    const base = floor.datumHeight
+    return line ? buildFenceParts(line, fence, () => base) : []
   })
 
   $effect(() => {
@@ -125,6 +141,45 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       for (const part of parts) part.geometry.dispose()
     }
   })
+
+  const supportSpots = $derived.by(() => {
+    if (!floor || !wall || !support) return []
+    const line = fenceFrame(floor, wall)
+    if (!line) return []
+    return evenPositions(line.length, support.spacing).map((u) => ({
+      x: line.start.x + line.dir.x * u,
+      z: line.start.z + line.dir.z * u,
+      dir: line.dir,
+    }))
+  })
+
+  const pillarParts = $derived.by((): PillarPart[] => {
+    if (!support || supportSpots.length === 0) return []
+    return buildPillarParts(support.type, supportSpots, wallSystem(doc.building.wallSystemId), floor?.datumHeight ?? 0)
+  })
+
+  $effect(() => {
+    const parts = pillarParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  function chooseSupport(next: string) {
+    if (!floor || !wall) return
+    if (next === 'none') {
+      documentStore.setSupport(floor.id, wall.id, null)
+      return
+    }
+    const type = next as SupportType
+    documentStore.setSupport(floor.id, wall.id, support ? { ...support, type } : defaultSupport(type))
+  }
+
+  function setSupportSpacingMm(value: number) {
+    if (!floor || !wall || !support || !Number.isFinite(value)) return
+    const spacing = Math.min(SUPPORT_MAX_SPACING_M, Math.max(SUPPORT_MIN_SPACING_M, value / 1000))
+    documentStore.setSupport(floor.id, wall.id, { ...support, spacing })
+  }
 
   function chooseFence(next: string) {
     if (!floor || !wall) return
@@ -371,13 +426,23 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   function focusStatus(): { text: string; error: boolean } {
     if (!wall || !frame) return { text: '', error: false }
     if (logical) {
-      if (!fence) return { text: 'A logical wall marks a line without building it. Choose a fence to build one.', error: false }
-      const spec = fenceSpec(fence.type)
-      const posts = fencePosts(frame.length, spec).length
-      return {
-        text: `${spec.name}, ${mm(fence.height)} mm high: ${posts} posts over ${frame.length.toFixed(2)} m.`,
-        error: false,
+      if (!fence && !support) {
+        return {
+          text: 'A logical wall marks a line without building it. Choose a fence or supports to build along it.',
+          error: false,
+        }
       }
+      const parts: string[] = []
+      if (support) {
+        const count = supportSpots.length
+        parts.push(`${supportSpec(support.type).name}s at up to ${mm(support.spacing)} mm centres: ${count} over ${frame.length.toFixed(2)} m.`)
+      }
+      if (fence) {
+        const spec = fenceSpec(fence.type)
+        const posts = fencePosts(frame.length, spec).length
+        parts.push(`${spec.name}, ${mm(fence.height)} mm high: ${posts} posts.`)
+      }
+      return { text: parts.join(' '), error: false }
     }
     if (widthLimits && !widthAllowed) {
       const noun =
@@ -490,7 +555,12 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
             <Select.Content>
               <Select.Item value="none">None</Select.Item>
               {#each FENCES as option (option.id)}
-                <Select.Item value={option.id}>{option.name}</Select.Item>
+                <Select.Item value={option.id} label={option.name}>
+                  <div class="grid max-w-64 gap-0.5 whitespace-normal">
+                    <span>{option.name}</span>
+                    <span class="text-xs text-muted-foreground">{option.text}</span>
+                  </div>
+                </Select.Item>
               {/each}
             </Select.Content>
           </Select.Root>
@@ -510,7 +580,41 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
             />
             <span class="text-muted-foreground">mm</span>
           </label>
-          <span class="min-w-0 basis-full text-muted-foreground sm:basis-auto">{fenceSpec(fence.type).text}</span>
+        {/if}
+        <Separator orientation="vertical" class="hidden h-5 sm:block" />
+        <div class="flex min-w-0 items-center gap-2">
+          <span class="text-muted-foreground">Supports</span>
+          <Select.Root type="single" value={support?.type ?? 'none'} onValueChange={chooseSupport}>
+            <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="Supports">
+              {support ? supportSpec(support.type).name : 'None'}
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="none">None</Select.Item>
+              {#each SUPPORTS as option (option.id)}
+                <Select.Item value={option.id} label={option.name}>
+                  <div class="grid max-w-64 gap-0.5 whitespace-normal">
+                    <span>{option.name}</span>
+                    <span class="text-xs text-muted-foreground">{option.text}</span>
+                  </div>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        {#if support}
+          <label class="flex items-center gap-2">
+            <span class="text-muted-foreground">Spacing</span>
+            <Input
+              class="h-7 w-20"
+              type="number"
+              min={mm(SUPPORT_MIN_SPACING_M)}
+              max={mm(SUPPORT_MAX_SPACING_M)}
+              step="100"
+              value={mm(support.spacing)}
+              onchange={(event) => setSupportSpacingMm(Number(event.currentTarget.value))}
+            />
+            <span class="text-muted-foreground">mm</span>
+          </label>
         {/if}
       </div>
     {:else}
@@ -596,7 +700,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         frameGeometry={wallModel.frame}
         glassGeometry={wallModel.glass}
         panelMeshes={wallModel.panels}
-        {fenceParts}
+        fenceParts={[...fenceParts, ...pillarParts.map((part) => ({ ...part, opacity: 1 }))]}
         {orthoCamera}
         {onOrthoCamera}
       />
@@ -604,7 +708,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         <ElevationDimensions
           length={frame.length}
           height={frame.height}
-          head={logical ? (fence?.height ?? 0) : WALL_HEAD}
+          head={logical ? Math.max(fence?.height ?? 0, support ? SUPPORT_HEIGHT_M : 0) : WALL_HEAD}
           openings={logical ? [] : displayWall.openings}
           selectedId={selectedOpeningId}
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}

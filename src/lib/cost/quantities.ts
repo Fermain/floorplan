@@ -4,16 +4,27 @@ import { masonryReach, roofFacesForFloor, roofInfills, type RoofVertex } from '.
 import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
-import { MORTAR_JOINT, systemOf, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering } from '../model/types'
+import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
+import {
+  floorSupports,
+  pierCourses,
+  pierSide,
+  pierUnitsPerCourse,
+  SUPPORT_HEIGHT_M,
+  SUPPORTS,
+} from '../model/supports'
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Fencing'
+const SUPPORT_BASE_M = 0.6
+const SUPPORT_BASE_DEPTH_M = 0.3
+
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -29,7 +40,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -145,6 +156,23 @@ export function takeoff(doc: Document): QuantityLine[] {
 
       if (floor.index === 0) footingLength += wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
     }
+  }
+
+  const pierSystem = wallSystem(doc.building.wallSystemId)
+  const supports = new Map<SupportType, number>()
+  let groundSupports = 0
+  for (const floor of doc.building.floors) {
+    for (const spot of floorSupports(floor)) {
+      supports.set(spot.support.type, (supports.get(spot.support.type) ?? 0) + 1)
+      if (floor.index === 0) groundSupports += 1
+    }
+  }
+  const piers = supports.get('pier') ?? 0
+  if (piers > 0) {
+    const tally = masonry.get(pierSystem.unitKey) ?? { whole: 0, cut: 0, gable: 0 }
+    tally.whole += piers * pierCourses(pierSystem) * pierUnitsPerCourse(pierSystem)
+    masonry.set(pierSystem.unitKey, tally)
+    mortarM3 += piers * pierSide(pierSystem) ** 2 * SUPPORT_HEIGHT_M * mortarFraction(pierSystem)
   }
 
   for (const floor of doc.building.floors) {
@@ -341,6 +369,34 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm²',
       quantity: round(area * waste, 1),
       rateKey: `roof:${spec.id}`,
+    })
+  }
+
+  for (const spec of SUPPORTS) {
+    const count = supports.get(spec.id)
+    if (!count) continue
+    const pier = spec.id === 'pier'
+    drafts.push({
+      id: `support:${spec.id}`,
+      group: 'Supports',
+      label: pier ? `${spec.name}s, ${mm(pierSide(pierSystem))} square` : spec.name,
+      note: pier
+        ? `${pierCourses(pierSystem) * pierUnitsPerCourse(pierSystem)} units each, counted under Masonry`
+        : `${mm(SUPPORT_HEIGHT_M)} mm high`,
+      unit: 'each',
+      quantity: count,
+      rateKey: `support:${spec.id}`,
+    })
+  }
+  if (groundSupports > 0) {
+    drafts.push({
+      id: 'support-bases',
+      group: 'Supports',
+      label: 'Pad footings under supports',
+      note: `${groundSupports} × ${mm(SUPPORT_BASE_M)} × ${mm(SUPPORT_BASE_M)} × ${mm(SUPPORT_BASE_DEPTH_M)} mm`,
+      unit: 'm³',
+      quantity: round(groundSupports * SUPPORT_BASE_M * SUPPORT_BASE_M * SUPPORT_BASE_DEPTH_M * waste, 2),
+      rateKey: 'concrete-m3',
     })
   }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fencePosts, fenceSpec } from '../../lib/model/fences'
+  import { floorSupports, pierSide, supportSpec } from '../../lib/model/supports'
   import { untrack } from 'svelte'
   import BrickWall from '@lucide/svelte/icons/brick-wall'
   import Footprints from '@lucide/svelte/icons/footprints'
@@ -37,7 +38,7 @@
   import { FINISH_LABEL } from '../../lib/cost/quantities'
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
-  import { MAX_RISER_M, MIN_GOING_M, stairLayout, stairVoids } from '../../lib/geometry/stairs'
+  import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
@@ -150,7 +151,7 @@
   let selectedPlateRing = $state<number | null>(null)
   let selectedCell = $state<{ floorId: string; x: number; z: number } | null>(null)
   let newRoomType = $state<RoomType>('bedroom')
-  let pendingStair = $state<{ floorId: string; x: number; z: number } | null>(null)
+  let stairTurn = $state(0)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
 
@@ -170,6 +171,7 @@
   const document = $derived(documentStore.document)
   const plotRing = $derived(document.plot.ring)
   const floors = $derived(document.building.floors)
+  const defaultSystem = $derived(wallSystem(documentStore.document.building.wallSystemId))
   const levelFloors = $derived(floors.filter((floor) => floor.index === activeStoreyIndex))
   const storeyIndexes = $derived.by(() => {
     let max = 0
@@ -699,8 +701,8 @@
   }
 
   function cancelDraw() {
-    if (pendingStair) {
-      pendingStair = null
+    if (tool === 'draw-stair') {
+      setTool('select')
       errorMessage = null
       return
     }
@@ -1065,7 +1067,6 @@
 
   function setTool(next: Tool) {
     tool = next
-    pendingStair = null
     pendingDraw = null
     chainOriginId = null
     moveDrag = null
@@ -1470,50 +1471,56 @@
     return hit ? { floorId: hit.floorId, id: hit.stair.id } : null
   }
 
-  function stairDirection(floor: Floor, from: { x: number; z: number }, to: { x: number; z: number }) {
-    const grid = highlightedDirection(floor)
-    const length = grid ? Math.hypot(grid.dx, grid.dz) : 0
-    const u = grid && length > 1e-9 ? { x: grid.dx / length, z: grid.dz / length } : { x: 1, z: 0 }
-    const candidates = [u, { x: -u.x, z: -u.z }, { x: -u.z, z: u.x }, { x: u.z, z: -u.x }]
-    const dx = to.x - from.x
-    const dz = to.z - from.z
-    return candidates.reduce((best, item) => (item.x * dx + item.z * dz > best.x * dx + best.z * dz ? item : best))
+  function stairProblemText(problem: string): string {
+    if (problem === 'stair must fit inside one room') return 'The stair has to fit inside one room.'
+    if (problem === 'add a storey above the stair first') return 'Add a storey above first; the stair needs somewhere to arrive.'
+    return problem
   }
 
-  const stairPreview = $derived.by(() => {
-    const pending = pendingStair
+  const stairGhost = $derived.by(() => {
     const pointer = pointerPlan
-    if (tool !== 'draw-stair' || !pending || !pointer || !activeFloor) return null
-    if (Math.hypot(pointer.x - pending.x, pointer.z - pending.z) < 0.2) return null
-    const floor = floors.find((item) => item.id === pending.floorId)
+    if (tool !== 'draw-stair' || !pointer || !activeFloor) return null
+    const floorId = floorIdForPoint(pointer.x, pointer.z)
+    const floor = floorId ? floors.find((item) => item.id === floorId) : undefined
     if (!floor) return null
-    const dir = stairDirection(activeFloor, pending, pointer)
-    const stair: Stair = { id: 'preview', x: pending.x, z: pending.z, dx: dir.x, dz: dir.z, width: 0.9 }
-    return { stair, layout: stairLayout(stair, floor.index) }
+    const grid = highlightedDirection(activeFloor)
+    const length = grid ? Math.hypot(grid.dx, grid.dz) : 0
+    let preferred = grid && length > 1e-9 ? { x: grid.dx / length, z: grid.dz / length } : { x: 1, z: 0 }
+    for (let i = 0; i < ((stairTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
+    return { floorId: floor.id, placement: placeStair(document, floor, pointer, preferred) }
   })
 
   function placeStairPoint(plan: { x: number; z: number }) {
     if (!activeFloor) return
-    const pending = pendingStair
-    if (!pending) {
-      const floorId = floorIdForPoint(plan.x, plan.z)
-      if (!floorId) {
-        errorMessage = 'Click inside a room to start the stair.'
-        return
-      }
-      pendingStair = { floorId, x: plan.x, z: plan.z }
-      errorMessage = null
+    pointerPlan = plan
+    const ghost = stairGhost
+    if (!ghost) {
+      errorMessage = 'Click inside a room to place the stair.'
       return
     }
-    const preview = stairPreview
-    if (!preview) return
-    const result = documentStore.addStair(pending.floorId, pending.x, pending.z, preview.stair.dx, preview.stair.dz)
+    const { stair, problem } = ghost.placement
+    if (problem) {
+      errorMessage = stairProblemText(problem)
+      return
+    }
+    const result = documentStore.addStair(ghost.floorId, stair.x, stair.z, stair.dx, stair.dz, stair.width)
     if (!applyResult(result)) return
-    pendingStair = null
-    const placed = result.document.building.floors.find((floor) => floor.id === pending.floorId)?.stairs?.at(-1)
+    const placed = result.document.building.floors.find((floor) => floor.id === ghost.floorId)?.stairs?.at(-1)
     setTool('select')
-    if (placed) chooseSelection({ stair: { floorId: pending.floorId, id: placed.id } })
+    if (placed) chooseSelection({ stair: { floorId: ghost.floorId, id: placed.id } })
   }
+
+  $effect(() => {
+    if (tool !== 'draw-stair') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'r' && event.key !== 'R') return
+      if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      event.preventDefault()
+      stairTurn += stairGhost?.placement.snap ? 2 : 1
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   function patchChosenStair(patch: Partial<Pick<Stair, 'width' | 'x' | 'z' | 'dx' | 'dz'>>) {
     const chosen = chosenStair
@@ -1570,8 +1577,18 @@
 
   const drawHintBody = $derived.by(() => {
     if (tool === 'draw-stair') {
-      if (!pendingStair) return 'Click where the bottom step starts. A stair needs a storey above it.'
-      return 'Click the direction the stair climbs.'
+      const ghost = stairGhost
+      if (!ghost) return 'Point inside a room to place a stair. It needs a storey above it.'
+      const { layout } = ghost.placement
+      const size = `${layout.risers} risers of ${Math.round(layout.riser * 1000)} mm, ${checkFormat.format(layout.length)} m by ${Math.round(ghost.placement.stair.width * 1000)} mm.`
+      if (ghost.placement.problem) return `${stairProblemText(ghost.placement.problem)} ${size}`
+      const against =
+        ghost.placement.snap === 'side'
+          ? ' Its side is against the wall.'
+          : ghost.placement.snap === 'end'
+            ? ' Its end is against the wall.'
+            : ''
+      return `${size}${against} Click to place, R to turn it.`
     }
     if (tool === 'select') {
       if (rotateDrag) {
@@ -1991,14 +2008,32 @@
           />
           <circle cx={item.stair.x} cy={item.stair.z} r={s(0.08)} class="stair-foot" />
         {/each}
-        {#if stairPreview}
+        {#if stairGhost}
+          {@const ghost = stairGhost.placement}
+          {@const top = { x: ghost.stair.x + ghost.stair.dx * ghost.layout.length, z: ghost.stair.z + ghost.stair.dz * ghost.layout.length }}
           <polygon
-            points={pointsAttr(stairPreview.layout.footprint.map((p) => [p.x, p.z] as SvgPoint))}
+            points={pointsAttr(ghost.layout.footprint.map((p) => [p.x, p.z] as SvgPoint))}
             class="stair-flight preview"
+            class:invalid={ghost.problem !== null}
           />
-          {#each stairPreview.layout.nosings as line, i (i)}
+          {#each ghost.layout.nosings as line, i (i)}
             <line x1={line.a.x} y1={line.a.z} x2={line.b.x} y2={line.b.z} class="stair-nosing" />
           {/each}
+          <polyline
+            points={pointsAttr([
+              [ghost.stair.x, ghost.stair.z],
+              [top.x, top.z],
+            ])}
+            class="stair-arrow"
+          />
+          <polyline
+            points={pointsAttr([
+              [top.x - ghost.stair.dx * 0.3 - ghost.stair.dz * 0.14, top.z - ghost.stair.dz * 0.3 + ghost.stair.dx * 0.14],
+              [top.x, top.z],
+              [top.x - ghost.stair.dx * 0.3 + ghost.stair.dz * 0.14, top.z - ghost.stair.dz * 0.3 - ghost.stair.dx * 0.14],
+            ])}
+            class="stair-arrow"
+          />
         {/if}
       </g>
       <g class="room-labels" pointer-events="none">
@@ -2064,6 +2099,28 @@
             />
           {/if}
         {/if}
+      {/each}
+      {#each floorSupports(displayFloor) as spot (`${spot.x}:${spot.z}`)}
+        {@const side = spot.support.type === 'pier' ? pierSide(defaultSystem) : supportSpec(spot.support.type).size}
+        {@const angle = (Math.atan2(spot.dir.z, spot.dir.x) * 180) / Math.PI}
+        <g transform="translate({spot.x} {spot.z}) rotate({angle})" pointer-events="none">
+          {#if spot.support.type === 'column'}
+            <rect x={-side / 2} y={-side / 2} width={side} height={side} fill="#f5f5f4" stroke="#44403c" stroke-width={s(0.015)} />
+            <circle r={0.12} fill="#a8a29e" stroke="#44403c" stroke-width={s(0.012)} />
+          {:else if spot.support.type === 'pole'}
+            <circle r={side / 2} fill="#8b6b4a" stroke="#44403c" stroke-width={s(0.012)} />
+          {:else}
+            <rect
+              x={-side / 2}
+              y={-side / 2}
+              width={side}
+              height={side}
+              fill={spot.support.type === 'steel' ? '#3a3f44' : '#a8927a'}
+              stroke="#44403c"
+              stroke-width={s(0.012)}
+            />
+          {/if}
+        </g>
       {/each}
       {#if showUnlandedWarning}
         {#each displayFloor.walls as wall (wall.id)}
@@ -2607,6 +2664,11 @@
     fill: rgba(37, 99, 235, 0.08);
     stroke: #2563eb;
     stroke-dasharray: 0.15 0.1;
+  }
+
+  .stair-flight.preview.invalid {
+    fill: rgba(185, 28, 28, 0.08);
+    stroke: #b91c1c;
   }
 
   .stair-nosing {
