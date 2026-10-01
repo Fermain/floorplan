@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Canvas, T } from '@threlte/core'
-  import { OrbitControls } from '@threlte/extras'
+  import { OrbitControls, type IntersectionEvent } from '@threlte/extras'
   import {
+    BoxGeometry,
     BufferGeometry,
     Color,
     DoubleSide,
@@ -42,12 +43,16 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
-  import { buildFixtureParts, fixtureStandAboveDatum, siteField, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
+  import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
+  import { wallLength } from '../../lib/model/geom'
+  import ContextPanel from '../shared/ContextPanel.svelte'
+  import FittingSetup from '../shared/FittingSetup.svelte'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
   import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
-  import { wallSystem } from '../../lib/model/systems'
+  import { systemOf, wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
   import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong, padField } from '../../lib/geometry/terrain'
@@ -70,6 +75,7 @@
 
   type WallMeshes = {
     key: string
+    floorId: string
     wallId: string
     datumY: number
     geoms: BufferGeometry[]
@@ -109,7 +115,7 @@
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
-  let fixtureMeshes = $state<{ key: string; parts: FixturePart[] }[]>([])
+  let fixtureMeshes = $state<{ key: string; datum: number; parts: FixturePart[] }[]>([])
   let trimMeshes = $state<{ key: string; parts: TrimPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
@@ -134,7 +140,13 @@
 
   // The camera looks at the building, from far enough back to take it all in; on an empty plot, at the plot.
   const focus = $derived.by(() => {
-    const corners = doc.building.floors.flatMap((floor) => floor.corners)
+    // Solid walls only: fences round the boundary would frame the whole plot.
+    const corners = doc.building.floors.flatMap((floor) =>
+      floor.walls
+        .filter((wall) => wall.skin !== 'logical')
+        .flatMap((wall) => [wall.startCornerId, wall.endCornerId])
+        .flatMap((id) => floor.corners.filter((corner) => corner.id === id)),
+    )
     if (corners.length === 0) return { x: plotCenter.x, z: plotCenter.z, reach: 14 }
     const xs = corners.map((corner) => corner.x)
     const zs = corners.map((corner) => corner.z)
@@ -195,10 +207,143 @@
     return raw.map((s) => ({ u: s.u, y: s.y - floor.datumHeight }))
   }
 
-  function onWallClick(wallId: string) {
-    if (!locked) return
-    onSelectWall?.(wallId)
+  // What is picked in the scene: a wall, or a fitting. Hovering shows what a click would pick.
+  type Pick = { kind: 'wall'; floorId: string; wallId: string } | { kind: 'fixture'; floorId: string; fixtureId: string }
+  let selected = $state<Pick | null>(null)
+  let hovered = $state<Pick | null>(null)
+
+  const same = (a: Pick | null, b: Pick | null) =>
+    a !== null && b !== null && a.kind === b.kind && a.floorId === b.floorId && (a.kind === 'wall' ? a.wallId === (b as typeof a).wallId : a.fixtureId === (b as typeof a).fixtureId)
+
+  const storeyName = (index: number) => (index === 0 ? 'the ground floor' : `storey ${index + 1}`)
+
+  // A click that moved is the end of an orbit, not a pick.
+  const DRAG_PX = 4
+
+  function wallPick(wall: WallMeshes): Pick {
+    return { kind: 'wall', floorId: wall.floorId, wallId: wall.wallId }
   }
+
+  function wallHandlers(wall: WallMeshes) {
+    return {
+      onclick: (event: IntersectionEvent<MouseEvent>) => {
+        event.stopPropagation()
+        if (event.delta > DRAG_PX) return
+        selected = wallPick(wall)
+      },
+      ondblclick: (event: IntersectionEvent<MouseEvent>) => {
+        event.stopPropagation()
+        onSelectWall?.(wall.wallId)
+      },
+      onpointerenter: (event: IntersectionEvent<PointerEvent>) => {
+        event.stopPropagation()
+        hovered = wallPick(wall)
+      },
+      onpointerleave: () => {
+        if (hovered?.kind === 'wall' && hovered.wallId === wall.wallId) hovered = null
+      },
+    }
+  }
+
+  // Fittings are merged into one mesh per finish, so the fitting is the one standing where the pointer hit.
+  function fixtureAtPoint(floorId: string, point: { x: number; y: number; z: number }): Pick | null {
+    const floor = doc.building.floors.find((item) => item.id === floorId)
+    if (!floor) return null
+    let best: { id: string; d: number } | null = null
+    for (const fixture of floor.fixtures ?? []) {
+      const ring = fixtureFootprint(fixture).map((p) => ({ x: p.x, z: p.z }))
+      const d = pointInRing(ring, point.x, point.z) ? 0 : ringDistance(ring, point.x, point.z)
+      if (d < 0.15 && (!best || d < best.d)) best = { id: fixture.id, d }
+    }
+    return best ? { kind: 'fixture', floorId, fixtureId: best.id } : null
+  }
+
+  function fixtureHandlers(floorId: string) {
+    return {
+      onclick: (event: IntersectionEvent<MouseEvent>) => {
+        event.stopPropagation()
+        if (event.delta > DRAG_PX) return
+        selected = fixtureAtPoint(floorId, event.point)
+      },
+      onpointermove: (event: IntersectionEvent<PointerEvent>) => {
+        event.stopPropagation()
+        hovered = fixtureAtPoint(floorId, event.point)
+      },
+      onpointerleave: () => {
+        if (hovered?.kind === 'fixture') hovered = null
+      },
+    }
+  }
+
+  function clearPick(event: IntersectionEvent<MouseEvent>) {
+    event.stopPropagation()
+    if (event.delta > DRAG_PX) return
+    selected = null
+  }
+
+  function wallGlow(wall: WallMeshes): { emissive: string; emissiveIntensity: number } {
+    const pick = wallPick(wall)
+    if (same(selected, pick)) return { emissive: '#2563eb', emissiveIntensity: 0.45 }
+    if (same(hovered, pick)) return { emissive: '#60a5fa', emissiveIntensity: 0.25 }
+    return { emissive: '#000000', emissiveIntensity: 0 }
+  }
+
+  // A box drawn round the fitting picked or under the pointer.
+  const fixtureBoxes = $derived.by(() => {
+    const out: { key: string; position: [number, number, number]; size: [number, number, number]; turn: number; colour: string }[] = []
+    for (const [pick, colour] of [
+      [selected, '#2563eb'],
+      [hovered, '#60a5fa'],
+    ] as const) {
+      if (pick?.kind !== 'fixture') continue
+      if (pick === hovered && same(selected, hovered)) continue
+      const floor = doc.building.floors.find((item) => item.id === pick.floorId)
+      const fixture = floor?.fixtures?.find((item) => item.id === pick.fixtureId)
+      const datum = fixtureMeshes.find((item) => item.key === pick.floorId)?.datum
+      if (!floor || !fixture || datum === undefined) continue
+      const size = fixtureSize(fixture)
+      const base = datum + fixtureStandAboveDatum(doc, floor, fixture) + fixture.y
+      out.push({
+        key: `${colour}:${fixture.id}`,
+        position: [fixture.x, base + size.height / 2, fixture.z],
+        size: [size.width + 0.04, size.height + 0.04, size.depth + 0.04],
+        turn: Math.atan2(fixture.dx, fixture.dz),
+        colour,
+      })
+    }
+    return out
+  })
+
+  const chosenWall = $derived.by(() => {
+    if (selected?.kind !== 'wall') return null
+    const pick = selected
+    const floor = doc.building.floors.find((item) => item.id === pick.floorId)
+    const wall = floor?.walls.find((item) => item.id === pick.wallId)
+    return floor && wall ? { floor, wall } : null
+  })
+
+  const chosenFixture = $derived.by(() => {
+    if (selected?.kind !== 'fixture') return null
+    const pick = selected
+    const floor = doc.building.floors.find((item) => item.id === pick.floorId)
+    const fixture = floor?.fixtures?.find((item) => item.id === pick.fixtureId)
+    return floor && fixture ? { floor, fixture, onWall: fixtureWall(floor, fixture) } : null
+  })
+
+  // A pick that no longer exists, after an undo or a removal, is dropped.
+  $effect(() => {
+    if (selected && !chosenWall && !chosenFixture) selected = null
+  })
+
+  $effect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !selected) return
+      event.preventDefault()
+      selected = null
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   $effect(() => {
     const floors = doc.building.floors
@@ -260,6 +405,7 @@
         if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass && panels.length === 0) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
+          floorId: floor.id,
           wallId: wall.id,
           datumY: floorWorldDatum(floor.datumHeight, wallDatum(floor, wall, pad) ?? 0),
           geoms,
@@ -284,6 +430,7 @@
         const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
         return {
           key: floor.id,
+          datum,
           parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
         }
       })
@@ -559,7 +706,7 @@
     {locked ? 'Perspective' : 'Fixed view'}
   </Button>
   <Canvas shadows>
-    <ReviewInteractivity />
+    <ReviewInteractivity>
     <T.PerspectiveCamera
       makeDefault
       position={cameraPosition}
@@ -586,7 +733,7 @@
     />
 
     {#if groundGeometry}
-      <T.Mesh geometry={groundGeometry} receiveShadow>
+      <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick}>
         <T.MeshStandardMaterial vertexColors roughness={0.95} />
       </T.Mesh>
     {/if}
@@ -629,7 +776,7 @@
 
     {#each fixtureMeshes as fitting (fitting.key)}
       {#each fitting.parts as part (part.geometry.uuid)}
-        <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.Mesh geometry={part.geometry} castShadow receiveShadow {...fixtureHandlers(fitting.key)}>
           <T.MeshStandardMaterial
             color={part.colour}
             roughness={part.roughness}
@@ -714,27 +861,22 @@
     {#each wallMeshes as wall (wall.key)}
       <T.Group position.y={wall.datumY}>
         {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
-          <T.Mesh
-            geometry={geom}
-            castShadow
-            receiveShadow
-            onclick={() => onWallClick(wall.wallId)}
-          >
-            <T.MeshStandardMaterial color="#6e6256" />
+          <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
+            <T.MeshStandardMaterial color="#6e6256" {...wallGlow(wall)} />
           </T.Mesh>
         {/each}
         {#each wall.courses as geom, i (`${wall.key}-course-${i}`)}
-          <T.Mesh geometry={geom} castShadow receiveShadow>
-            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
+          <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
+            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} {...wallGlow(wall)} />
           </T.Mesh>
         {/each}
         {#if wall.lintel}
-          <T.Mesh geometry={wall.lintel} castShadow receiveShadow>
-            <T.MeshStandardMaterial color="#8a8680" />
+          <T.Mesh geometry={wall.lintel} castShadow receiveShadow {...wallHandlers(wall)}>
+            <T.MeshStandardMaterial color="#8a8680" {...wallGlow(wall)} />
           </T.Mesh>
         {/if}
         {#if wall.frame}
-          <T.Mesh geometry={wall.frame} castShadow receiveShadow>
+          <T.Mesh geometry={wall.frame} castShadow receiveShadow {...wallHandlers(wall)}>
             <T.MeshStandardMaterial color={FRAME_COLOUR} />
           </T.Mesh>
         {/if}
@@ -750,7 +892,7 @@
           </T.Mesh>
         {/if}
         {#each wall.panels as panel (`${wall.key}-${panel.geometry.uuid}`)}
-          <T.Mesh geometry={panel.geometry} castShadow receiveShadow>
+          <T.Mesh geometry={panel.geometry} castShadow receiveShadow {...wallHandlers(wall)}>
             <T.MeshStandardMaterial
               color={panel.color}
               emissive={panel.emissive}
@@ -762,7 +904,40 @@
         {/each}
       </T.Group>
     {/each}
+
+    {#each fixtureBoxes as box (box.key)}
+      <T.LineSegments position={box.position} rotation.y={box.turn}>
+        <T.EdgesGeometry args={[new BoxGeometry(...box.size)]} />
+        <T.LineBasicMaterial color={box.colour} depthTest={false} transparent opacity={0.9} />
+      </T.LineSegments>
+    {/each}
+    </ReviewInteractivity>
   </Canvas>
+  {#if chosenWall}
+    {@const system = systemOf(chosenWall.wall)}
+    <ContextPanel
+      label="Wall"
+      title="Wall"
+      description="{wallLength(chosenWall.floor.corners, chosenWall.wall.startCornerId, chosenWall.wall.endCornerId).toFixed(2)} m of {system.name.toLowerCase()}, {chosenWall.wall.openings.length === 0
+        ? 'no openings'
+        : `${chosenWall.wall.openings.length} ${chosenWall.wall.openings.length === 1 ? 'opening' : 'openings'}`}, on {storeyName(chosenWall.floor.index)}."
+      onclose={() => (selected = null)}
+    >
+      <Button onclick={() => chosenWall && onSelectWall?.(chosenWall.wall.id)}>Open in Focus</Button>
+      <p class="text-muted-foreground">Double-click a wall to go straight to it in Focus.</p>
+    </ContextPanel>
+  {:else if chosenFixture}
+    {@const spec = fixtureSpec(chosenFixture.fixture.kind)}
+    <ContextPanel label="Fitting" title={spec.name} description={spec.text} onclose={() => (selected = null)}>
+      <FittingSetup floorId={chosenFixture.floor.id} fixture={chosenFixture.fixture} />
+      <div class="grid gap-2">
+        {#if chosenFixture.onWall}
+          <Button variant="outline" onclick={() => chosenFixture?.onWall && onSelectWall?.(chosenFixture.onWall.wall.id)}>Open its wall in Focus</Button>
+        {/if}
+        <Button variant="destructive" onclick={() => chosenFixture && documentStore.removeFixture(chosenFixture.floor.id, chosenFixture.fixture.id)}>Remove</Button>
+      </div>
+    </ContextPanel>
+  {/if}
 </div>
 
 <style>
