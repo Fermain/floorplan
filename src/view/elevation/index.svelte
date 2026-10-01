@@ -301,10 +301,19 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     })
   }
 
+  // Only this wall's gutter and the downpipes at its ends: the camera stands out in front of the wall, so gutters
+  // on other walls of the roof can come between it and the wall.
   const gutterParts = $derived.by((): FencePart[] => {
-    if (!floor || !roofAbove?.roof || !eaveLayout) return []
+    if (!floor || !roofAbove?.roof || !eaveLayout || wallGutter.length === 0) return []
+    const ends = wallGutter.flatMap((piece) => [piece.a, piece.b])
+    const own = {
+      pieces: wallGutter,
+      downpipes: eaveLayout.downpipes.filter(
+        (pipe) => pipe.roofFloorId === roofAbove.id && ends.some((end) => Math.hypot(end.x - pipe.x, end.z - pipe.z) < 0.7),
+      ),
+    }
     const offset = floor.datumHeight + WALL_HEAD
-    return buildGutterParts(eaveLayout, roofAbove.id, gutterOf(roofAbove.roof), () => -offset).map((part) => ({
+    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset).map((part) => ({
       geometry: part.geometry.translate(0, offset, 0),
       colour: part.colour,
       opacity: 1,
