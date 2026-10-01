@@ -47,5 +47,6 @@
     {selectedOpeningId}
     onSelectOpening={(openingId) => (selectedOpeningId = openingId)}
     onStatus={(status) => statusLine.set(status)}
+    onExit={() => void goto(planHref(id, floor?.index ?? 0))}
   />
 {/if}

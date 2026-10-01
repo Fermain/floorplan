@@ -33,6 +33,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { computeWallElevationFrame, flipFrame } from './wallFrame'
   import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import {
     DEFAULT_FENCE_HEIGHT_M,
@@ -62,9 +63,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     selectedOpeningId?: string | null
     onSelectOpening?: (id: string | null) => void
     onStatus?: (status: { text: string; error: boolean }) => void
+    onExit?: () => void
   }
 
-  let { wallId, selectedOpeningId = null, onSelectOpening, onStatus }: Props = $props()
+  let { wallId, selectedOpeningId = null, onSelectOpening, onStatus, onExit }: Props = $props()
 
   let locked = $state(true)
   let insertTool = $state<OpeningKind>('window')
@@ -923,6 +925,12 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     {/if}
     <div class="scene">
       <div class="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2">
+        {#if onExit}
+          <Button variant="outline" size="sm" class="shadow-xs" title="Back to the plan (Esc)" onclick={onExit}>
+            <ArrowLeft />Back to plan
+            <kbd class="ml-1 hidden rounded border px-1 font-sans text-[10px] text-muted-foreground sm:inline">Esc</kbd>
+          </Button>
+        {/if}
         <Button variant="outline" size="sm" class="shadow-xs" onclick={() => (locked = !locked)}>
           {locked ? 'Perspective' : 'Fixed view'}
         </Button>

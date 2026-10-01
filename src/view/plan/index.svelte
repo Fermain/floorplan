@@ -66,7 +66,7 @@
     topStoreyIndex,
     supportingFloor,
   } from '../../lib/model/stories'
-  import { COVERINGS, coveringOf, DEFAULT_COVERING } from '../../lib/geometry/coverings'
+  import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
   import type { RoofCovering } from '../../lib/model/types'
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
@@ -936,6 +936,8 @@
     pendingDraw = null
     chainOriginId = null
     pointerPlan = null
+    // A rectangle is a one-off: the next click draws walls again.
+    tool = toolBeforeRect
   }
 
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
@@ -1170,7 +1172,7 @@
     const defaults = projectDefaults(documentStore.document)
     applyResult(
       documentStore.setRoof(floor.id, {
-        pitchDeg: defaults.roofPitchDeg,
+        pitchDeg: fitPitch(defaults.roofPitchDeg, defaults.roofCovering),
         eaves: defaults.roofEaves,
         form: defaults.roofForm,
         covering: defaults.roofCovering,
@@ -1184,7 +1186,7 @@
     const current = floor.roof
     const pitchDeg =
       form === 'mono' ? MONO_ROOF_PITCH_DEG : (current.form ?? 'hip') === 'mono' ? DEFAULT_ROOF_PITCH_DEG : current.pitchDeg
-    applyResult(documentStore.setRoof(floor.id, { ...current, form, turns: 0, pitchDeg }))
+    applyResult(documentStore.setRoof(floor.id, { ...current, form, turns: 0, pitchDeg: fitPitch(pitchDeg, current.covering) }))
   }
 
   function turnRoof() {
@@ -1197,7 +1199,7 @@
   function setRoofCovering(covering: RoofCovering) {
     const floor = roofFloor
     if (!floor?.roof) return
-    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering }))
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering, pitchDeg: fitPitch(floor.roof.pitchDeg, covering, floor.roof.covering ?? DEFAULT_COVERING) }))
   }
 
   function setRoofPitch(value: number) {

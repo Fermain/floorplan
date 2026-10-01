@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
-  import { COVERINGS } from '$lib/geometry/coverings'
+  import { COVERINGS, fitPitch } from '$lib/geometry/coverings'
   import type { RoofCovering, RoofForm } from '$lib/model/types'
   import { cn } from '$lib/utils'
   import CoveringSwatch from './CoveringSwatch.svelte'
@@ -27,6 +27,13 @@
     if (next === 'mono' && form !== 'mono') pitchDeg = 10
     if (next !== 'mono' && form === 'mono') pitchDeg = 30
     form = next
+    pitchDeg = fitPitch(pitchDeg, covering)
+  }
+
+  function chooseCovering(next: RoofCovering) {
+    const previous = covering
+    covering = next
+    pitchDeg = fitPitch(pitchDeg, next, previous)
   }
 </script>
 
@@ -68,9 +75,9 @@
             'flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/50',
             covering === item.id && 'border-primary ring-2 ring-primary/20',
           )}
-          onclick={() => (covering = item.id)}
+          onclick={() => chooseCovering(item.id)}
           ondblclick={() => {
-            covering = item.id
+            chooseCovering(item.id)
             onchoose?.()
           }}
         >
