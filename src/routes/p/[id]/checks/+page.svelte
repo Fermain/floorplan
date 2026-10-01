@@ -416,8 +416,8 @@
               <Card.Description>
                 {number.format(pipes.rain.catchment)} m² of roof at {pipes.rain.rainfall} mm of rain.
                 {pipes.rain.tanks > 0
-                  ? `${pipes.rain.tanks} × 5,000 L ${pipes.rain.tanks === 1 ? 'tank fills' : 'tanks; one fills'} from ${number.format(pipes.rain.fillMm)} mm of rain.`
-                  : `${pipes.rain.suggested} × 5,000 L ${pipes.rain.suggested === 1 ? 'tank' : 'tanks'} would hold a ${25} mm storm. Add one with the Fittings tool.`}
+                  ? `${pipes.rain.litres.toLocaleString('en-ZA')} L in ${pipes.rain.tanks} ${pipes.rain.tanks === 1 ? 'tank fills' : 'tanks fill'} from ${number.format(pipes.rain.fillMm)} mm of rain.`
+                  : `About ${(Math.ceil(pipes.rain.stormLitres / 500) * 500).toLocaleString('en-ZA')} L of tanks would hold a ${25} mm storm. Add one under a downpipe with the Fittings tool.`}
               </Card.Description>
             </Card.Header>
           </Card.Root>

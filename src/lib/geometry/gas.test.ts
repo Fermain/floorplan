@@ -187,11 +187,11 @@ describe('stove rules', () => {
   })
 
   it('sizes a row of bottles by count, size and cage, keeping its back against the wall', async () => {
-    const { fixtureSize, reseatBottles, fixtureProblem } = await import('../model/fixtures')
+    const { fixtureSize, reseat, fixtureProblem } = await import('../model/fixtures')
     const base = house()
     const draft = outEast(base, 'gas-cylinder', 6)
     expect(fixtureSize(draft).width).toBeCloseTo(2 * 0.375 + 0.05 + 0.1)
-    const four = reseatBottles(draft, { bottles: 4, bottleKg: 19, cage: true })
+    const four = reseat(draft, { bottles: 4, bottleKg: 19, cage: true })
     expect(fixtureSize(four).width).toBeCloseTo(4 * 0.32 + 3 * 0.05 + 0.1)
     const backBefore = draft.x - fixtureSize(draft).depth / 2
     const backAfter = four.x - fixtureSize(four).depth / 2

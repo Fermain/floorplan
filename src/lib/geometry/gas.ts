@@ -2,6 +2,7 @@ import { bottleSetup, fixtureFootprint, fixtureSize, fixtureSpec } from '../mode
 import { cornerById } from '../model/geom'
 import { deriveRooms } from '../model/rooms'
 import { PORTS } from '../model/ports'
+import { isFloorOpening } from '../model/openings'
 import type { Document, Fixture, FixtureKind, Floor, PlanPoint } from '../model/types'
 import { wallReach } from './outline'
 import { pointInRing, structureRings } from './pad'
@@ -174,6 +175,33 @@ function offsetPath(edges: Edge[], from: Foot, to: Foot, corners: string[], floo
   return points
 }
 
+// Whether a pipe along the outside walls passes a door, garage door or opening in one of them.
+export function doorCrossed(floor: Floor | undefined, path: PlanPoint[]): boolean {
+  for (const wall of floor?.walls ?? []) {
+    const doors = wall.openings.filter((item) => isFloorOpening(item.kind))
+    if (doors.length === 0) continue
+    const p = cornerById(floor!.corners, wall.startCornerId)
+    const q = cornerById(floor!.corners, wall.endCornerId)
+    if (!p || !q) continue
+    const length = Math.hypot(q.x - p.x, q.z - p.z)
+    if (length < 1e-6) continue
+    const t = { x: (q.x - p.x) / length, z: (q.z - p.z) / length }
+    const n = { x: -t.z, z: t.x }
+    const face = wallReach(wall) + STAND_OFF_M
+    const along = (at: PlanPoint) => (at.x - p.x) * t.x + (at.z - p.z) * t.z
+    const off = (at: PlanPoint) => Math.abs(Math.abs((at.x - p.x) * n.x + (at.z - p.z) * n.z) - face)
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]
+      const b = path[i]
+      if (off(a) > 0.12 || off(b) > 0.12) continue
+      const lo = Math.min(along(a), along(b))
+      const hi = Math.max(along(a), along(b))
+      if (doors.some((door) => Math.min(hi, door.u + door.width) - Math.max(lo, door.u) > 0.05)) return true
+    }
+  }
+  return false
+}
+
 function pathLength(path: PlanPoint[]): number {
   let length = 0
   for (let i = 1; i < path.length; i++) length += Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z)
@@ -325,6 +353,19 @@ export function gasLayout(doc: Document): GasLayout {
           break
         }
       }
+    }
+  }
+
+  // The pipe is clipped low along the outside walls: it may not run across a doorway.
+  for (const run of runs) {
+    const door = doorCrossed(ground, run.path)
+    if (door) {
+      issues.push({
+        id: `gas-door:${run.item.fixture.id}`,
+        text: `The gas pipe to the ${fixtureSpec(run.item.fixture.kind).name.toLowerCase()} runs across a doorway. Take it up and over the door, or move the bottles so it goes round the other way.`,
+        floorId: run.item.floor.id,
+        fixtureId: run.item.fixture.id,
+      })
     }
   }
 

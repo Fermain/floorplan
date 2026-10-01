@@ -5,14 +5,14 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES } from '../model/fixtures'
+import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { gasLayout } from '../geometry/gas'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
@@ -414,8 +414,8 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    // Gas bottles are counted below, bottle by bottle, with their regulator and cage.
-    if (!count || spec.id === 'gas-cylinder') continue
+    // Gas bottles and rainwater tanks are counted below, by size.
+    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank') continue
     drafts.push({
       id: `fixture:${spec.id}`,
       group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : 'Plumbing',
@@ -559,6 +559,17 @@ export function takeoff(doc: Document): QuantityLine[] {
       rateKey: 'trench',
     })
   }
+
+  const tanks = new Map<TankLitres, number>()
+  for (const floor of doc.building.floors) {
+    for (const fixture of floor.fixtures ?? []) if (fixture.kind === 'water-tank') tanks.set(tankLitres(fixture), (tanks.get(tankLitres(fixture)) ?? 0) + 1)
+  }
+  for (const litres of TANK_SIZES) {
+    const count = tanks.get(litres)
+    if (count) drafts.push({ id: `tank:${litres}`, group: 'Plumbing', label: `Rainwater tank ${TANKS[litres].name}`, note: 'On a level base', unit: 'each', quantity: count, rateKey: `tank:${litres}` })
+  }
+  const feeds = gutterLayout(doc).downpipes.filter((pipe) => pipe.tank).length
+  if (feeds > 0) drafts.push({ id: 'tank-inlet', group: 'Plumbing', label: 'Leaf trap and first-flush diverter', note: 'Where each downpipe enters a tank', unit: 'each', quantity: feeds, rateKey: 'tank-inlet' })
 
   const gas = gasLayout(doc)
   const bottles = new Map<BottleSize, number>()

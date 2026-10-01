@@ -55,8 +55,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
-  import { bottleSetup, EITHER_SIDE, FIXTURES, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
-  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, type FixturePart } from '../../lib/geometry/fixtures'
+  import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
     evenPositions,
@@ -216,8 +216,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
   })
 
-  // Gas bottles keep their count, size and cage as they move.
+  // Gas bottles and tanks keep their size as they move.
   function setupOf(fixture: Fixture) {
+    if (fixture.kind === 'water-tank') return { litres: tankLitres(fixture) }
     if (fixture.kind !== 'gas-cylinder') return {}
     const { count, kg, cage } = bottleSetup(fixture)
     return { bottles: count, bottleKg: kg, cage }
@@ -262,7 +263,28 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     return spec.trade === 'electrical' && spec.mount === 'wall'
   }
 
+  // Downpipes standing in front of this face, by how far along the wall they are.
+  const faceDownpipes = $derived.by(() => {
+    if (!floor || !wall || logical || !viewFace?.outside) return []
+    const p = cornerById(floor.corners, wall.startCornerId)
+    const q = cornerById(floor.corners, wall.endCornerId)
+    if (!p || !q) return []
+    const length = Math.hypot(q.x - p.x, q.z - p.z)
+    if (length < 1e-6) return []
+    const t = { x: (q.x - p.x) / length, z: (q.z - p.z) / length }
+    const n = { x: -t.z * side, z: t.x * side }
+    return gutterLayout(doc)
+      .downpipes.map((pipe) => ({ u: (pipe.x - p.x) * t.x + (pipe.z - p.z) * t.z, out: (pipe.x - p.x) * n.x + (pipe.z - p.z) * n.z }))
+      .filter((pipe) => pipe.out > 0 && pipe.out < 2 && pipe.u > -1 && pipe.u < length + 1)
+      .map((pipe) => pipe.u)
+  })
+
   function snapFittingU(kind: FixtureKind, u: number, except: string | null): number {
+    // A rainwater tank slides under a downpipe on this face.
+    if (kind === 'water-tank') {
+      const pipe = faceDownpipes.filter((at) => Math.abs(at - u) < TANK_SNAP_M).sort((a, b) => Math.abs(a - u) - Math.abs(b - u))[0]
+      return pipe ?? u
+    }
     if (!conduitKinds(kind)) return u
     let best: number | null = null
     for (const item of faceFittings) {
@@ -475,7 +497,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       ),
     }
     const offset = floor.datumHeight + WALL_HEAD
-    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset).map((part) => ({
+    const ground = doc.building.floors.find((item) => item.index === 0)
+    const groundLevel = ground ? ground.datumHeight + finishedFloor(ground) - offset : undefined
+    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset, groundLevel).map((part) => ({
       geometry: part.geometry.translate(0, offset, 0),
       colour: part.colour,
       opacity: 1,

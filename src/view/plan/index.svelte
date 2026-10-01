@@ -23,8 +23,11 @@
     fixtureSize,
     fixtureSpec,
     MAX_BOTTLES,
-    reseatBottles,
+    reseat,
     swapsFor,
+    TANK_SIZES,
+    TANKS,
+    tankLitres,
   } from '../../lib/model/fixtures'
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
@@ -69,7 +72,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { BottleSize, Fixture, FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { BottleSize, Fixture, FixtureKind, TankLitres, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -80,7 +83,7 @@
     supportingFloor,
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
-  import { GUTTERS, gutterOf } from '../../lib/geometry/gutters'
+  import { GUTTERS, gutterLayout, gutterOf, linkTanks } from '../../lib/geometry/gutters'
   import type { GutterType, Roof, RoofCovering } from '../../lib/model/types'
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
@@ -189,6 +192,8 @@
   let selectedService = $state<ServiceKind | null>(null)
   let selectedBend = $state<number | null>(null)
   // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
+  // A fitting being dragged in Select: where it would land, re-snapped to the walls as it goes.
+  let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
   let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
@@ -842,6 +847,12 @@
       const fixture = fixtureAt(plan.x, plan.z)
       if (fixture) {
         chooseSelection({ fixture })
+        // Floor-standing fittings can be dragged to a new spot; wall points are moved in Focus.
+        const found = levelFixtures.find((item) => item.fixture.id === fixture.id)
+        if (found && fixtureSpec(found.fixture.kind).mount === 'floor') {
+          fixtureMove = { floorId: fixture.floorId, id: fixture.id, preview: null }
+          svgEl?.setPointerCapture(event.pointerId)
+        }
         return
       }
       const id = pickWall(activeFloor, plan.x, plan.z)
@@ -981,6 +992,15 @@
       if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
       return
     }
+    if (fixtureMove) {
+      const moving = fixtureMove
+      const floor = levelFloors.find((item) => item.id === moving.floorId)
+      const item = floor?.fixtures?.find((entry) => entry.id === moving.id)
+      if (!floor || !item) return
+      const placement = placeFixture(floor, plan, item.kind, { x: item.dx, z: item.dz }, { setup: setupOf(item), downpipes: downpipeSpots })
+      if (!placement.problem) fixtureMove = { ...moving, preview: { ...item, ...placement.fixture, id: item.id } }
+      return
+    }
     if (rotateDrag) {
       const pivot = cornerById(activeFloor.corners, rotateDrag.pivotId)
       if (!pivot) return
@@ -1020,6 +1040,13 @@
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
+    }
+    const moved = fixtureMove
+    if (moved) {
+      fixtureMove = null
+      const next = moved.preview
+      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz }))
+      return
     }
     const dragging = serviceDrag
     if (dragging) {
@@ -1720,6 +1747,29 @@
   }
 
   const gas = $derived(gasLayout(document))
+  // Downpipes come down to the ground floor, where rainwater tanks can stand under them.
+  const eaves = $derived(gutterLayout(document))
+  const downpipeSpots = $derived(activeStoreyIndex === 0 ? eaves.downpipes : [])
+  // A rainwater tank being dragged or placed connects to downpipes near where it would land.
+  const shownDownpipes = $derived.by(() => {
+    if (activeStoreyIndex !== 0) return []
+    const moving = fixtureMove?.preview
+    const ghost = fixtureGhost && !fixtureGhost.placement.problem && fixtureGhost.placement.fixture.kind === 'water-tank' ? fixtureGhost.placement.fixture : null
+    const extra = [moving?.kind === 'water-tank' ? moving : null, ghost].filter((item) => item !== null)
+    if (!moving && extra.length === 0) return eaves.downpipes
+    const ground = document.building.floors.find((floor) => floor.index === 0)
+    if (!ground) return eaves.downpipes
+    const fixtures = (ground.fixtures ?? []).filter((item) => item.id !== moving?.id)
+    const draft = { ...document, building: { ...document.building, floors: document.building.floors.map((floor) => (floor.id === ground.id ? { ...ground, fixtures: [...fixtures, ...extra.map((item, i) => ({ ...item, id: `preview-${i}` }))] } : floor)) } }
+    return linkTanks(draft, eaves.downpipes)
+  })
+
+  // Gas bottles and rainwater tanks keep their own setup as they move.
+  function setupOf(fixture: Fixture) {
+    if (fixture.kind === 'gas-cylinder') return { bottles: fixture.bottles, bottleKg: fixture.bottleKg, cage: fixture.cage }
+    if (fixture.kind === 'water-tank') return { litres: fixture.litres }
+    return {}
+  }
   // Gas pipes run round the outside of the ground floor; the chosen appliance or bottles pick out their own.
   const gasLines = $derived.by(() => {
     if (activeStoreyIndex !== 0) return []
@@ -1777,7 +1827,7 @@
     for (let i = 0; i < ((fixtureTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
     let best: { floorId: string; placement: FixturePlacement } | null = null
     for (const floor of levelFloors) {
-      const placement = placeFixture(floor, pointer, fixtureKind, preferred)
+      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { downpipes: downpipeSpots })
       if (!best || (best.placement.problem && !placement.problem)) best = { floorId: floor.id, placement }
     }
     return best
@@ -1797,8 +1847,15 @@
   function setChosenBottles(patch: Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>) {
     const chosen = chosenFixture
     if (!chosen) return
-    const next = reseatBottles(chosen.fixture, { ...bottleSetupPatch(chosen.fixture), ...patch })
+    const next = reseat(chosen.fixture, { ...bottleSetupPatch(chosen.fixture), ...patch })
     applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, bottles: next.bottles, bottleKg: next.bottleKg, cage: next.cage }))
+  }
+
+  function setChosenTank(litres: TankLitres) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    const next = reseat(chosen.fixture, { litres })
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, litres }))
   }
 
   function bottleSetupPatch(fixture: Fixture): Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'> {
@@ -2416,6 +2473,14 @@
           {/if}
         {/each}
       </g>
+      <g class="downpipes" pointer-events="none">
+        {#each shownDownpipes as pipe, i (i)}
+          {#if pipe.tank}
+            <line x1={pipe.x} y1={pipe.z} x2={pipe.tank.x} y2={pipe.tank.z} class="downpipe-lead" stroke-width={s(0.05)} />
+          {/if}
+          <circle cx={pipe.x} cy={pipe.z} r={s(0.09)} class="downpipe" class:linked={pipe.tank} stroke-width={s(0.02)} />
+        {/each}
+      </g>
       <g class="gas" pointer-events="none">
         {#each gasLines as line (line.id)}
           <polyline
@@ -2479,7 +2544,8 @@
       {/if}
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
-          <FixtureSymbol fixture={item.fixture} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
         {/each}
         {#if fixtureGhost}
           <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
@@ -2933,6 +2999,25 @@
             </Select.Root>
           </div>
         {/if}
+        {#if chosenFixture.fixture.kind === 'water-tank'}
+          {@const feeds = eaves.downpipes.filter((pipe) => pipe.tank?.id === chosenFixture?.fixture.id).length}
+          <div class="grid gap-1.5">
+            <Label for="tank-size">Size</Label>
+            <Select.Root type="single" value={String(tankLitres(chosenFixture.fixture))} onValueChange={(next) => next && setChosenTank(Number(next) as TankLitres)}>
+              <Select.Trigger id="tank-size" size="sm" class="w-full">{TANKS[tankLitres(chosenFixture.fixture)].name}</Select.Trigger>
+              <Select.Content>
+                {#each TANK_SIZES as litres (litres)}
+                  <Select.Item value={String(litres)} label={TANKS[litres].name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if feeds > 0}
+            <p>Fed by {feeds} {feeds === 1 ? 'downpipe' : 'downpipes'} from the gutters, through a leaf trap and first-flush diverter.</p>
+          {:else}
+            <p class="text-amber-700">No downpipe reaches it. Drag it along the wall to stand under one.</p>
+          {/if}
+        {/if}
         {#if chosenFixture.fixture.kind === 'gas-cylinder'}
           {@const setup = bottleSetup(chosenFixture.fixture)}
           {@const fed = gas.runs.filter((run) => run.cylinder.fixture.id === chosenFixture?.fixture.id)}
@@ -3307,6 +3392,18 @@
   }
   .service-line.sewer {
     stroke: #7c4a1e;
+  }
+  .downpipe {
+    fill: #ffffff;
+    stroke: #57534e;
+  }
+  .downpipe.linked {
+    fill: #0284c7;
+    stroke: #0369a1;
+  }
+  .downpipe-lead {
+    stroke: #0284c7;
+    stroke-linecap: round;
   }
   .service-line.gas {
     stroke: #a21caf;

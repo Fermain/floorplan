@@ -315,6 +315,9 @@
     const eaves = gutterLayout(doc)
     const field = pad ? levelField(doc.heightfield, pad.structures) : doc.heightfield
     const meshes: RoofMesh[] = []
+    // Rainwater tanks stand on the ground floor's level; downpipes into them stop there.
+    const ground = doc.building.floors.find((item) => item.index === 0)
+    const groundLevel = ground ? floorWorldDatum(ground.datumHeight, supportGrade(ground, pad)) + finishedFloor(ground) : undefined
     for (const floor of doc.building.floors) {
       const roof = floor.roof
       if (!roof || floor.index === 0) continue
@@ -335,7 +338,13 @@
         colour: spec.colour,
         gable,
         panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
-        gutters: buildGutterParts(eaves, floor.id, gutterOf(roof), (x, z) => bilinearHeight(field, x, z) - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M)),
+        gutters: buildGutterParts(
+          eaves,
+          floor.id,
+          gutterOf(roof),
+          (x, z) => bilinearHeight(field, x, z) - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
+          groundLevel === undefined ? undefined : groundLevel - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
+        ),
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }

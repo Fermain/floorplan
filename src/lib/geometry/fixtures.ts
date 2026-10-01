@@ -26,7 +26,7 @@ export function finishedFloor(floor: Floor): number {
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
-export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>>
+export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres'>>
 
 function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: FixtureSetup = {}): Omit<Fixture, 'id'> {
   const reach = fixtureSize({ kind, ...setup }).depth / 2 + FACE_GAP_M
@@ -37,7 +37,16 @@ function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: Fix
 const INDOOR_SETUP: Partial<Record<FixtureKind, FixtureSetup>> = { 'gas-cylinder': { bottles: 1, bottleKg: 9, cage: false } }
 
 // Where a fixture goes for a pointer: snapped against the nearest wall face it can use, or over the middle of a room.
-export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, preferred: Point): FixturePlacement {
+// How close to a downpipe a rainwater tank has to come to be pulled under it.
+export const TANK_SNAP_M = 2
+
+export function placeFixture(
+  floor: Floor,
+  pointer: Point,
+  kind: FixtureKind,
+  preferred: Point,
+  options: { setup?: FixtureSetup; downpipes?: Point[] } = {},
+): FixturePlacement {
   const spec = fixtureSpec(kind)
   const cells = floorCells(floor)
   const cell = cells.find((item) => pointInRing(item.net, pointer.x, pointer.z))
@@ -51,9 +60,10 @@ export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, pr
   }
 
   let best: { fixture: Omit<Fixture, 'id'>; score: number } | null = null
-  const consider = (fixture: Omit<Fixture, 'id'>, fits: boolean) => {
+  // A fixture is judged by how far it is from the pointer, or from where it was before it snapped to something.
+  const consider = (fixture: Omit<Fixture, 'id'>, fits: boolean, from: Point = fixture) => {
     if (!fits) return
-    const score = Math.hypot(fixture.x - pointer.x, fixture.z - pointer.z)
+    const score = Math.hypot(from.x - pointer.x, from.z - pointer.z)
     if (score > FIXTURE_SNAP_M || (best && score >= best.score)) return
     best = { fixture, score }
   }
@@ -61,7 +71,8 @@ export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, pr
   const either = EITHER_SIDE.includes(kind)
   if (!spec.outside && !cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
   if (cell && (!spec.outside || either)) {
-    const setup = INDOOR_SETUP[kind] ?? {}
+    // A fitting being moved keeps its setup; a new one indoors starts with the indoor setup.
+    const setup = options.setup ?? INDOOR_SETUP[kind] ?? {}
     const size = fixtureSize({ kind, ...setup })
     const ring = cell.net
     for (let i = 0; i < ring.length; i++) {
@@ -87,16 +98,32 @@ export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, pr
       const b = cornerById(floor.corners, wall.endCornerId)
       if (!a || !b) continue
       const length = Math.hypot(b.x - a.x, b.z - a.z)
-      if (length < spec.width) continue
+      if (length < fixtureSize({ kind, ...options.setup }).width) continue
       const t = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
       const reach = wallReach(wall)
-      const half = spec.width / 2
-      const s = Math.min(length - half - reach, Math.max(half + reach, dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)))
+      const setup = options.setup ?? {}
+      const half = fixtureSize({ kind, ...setup }).width / 2
+      const clamp = (along: number) => Math.min(length - half - reach, Math.max(half + reach, along))
       for (const side of [1, -1] as const) {
         const n = { x: -t.z * side, z: t.x * side }
+        let s = clamp(dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t))
+        const unsnapped = against({ x: a.x + t.x * s + n.x * reach, z: a.z + t.z * s + n.z * reach }, n, kind, spec.y, setup)
+        // A rainwater tank near a downpipe on this side of the wall slides along the wall to stand under it.
+        if (kind === 'water-tank') {
+          const pipe = (options.downpipes ?? [])
+            .filter((item) => Math.hypot(item.x - pointer.x, item.z - pointer.z) < TANK_SNAP_M && dot({ x: item.x - a.x, z: item.z - a.z }, n) > 0)
+            .sort((p, q) => Math.hypot(p.x - pointer.x, p.z - pointer.z) - Math.hypot(q.x - pointer.x, q.z - pointer.z))[0]
+          if (pipe) {
+            // Downpipes often stand at a corner, past the end of the wall: the tank may stand out past it too,
+            // as far as the wall's end, so long as it stays clear of the rooms.
+            const under = Math.min(length, Math.max(0, dot({ x: pipe.x - a.x, z: pipe.z - a.z }, t)))
+            const there = against({ x: a.x + t.x * under + n.x * reach, z: a.z + t.z * under + n.z * reach }, n, kind, spec.y, setup)
+            s = fixtureFootprint(there).some((point) => inAnyRoom(point)) ? clamp(under) : under
+          }
+        }
         const face = { x: a.x + t.x * s + n.x * reach, z: a.z + t.z * s + n.z * reach }
-        const fixture = against(face, n, kind, spec.y)
-        consider(fixture, !inAnyRoom({ x: face.x + n.x * 0.05, z: face.z + n.z * 0.05 }))
+        const fixture = against(face, n, kind, spec.y, setup)
+        consider(fixture, !inAnyRoom({ x: face.x + n.x * 0.05, z: face.z + n.z * 0.05 }), unsnapped)
       }
     }
   }

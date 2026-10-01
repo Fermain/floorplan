@@ -1,4 +1,5 @@
-import { fixtureSpec } from '../model/fixtures'
+import { fixtureSpec, tankLitres } from '../model/fixtures'
+import { gutterLayout } from './gutters'
 import type { Document, Fixture, FixtureKind, Floor, PlanPoint, ServiceKind } from '../model/types'
 import { finishedFloor } from './fixtures'
 import { groundPad, levelField, pointInRing, structureRings, type GroundPad } from './pad'
@@ -20,7 +21,6 @@ export const SOAKAWAY_CLEAR_BOUNDARY_M = 3
 export const SOAKAWAY_DEFAULT_M = 6
 export const DEFAULT_RAINFALL_MM = 650
 export const RUNOFF = 0.8
-export const TANK_LITRES = 5000
 const STORM_MM = 25
 const OUTLET_BELOW_FLOOR_M = 0.2
 const TRENCH_WIDTH_M = 0.45
@@ -48,7 +48,8 @@ export type DrainProfile = {
 
 export type Septic = { tank: PlanPoint; soakaway: PlanPoint; litres: number; bedrooms: number }
 
-export type Rainwater = { catchment: number; rainfall: number; yearly: number; tanks: number; fillMm: number; suggested: number }
+// Tanks and their litres; how much rain fills them; and the storage that would hold a heavy storm.
+export type Rainwater = { catchment: number; rainfall: number; yearly: number; tanks: number; litres: number; fillMm: number; stormLitres: number }
 
 export type PlumbingLayout = {
   exit: PlanPoint | null
@@ -118,7 +119,7 @@ export function soakawayPoint(doc: Document, tank: PlanPoint, exit: PlanPoint | 
   return fallback?.point ?? tank
 }
 
-function rainwater(doc: Document, tanks: number): Rainwater | null {
+function rainwater(doc: Document, tanks: Placed[]): Rainwater | null {
   let catchment = 0
   for (const floor of doc.building.floors) {
     if (!floor.roof || floor.index === 0) continue
@@ -129,14 +130,25 @@ function rainwater(doc: Document, tanks: number): Rainwater | null {
   }
   if (catchment <= 0) return null
   const rainfall = doc.services?.rainfallMm ?? DEFAULT_RAINFALL_MM
+  const litres = tanks.reduce((sum, item) => sum + tankLitres(item.fixture), 0)
   return {
     catchment,
     rainfall,
     yearly: catchment * rainfall * RUNOFF,
-    tanks,
-    fillMm: TANK_LITRES / (catchment * RUNOFF),
-    suggested: Math.max(1, Math.ceil((catchment * STORM_MM * RUNOFF) / TANK_LITRES)),
+    tanks: tanks.length,
+    litres,
+    fillMm: litres / (catchment * RUNOFF),
+    stormLitres: catchment * STORM_MM * RUNOFF,
   }
+}
+
+// A tank no downpipe reaches collects nothing.
+function unfedTanks(doc: Document, tanks: Placed[]): PlumbingLayout['issues'] {
+  if (tanks.length === 0) return []
+  const fed = new Set(gutterLayout(doc).downpipes.flatMap((pipe) => (pipe.tank ? [pipe.tank.id] : [])))
+  return tanks
+    .filter((tank) => !fed.has(tank.fixture.id))
+    .map((tank) => ({ id: `tank-unfed:${tank.fixture.id}`, text: 'A rainwater tank is not under a downpipe, so nothing fills it. Move it along the wall to stand under one.' }))
 }
 
 function manhattan(a: PlanPoint, b: PlanPoint): number {
@@ -309,7 +321,8 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
   const water = connectionPoint(doc, 'water', exit)
   const issues: PlumbingLayout['issues'] = []
   if (!exit) {
-    const tanks = placed.filter((item) => item.fixture.kind === 'water-tank').length
+    const tanks = placed.filter((item) => item.fixture.kind === 'water-tank')
+    issues.push(...unfedTanks(doc, tanks))
     return { exit, sewer, water, drains: [], stack: 0, profile: null, waterMain: 0, cold: 0, hot: [], septic: null, rain: rainwater(doc, tanks), issues }
   }
 
@@ -414,8 +427,9 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
       text: `The ${fixtureSpec(longest.item.fixture.kind).name.toLowerCase()} is about ${Math.round(longest.length)} m of pipe from the geyser; you would run off a lot of cold water before it gets hot. Move the geyser or the fitting closer.`,
     })
   }
-  const tanks = placed.filter((item) => item.fixture.kind === 'water-tank').length
+  const tanks = placed.filter((item) => item.fixture.kind === 'water-tank')
   const rain = rainwater(doc, tanks)
+  issues.push(...unfedTanks(doc, tanks))
   return { exit, sewer, water, drains, stack, profile, waterMain, cold, hot, septic, rain, issues }
 }
 
