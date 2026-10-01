@@ -77,6 +77,8 @@ function fits(cell: Cell, draft: Draft): boolean {
   return fixtureFootprint(draft).every((point) => pointInRing(cell.net, point.x, point.z))
 }
 
+const isGeyser = (kind: FixtureKind) => kind === 'geyser' || kind === 'solar-geyser'
+
 // The geyser goes in the roof space over the top walled storey of the room's building, not into the floor above.
 function roofSpaceY(doc: Document, floor: Floor, cell: Cell): number {
   const unitId = floor.unitId ?? floor.corners.find((corner) => cell.room.cornerIds.includes(corner.id))?.unitId
@@ -200,7 +202,7 @@ export function suggestRoomFixtures(doc: Document, floor: Floor, cell: Cell, typ
   }
 
   const fixtures = doc.building.floors.flatMap((item) => item.fixtures ?? [])
-  if ((type === 'bathroom' || type === 'kitchen') && !fixtures.some((item) => item.kind === 'geyser') && !drafts.some((item) => item.kind === 'geyser')) {
+  if ((type === 'bathroom' || type === 'kitchen') && !fixtures.some((item) => isGeyser(item.kind)) && !drafts.some((item) => isGeyser(item.kind))) {
     drafts.push({ kind: 'geyser', x: centre.x, z: centre.z, dx: 1, dz: 0, y: roofSpaceY(doc, floor, cell) })
   }
   if (floor.index === 0 && external.length > 0 && !fixtures.some((item) => item.kind === 'db-board')) {

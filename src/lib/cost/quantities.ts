@@ -14,6 +14,7 @@ import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 import { FIXTURES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
+import { plumbingLayout, waterTrench } from '../geometry/plumbing'
 import {
   floorSupports,
   pierCourses,
@@ -466,6 +467,45 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'each',
       quantity: 1,
       rateKey: 'earth-leakage',
+    })
+  }
+
+  const pipes = plumbingLayout(doc)
+  const drainBy = (dia: number) => pipes.drains.filter((drain) => drain.dia === dia).reduce((sum, drain) => sum + drain.length, 0)
+  const soil = drainBy(110) + pipes.stack + (pipes.profile?.length ?? 0)
+  const wastes = drainBy(50)
+  const hotRun = pipes.hot.reduce((sum, run) => sum + run.length, 0)
+  const plumbingLines: [string, string, string, QuantityUnit, number][] = [
+    ['pipe:110', 'uPVC drain 110 mm', 'Toilet branches, stack and the drain to the sewer', 'm', soil],
+    ['pipe:50', 'uPVC waste 50 mm', 'Basins, showers, baths, sinks and machines to the drain', 'm', wastes],
+    ['pipe:22', 'Water main 22 mm', 'From the meter to the house', 'm', pipes.waterMain],
+    ['pipe:15', 'Cold water 15 mm', 'From where the main enters to each tap and the geyser', 'm', pipes.cold],
+    ['pipe:15-hot', 'Hot water 15 mm, lagged', 'From the geyser to each hot tap', 'm', hotRun],
+  ]
+  for (const [id, label, note, unit, amount] of plumbingLines) {
+    if (amount <= 0) continue
+    drafts.push({ id, group: 'Plumbing', label, note: `${note}, plus 10%`, unit, quantity: Math.ceil(amount * 1.1), rateKey: id })
+  }
+  if (pipes.profile) {
+    drafts.push({
+      id: 'inspection-eye',
+      group: 'Plumbing',
+      label: 'Inspection eyes',
+      note: 'At the house, every bend and the connection',
+      unit: 'each',
+      quantity: pipes.profile.points.length,
+      rateKey: 'inspection-eye',
+    })
+    drafts.push({ id: 'gully', group: 'Plumbing', label: 'Gully', note: 'Where the wastes leave the house', unit: 'each', quantity: 1, rateKey: 'gully' })
+    const trench = pipes.profile.trench + waterTrench(pipes.waterMain)
+    drafts.push({
+      id: 'trench',
+      group: 'Plumbing',
+      label: 'Trench excavation',
+      note: `Drain down to ${round(pipes.profile.deepest, 2)} m at its deepest, and the water main`,
+      unit: 'm³',
+      quantity: round(trench, 1),
+      rateKey: 'trench',
     })
   }
 

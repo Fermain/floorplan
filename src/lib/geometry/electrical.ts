@@ -158,7 +158,7 @@ export function electricalLayout(doc: Document): ElectricalLayout {
     for (const group of chunks(nearestFirst(board, here(['socket'])), MAX_SOCKETS)) add('plugs', group)
   }
   for (const item of electrical.filter((entry) => entry.fixture.kind === 'stove-isolator')) add('stove', [item])
-  for (const item of placed.filter((entry) => entry.fixture.kind === 'geyser')) add('geyser', [item])
+  for (const item of placed.filter((entry) => entry.fixture.kind === 'geyser' || entry.fixture.kind === 'solar-geyser')) add('geyser', [item])
 
   // Each circuit takes one way; the main switch and the earth leakage unit take two each.
   const ways = circuits.length + 4

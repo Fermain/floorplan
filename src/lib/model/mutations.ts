@@ -10,7 +10,7 @@ import {
   openingWidthLimits,
   placeOpeningU,
 } from './openings'
-import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
+import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -33,6 +33,8 @@ import type {
   Document,
   Fence,
   Fixture,
+  PlanPoint,
+  ServiceKind,
   Support,
   Floor,
   Heightfield,
@@ -469,6 +471,27 @@ function carryContents(floor: Floor, moving: Set<string>, move: (x: number, z: n
     ...(stairs ? { stairs } : {}),
     ...(fixtures ? { fixtures } : {}),
   }
+}
+
+export function setServicePoint(document: Document, kind: ServiceKind, point: PlanPoint | null): MutationResult {
+  const services = { ...(document.services ?? {}) }
+  if (point === null) {
+    delete services[kind]
+    return ok({ ...document, services })
+  }
+  if (!pointInPlot(document.plot, point.x, point.z)) return fail(document, 'connection outside plot')
+  return ok({ ...document, services: { ...services, [kind]: { x: point.x, z: point.z } } })
+}
+
+export function setServiceBends(document: Document, kind: ServiceKind, bends: PlanPoint[]): MutationResult {
+  if (bends.some((point) => !pointInPlot(document.plot, point.x, point.z))) return fail(document, 'bend outside plot')
+  const services = document.services ?? {}
+  return ok({ ...document, services: { ...services, bends: { ...(services.bends ?? {}), [kind]: bends.map((p) => ({ x: p.x, z: p.z })) } } })
+}
+
+export function setSewerDepth(document: Document, depth: number): MutationResult {
+  if (!(depth >= 0.3 && depth <= 4)) return fail(document, 'sewer depth out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), sewerDepth: depth } })
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {

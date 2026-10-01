@@ -17,6 +17,7 @@
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
+  import { DEFAULT_SEWER_DEPTH_M, DRAIN_FALL, plumbingLayout } from '../../lib/geometry/plumbing'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -46,7 +47,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { FixtureKind, Stair } from '../../lib/model/types'
+  import type { FixtureKind, ServiceKind, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -162,6 +163,10 @@
   let fixtureKind = $state<FixtureKind>('socket')
   let fixtureTurn = $state(0)
   let selectedFixture = $state<{ floorId: string; id: string } | null>(null)
+  let selectedService = $state<ServiceKind | null>(null)
+  let selectedBend = $state<number | null>(null)
+  // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
+  let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
 
@@ -751,10 +756,14 @@
     cell?: { floorId: string; x: number; z: number } | null
     stair?: { floorId: string; id: string } | null
     fixture?: { floorId: string; id: string } | null
+    service?: ServiceKind | null
+    bend?: number | null
   }) {
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
     selectedFixture = next.fixture ?? null
+    selectedService = next.service ?? null
+    selectedBend = next.bend ?? null
     selectedWallId = next.wallId ?? null
     selectedEdge = next.edge ?? null
     selectedOutline = next.outline ?? null
@@ -805,6 +814,7 @@
     }
 
     if (tool === 'select') {
+      if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
       const fixture = fixtureAt(plan.x, plan.z)
       if (fixture) {
@@ -942,6 +952,10 @@
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     pointerPlan = plan
     if (!plan || !activeFloor) return
+    if (serviceDrag) {
+      if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
+      return
+    }
     if (rotateDrag) {
       const pivot = cornerById(activeFloor.corners, rotateDrag.pivotId)
       if (!pivot) return
@@ -981,6 +995,15 @@
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
+    }
+    const dragging = serviceDrag
+    if (dragging) {
+      serviceDrag = null
+      if (dragging.moved) {
+        if (dragging.target === 'end') applyResult(documentStore.setServicePoint(dragging.kind, dragging.point))
+        else applyResult(documentStore.setServiceBends(dragging.kind, bendsWith(dragging.kind, dragging.target, dragging.point)))
+      }
+      return
     }
     const turning = rotateDrag
     if (turning) {
@@ -1557,6 +1580,104 @@
     return { ...found, spec: fixtureSpec(found.fixture.kind), onWall: floor ? fixtureWall(floor, found.fixture) : null }
   })
 
+  const plumbing = $derived(plumbingLayout(document))
+  const showServices = $derived(activeStoreyIndex === 0 && plumbing.exit !== null)
+
+  function bendsWith(kind: ServiceKind, index: number, point: { x: number; z: number }): { x: number; z: number }[] {
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    if (index >= bends.length || index < 0) return bends
+    bends[index] = point
+    return bends
+  }
+
+  // The route as drawn, with any drag in progress applied.
+  function shownPath(kind: ServiceKind): { x: number; z: number }[] {
+    const exit = plumbing.exit
+    if (!exit) return []
+    const end = kind === 'sewer' ? plumbing.sewer : plumbing.water
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    const drag = serviceDrag
+    if (drag && drag.kind === kind) {
+      if (drag.target === 'end') return [exit, ...bends, drag.point]
+      bends[drag.target] = drag.point
+    }
+    return [exit, ...bends, end]
+  }
+
+  const sewerPath = $derived(showServices ? shownPath('sewer') : [])
+  const waterPath = $derived(showServices ? shownPath('water') : [])
+  const sewerProfile = $derived.by(() => {
+    if (!showServices || plumbing.drains.length === 0) return null
+    if (!serviceDrag || serviceDrag.kind !== 'sewer') return plumbing.profile
+    const bends = sewerPath.slice(1, -1)
+    const end = sewerPath.at(-1)!
+    const draft = { ...document, services: { ...(document.services ?? {}), sewer: end, bends: { ...(document.services?.bends ?? {}), sewer: bends } } }
+    return plumbingLayout(draft).profile
+  })
+
+  function nearSegment(path: { x: number; z: number }[], x: number, z: number, reach: number): number | null {
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]
+      const b = path[i]
+      const dx = b.x - a.x
+      const dz = b.z - a.z
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)))
+      if (Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)) < reach) return i
+    }
+    return null
+  }
+
+  function beginServiceDrag(plan: { x: number; z: number }, event: PointerEvent): boolean {
+    if (!showServices || !svgEl) return false
+    const grab = s(0.6)
+    for (const kind of ['sewer', 'water'] as ServiceKind[]) {
+      const path = kind === 'sewer' ? sewerPath : waterPath
+      if (path.length < 2) continue
+      const end = path.at(-1)!
+      const start = (target: 'end' | number, point: { x: number; z: number }) => {
+        chooseSelection({ service: kind, bend: typeof target === 'number' ? target : null })
+        serviceDrag = { kind, target, point, moved: false }
+        svgEl?.setPointerCapture(event.pointerId)
+        return true
+      }
+      if (Math.hypot(end.x - plan.x, end.z - plan.z) < grab) return start('end', end)
+      if (selectedService === kind) {
+        for (let i = 1; i < path.length - 1; i++) {
+          if (Math.hypot(path[i].x - plan.x, path[i].z - plan.z) < grab) return start(i - 1, path[i])
+        }
+        for (let i = 1; i < path.length; i++) {
+          const mid = { x: (path[i - 1].x + path[i].x) / 2, z: (path[i - 1].z + path[i].z) / 2 }
+          if (Math.hypot(mid.x - plan.x, mid.z - plan.z) < grab) {
+            const bends = [...(document.services?.bends?.[kind] ?? [])]
+            bends.splice(i - 1, 0, mid)
+            if (!applyResult(documentStore.setServiceBends(kind, bends))) return true
+            return start(i - 1, mid)
+          }
+        }
+      }
+      if (nearSegment(path, plan.x, plan.z, s(0.25)) !== null) {
+        chooseSelection({ service: kind })
+        return true
+      }
+    }
+    return false
+  }
+
+  function removeSelectedBend() {
+    const kind = selectedService
+    const index = selectedBend
+    if (!kind || index === null) return
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    bends.splice(index, 1)
+    if (applyResult(documentStore.setServiceBends(kind, bends))) chooseSelection({ service: kind })
+  }
+
+  function straightenSelected() {
+    const kind = selectedService
+    if (!kind) return
+    if (applyResult(documentStore.setServiceBends(kind, []))) chooseSelection({ service: kind })
+  }
+
   const wiring = $derived(electricalLayout(document))
   const wiringProblems = $derived(electricalIssues(document))
 
@@ -1691,6 +1812,7 @@
   const deletable = $derived.by((): { label: string; run: () => void } | null => {
     if (roofFloor) return null
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
+    if (selectedService && selectedBend !== null) return { label: 'Delete bend', run: removeSelectedBend }
     if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     const wallId = selectedWallId
     const floor = activeFloor
@@ -1802,6 +1924,7 @@
     const levelIds = new Set(levelFloors.map((floor) => floor.id))
     const wiringProblem = wiringProblems.find((issue) => !issue.floorId || levelIds.has(issue.floorId))
     if (wiringProblem && levelFixtures.length > 0) return wiringProblem.text
+    if (activeStoreyIndex === 0 && plumbing.issues[0]) return plumbing.issues[0].text
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
       return 'A wall on this storey does not land on a wall below. A logical wall below can carry it.'
     }
@@ -2220,6 +2343,52 @@
           {/if}
         {/each}
       </g>
+      {#if showServices}
+        <g class="services" pointer-events="none">
+          {#each [['water', waterPath], ['sewer', sewerPath]] as [kind, path] (kind)}
+            {@const points = path as { x: number; z: number }[]}
+            {@const chosen = selectedService === kind}
+            {#if points.length > 1 && (kind === 'water' || plumbing.drains.length > 0)}
+              <polyline
+                points={pointsAttr(points.map((p) => [p.x, p.z] as SvgPoint))}
+                fill="none"
+                class="service-line {kind}"
+                class:chosen
+                stroke-width={s(chosen ? 0.06 : 0.04)}
+              />
+              {@const end = points.at(-1)!}
+              {#if kind === 'sewer'}
+                <circle cx={end.x} cy={end.z} r={s(0.3)} class="service-mark sewer" stroke-width={s(0.03)} />
+              {:else}
+                <rect x={end.x - s(0.25)} y={end.z - s(0.25)} width={s(0.5)} height={s(0.5)} class="service-mark water" stroke-width={s(0.03)} />
+              {/if}
+              {#if chosen}
+                {#each points.slice(1, -1) as bend, i (i)}
+                  <circle cx={bend.x} cy={bend.z} r={s(0.14)} class="service-handle" class:active={selectedBend === i} stroke-width={s(0.025)} />
+                {/each}
+                {#each points.slice(1) as point, i (i)}
+                  {@const mid = { x: (points[i].x + point.x) / 2, z: (points[i].z + point.z) / 2 }}
+                  <g transform={upright(mid.x, mid.z)}>
+                    <circle r={s(0.11)} class="service-add" stroke-width={s(0.02)} />
+                    <line x1={-s(0.06)} x2={s(0.06)} stroke-width={s(0.02)} class="service-add-mark" />
+                    <line y1={-s(0.06)} y2={s(0.06)} stroke-width={s(0.02)} class="service-add-mark" />
+                  </g>
+                {/each}
+              {/if}
+            {/if}
+          {/each}
+          {#if plumbing.exit}
+            <circle cx={plumbing.exit.x} cy={plumbing.exit.z} r={s(0.1)} class="service-exit" />
+          {/if}
+          {#if selectedService === 'sewer' && sewerProfile}
+            {#each sewerProfile.points as point, i (i)}
+              <text transform={upright(point.x, point.z)} x={s(0.3)} y={-s(0.2)} font-size={s(0.32)} class="service-depth" class:short={i === sewerProfile.points.length - 1 && sewerProfile.shortBy > 0.005}>
+                {Math.round((point.ground - point.invert) * 1000)} deep
+              </text>
+            {/each}
+          {/if}
+        </g>
+      {/if}
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           <FixtureSymbol fixture={item.fixture} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
@@ -2573,6 +2742,51 @@
         </div>
       </aside>
     {/if}
+    {#if selectedService && showServices && !roofFloor}
+      <aside class="inspector" aria-label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}>
+        {#if selectedService === 'sewer'}
+          <h2 class="font-semibold">Drain to the sewer</h2>
+          {#if sewerProfile}
+            {@const last = sewerProfile.points.at(-1)!}
+            <p>
+              {checkFormat.format(sewerProfile.length)} m of 110 mm drain at 1 in {DRAIN_FALL[110]} or steeper, down to
+              {checkFormat.format(sewerProfile.deepest)} m at its deepest.
+            </p>
+            {#if sewerProfile.shortBy > 0.005}
+              <p class="text-amber-700">
+                It reaches the connection {Math.round(sewerProfile.shortBy * 1000)} mm too low. Drag the connection to lower
+                ground, bend the route over lower ground, or plan for a pump.
+              </p>
+            {:else}
+              <p class="text-muted-foreground">
+                It arrives {Math.round((last.ground - last.invert) * 1000)} mm below the ground, above the sewer at
+                {Math.round((document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M) * 1000)} mm.
+              </p>
+            {/if}
+          {:else}
+            <p class="text-muted-foreground">Place a toilet, basin, shower, bath or sink and the drain appears.</p>
+          {/if}
+          <div class="grid gap-1.5">
+            <Label for="sewer-depth">Sewer depth at the connection (mm)</Label>
+            <Input
+              id="sewer-depth"
+              type="number"
+              min="300"
+              step="50"
+              value={Math.round((document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M) * 1000)}
+              onchange={(event) => applyResult(documentStore.setSewerDepth(Number(event.currentTarget.value) / 1000))}
+            />
+          </div>
+        {:else}
+          <h2 class="font-semibold">Water main</h2>
+          <p>{checkFormat.format(plumbing.waterMain)} m of 22 mm pipe from the meter to the house, in a 450 mm trench.</p>
+        {/if}
+        <p class="text-xs text-muted-foreground">
+          Drag the {selectedService === 'sewer' ? 'connection' : 'meter'} along the boundary, drag a + to add a bend, and Delete removes a selected bend.
+        </p>
+        <Button variant="outline" onclick={straightenSelected}>Straighten the route</Button>
+      </aside>
+    {/if}
     {#if chosenFixture && !roofFloor}
       <aside class="inspector" aria-label="Fitting">
         <h2 class="font-semibold">{chosenFixture.spec.name}</h2>
@@ -2888,6 +3102,51 @@
   .room-area {
     fill: #52525b;
     font-family: system-ui, sans-serif;
+  }
+
+  .service-line {
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .service-line.sewer {
+    stroke: #7c4a1e;
+  }
+  .service-line.water {
+    stroke: #0284c7;
+    stroke-dasharray: 0.3 0.15;
+  }
+  .service-mark.sewer {
+    fill: #fef3c7;
+    stroke: #7c4a1e;
+  }
+  .service-mark.water {
+    fill: #e0f2fe;
+    stroke: #0284c7;
+  }
+  .service-handle {
+    fill: #ffffff;
+    stroke: #2563eb;
+  }
+  .service-handle.active {
+    fill: #2563eb;
+  }
+  .service-add {
+    fill: #ffffff;
+    stroke: #93c5fd;
+  }
+  .service-add-mark {
+    stroke: #2563eb;
+  }
+  .service-exit {
+    fill: #7c4a1e;
+  }
+  .service-depth {
+    fill: #7c4a1e;
+    font-family: system-ui, sans-serif;
+  }
+  .service-depth.short {
+    fill: #b91c1c;
+    font-weight: 600;
   }
 
   .stair-flight {

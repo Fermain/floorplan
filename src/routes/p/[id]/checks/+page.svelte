@@ -7,6 +7,7 @@
   import { buildingChecks, FENESTRATION_MAX_RATIO, type RoomCheck } from '$lib/geometry/sans'
   import { layoutSpaces, roomTypeLabel } from '$lib/geometry/spaces'
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
+  import { plumbingLayout } from '$lib/geometry/plumbing'
   import { planHref } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
@@ -16,6 +17,8 @@
   const checks = $derived(buildingChecks(doc))
   const electrical = $derived(electricalLayout(doc))
   const electricalProblems = $derived(electricalIssues(doc))
+  const pipes = $derived(plumbingLayout(doc))
+  const longestHot = $derived(pipes.hot.reduce((most, run) => Math.max(most, run.length), 0))
   const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
   const rows = $derived.by(() => {
@@ -236,5 +239,67 @@
         </Card.Content>
       </Card.Root>
     {/if}
+
+    <div class="mt-4">
+      <h2 class="text-base font-semibold">Plumbing</h2>
+      <p class="text-sm text-muted-foreground">
+        Drainage and supply worked out from the fittings and the ground levels. A plumber confirms the design against
+        SANS 10400-P and SANS 10252.
+      </p>
+    </div>
+
+    {#if !pipes.exit}
+      <Card.Root>
+        <Card.Content class="py-6 text-sm text-muted-foreground">
+          Place a toilet, basin, shower, bath or sink and the drainage and water supply appear here.
+        </Card.Content>
+      </Card.Root>
+    {:else}
+      <div class="grid gap-4 sm:grid-cols-3">
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Drain to the sewer</Card.Description>
+            <Card.Title class="text-2xl {pipes.profile && pipes.profile.shortBy > 0.005 ? 'text-amber-700' : ''}">
+              {pipes.profile ? `${number.format(pipes.profile.length)} m` : '–'}
+            </Card.Title>
+            <Card.Description>
+              {pipes.profile
+                ? pipes.profile.shortBy > 0.005
+                  ? `Arrives ${Math.round(pipes.profile.shortBy * 1000)} mm below the sewer`
+                  : `Falls into the sewer; ${number.format(pipes.profile.deepest)} m at its deepest`
+                : 'No drains yet'}
+            </Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Water main</Card.Description>
+            <Card.Title class="text-2xl">{number.format(pipes.waterMain)} m</Card.Title>
+            <Card.Description>From the meter to the house</Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Longest hot run</Card.Description>
+            <Card.Title class="text-2xl">{longestHot ? `${number.format(longestHot)} m` : '–'}</Card.Title>
+            <Card.Description>From the geyser to the furthest hot tap</Card.Description>
+          </Card.Header>
+        </Card.Root>
+      </div>
+    {/if}
+
+    {#if pipes.issues.length > 0}
+      <Card.Root>
+        <Card.Content class="grid gap-2 py-4 text-sm">
+          {#each pipes.issues as issue (issue.id)}
+            <div class="flex items-start justify-between gap-3">
+              <span class="text-amber-700">{issue.text}</span>
+              <Button variant="ghost" size="sm" href={planHref(id, 0)}>Show on plan</Button>
+            </div>
+          {/each}
+        </Card.Content>
+      </Card.Root>
+    {/if}
+
   </div>
 </div>

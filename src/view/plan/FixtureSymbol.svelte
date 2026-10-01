@@ -55,8 +55,14 @@
   {:else if fixture.kind === 'washing-machine'}
     <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />
     <circle r={0.2} />
-  {:else if fixture.kind === 'geyser'}
+  {:else if fixture.kind === 'geyser' || fixture.kind === 'solar-geyser'}
     <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={d / 2} class="fill dashed" />
+    {#if fixture.kind === 'solar-geyser'}
+      <circle r={0.08} />
+      {#each [0, 45, 90, 135, 180, 225, 270, 315] as angle (angle)}
+        <line x1={0.11} y1={0} x2={0.16} y2={0} transform="rotate({angle})" />
+      {/each}
+    {/if}
   {:else if fixture.kind === 'outside-tap'}
     <circle r={0.05} class="solid" />
   {/if}

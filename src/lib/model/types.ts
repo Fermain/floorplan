@@ -110,6 +110,7 @@ export type FixtureKind =
   | 'sink'
   | 'washing-machine'
   | 'geyser'
+  | 'solar-geyser'
   | 'outside-tap'
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
@@ -181,11 +182,24 @@ export type Costing = {
   assumptions?: Partial<CostAssumptions>
 }
 
+export type ServiceKind = 'sewer' | 'water'
+
+export type PlanPoint = { x: number; z: number }
+
+// Where the plot's services connect on the boundary, and the bends in the pipes run to them outside.
+export type SiteServices = {
+  sewer?: PlanPoint
+  water?: PlanPoint
+  sewerDepth?: number
+  bends?: Partial<Record<ServiceKind, PlanPoint[]>>
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
   building: Building
   costing?: Costing
+  services?: SiteServices
 }
 
 export type DerivedRoom = {

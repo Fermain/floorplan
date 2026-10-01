@@ -195,6 +195,7 @@ function pieces(kind: FixtureKind): Piece[] {
     case 'washing-machine':
       return [box(w, d, h, 0, d / 2, 0, CERAMIC)]
     case 'geyser':
+    case 'solar-geyser':
       return [{ geometry: new CylinderGeometry(d / 2, d / 2, w, 24).rotateZ(Math.PI / 2), along: 0, out: d / 2, y: h / 2, colour: CERAMIC }]
     case 'light':
       return [puck(0.15, h, 0, 0, 0, GLOW)]

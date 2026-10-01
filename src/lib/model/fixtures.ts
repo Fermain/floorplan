@@ -36,6 +36,7 @@ export const FIXTURES: readonly FixtureSpec[] = [
   { id: 'sink', trade: 'plumbing', name: 'Kitchen sink', text: 'Sink in a 1200 mm base unit, ideally under a window.', mount: 'floor', outside: false, width: 1.2, depth: 0.6, height: 0.9, y: 0 },
   { id: 'washing-machine', trade: 'plumbing', name: 'Washing machine', text: 'Space with a cold tap and a waste for a washing machine.', mount: 'floor', outside: false, width: 0.6, depth: 0.6, height: 0.85, y: 0 },
   { id: 'geyser', trade: 'plumbing', name: 'Geyser', text: 'A 150 litre hot water cylinder in the roof space, best close to the bathroom and kitchen.', mount: 'ceiling', outside: false, width: 1.2, depth: 0.5, height: 0.5, y: WALL_HEAD + 0.05 },
+  { id: 'solar-geyser', trade: 'plumbing', name: 'Solar geyser', text: 'A 150 litre geyser heated by a solar collector on the roof, with an element for cloudy days. Meets SANS 10400-XA.', mount: 'ceiling', outside: false, width: 1.2, depth: 0.5, height: 0.5, y: WALL_HEAD + 0.05 },
   { id: 'outside-tap', trade: 'plumbing', name: 'Garden tap', text: 'A tap on an outside wall.', mount: 'wall', outside: true, width: 0.08, depth: 0.1, height: 0.08, y: 0.5 },
 ]
 
