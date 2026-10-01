@@ -80,3 +80,17 @@ describe('project defaults', () => {
     expect(setProjectDefaults(doc, { sill: 0.9, windowHeight: 1.2 }).ok).toBe(true)
   })
 })
+
+describe('opening sizes for a wall system', () => {
+  it('snaps the standard sizes to whole block courses, and leaves clay as it is', async () => {
+    const { openingDefaultsFor } = await import('../model/openings')
+    const { BASE_DEFAULTS } = await import('../model/defaults')
+    const block = openingDefaultsFor(wallSystem('block-140'))
+    for (const height of [block.sill, block.sill + block.windowHeight, block.doorHeight]) {
+      expect(height / 0.2).toBeCloseTo(Math.round(height / 0.2), 6)
+    }
+    expect(block.windowWidth / 0.2).toBeCloseTo(Math.round(block.windowWidth / 0.2), 6)
+    const clay = openingDefaultsFor(wallSystem('clay-cavity'))
+    for (const key of ['windowWidth', 'windowHeight', 'sill', 'doorHeight'] as const) expect(clay[key]).toBeCloseTo(BASE_DEFAULTS[key], 3)
+  })
+})

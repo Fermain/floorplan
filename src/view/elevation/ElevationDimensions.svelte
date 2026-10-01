@@ -17,7 +17,7 @@
     fittings?: Fitting[]
     conduits?: { u: number; bottom: number; top: number; clash?: boolean }[]
     ports?: { u: number; v: number; r: number; kind: 'waste' | 'cold' | 'hot' | 'gas' }[]
-    pipes?: { kind: 'waste' | 'cold' | 'hot' | 'gas'; points: [number, number][] }[]
+    pipes?: { kind: 'waste' | 'cold' | 'hot' | 'gas'; points: [number, number][]; clash?: boolean }[]
   }
 
   let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [], ports = [], pipes = [] }: Props = $props()
@@ -103,7 +103,7 @@
       </g>
     {/if}
     {#each pipes as pipe, i (i)}
-      <polyline class="pipe {pipe.kind}" points={pipe.points.map(([u, v]) => `${u},${y(v)}`).join(' ')} />
+      <polyline class="pipe {pipe.kind}" class:clash={pipe.clash} points={pipe.points.map(([u, v]) => `${u},${y(v)}`).join(' ')} />
     {/each}
     {#each ports as port, i (i)}
       <circle class="port {port.kind}" cx={port.u} cy={y(port.v)} r={port.r} />
@@ -227,6 +227,11 @@
     fill: #1c1917;
     stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
+  }
+
+  .pipe.clash {
+    stroke: #dc2626;
+    stroke-width: 2.5px;
   }
 
   .conduit.clash {

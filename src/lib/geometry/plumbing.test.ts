@@ -139,3 +139,42 @@ describe('default soakaway', () => {
     expect(plumbingLayout(doc).septic!.soakaway).toEqual(septic!.soakaway)
   })
 })
+
+describe('pipes chased into the walls', () => {
+  it('joins the inlets on a face into one riser each for cold and hot, and drops each waste to the floor', async () => {
+    const { chaseRuns, runLength } = await import('./plumbing')
+    const runs = chaseRuns(
+      [
+        { u: 1, v: 0.6, kind: 'cold', dia: 0.015 },
+        { u: 0.6, v: 0.6, kind: 'hot', dia: 0.015 },
+        { u: 2, v: 1, kind: 'cold', dia: 0.015 },
+        { u: 1.5, v: 0.45, kind: 'waste', dia: 0.05 },
+      ],
+      0.15,
+      2.55,
+    )
+    const cold = runs.filter((run) => run.kind === 'cold')
+    // A drop from the low inlet up to the high one's level, the run across, and one riser to the ceiling.
+    expect(cold).toHaveLength(3)
+    expect(cold.reduce((sum, run) => sum + runLength(run), 0)).toBeCloseTo(0.4 + 1 + (2.55 - 1))
+    expect(runs.filter((run) => run.kind === 'hot').map(runLength)).toEqual([2.55 - 0.6])
+    expect(runLength(runs.find((run) => run.kind === 'waste')!)).toBeCloseTo(0.3)
+  })
+
+  it('counts the chases and the pipe in them in the quantities', async () => {
+    const { fixtureOnFace } = await import('./fixtures')
+    const { wallChases } = await import('./plumbing')
+    let doc = house([])
+    const floor = doc.building.floors[0]
+    const wall = floor.walls[0]
+    const drafts = [fixtureOnFace(floor, wall, 1, 'basin', 1, 0.67)!, fixtureOnFace(floor, wall, 1, 'sink', 3, 0)!]
+    doc = addFixtures(doc, floor.id, drafts).document
+    const chases = wallChases(doc)
+    expect(chases.cold).toBeGreaterThan(2)
+    expect(chases.hot).toBeGreaterThan(2)
+    expect(chases.waste[50]).toBeGreaterThan(0.5)
+    expect(chases.chase).toBeCloseTo(chases.cold + chases.hot + chases.waste[50])
+    const line = takeoff(doc).find((item) => item.id === 'chase')
+    expect(line).toMatchObject({ unit: 'm', quantity: Math.ceil(chases.chase * 1.1) })
+  })
+})

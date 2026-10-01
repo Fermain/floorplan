@@ -53,6 +53,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { buildTrimParts, trimRuns } from '../../lib/geometry/trims'
   import { PORTS, type PortKind } from '../../lib/model/ports'
   import { GAS_RUN_Y, gasLayout, regulatorY } from '../../lib/geometry/gas'
+  import { chaseRuns } from '../../lib/geometry/plumbing'
   import { cornerById } from '../../lib/model/geom'
   import { wallReach } from '../../lib/geometry/outline'
   import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
@@ -325,34 +326,22 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   })
   // Where the plumbing fittings on this face come through the wall, seen from the room.
   const ports = $derived.by(() => {
-    const out: { u: number; v: number; r: number; kind: PortKind }[] = []
+    const out: { u: number; v: number; r: number; kind: PortKind; dia: number }[] = []
     for (const mark of fittingMarks) {
       const item = faceFittings.find((entry) => entry.fixture.id === mark.id)
       if (!item) continue
       for (const port of PORTS[item.fixture.kind] ?? []) {
-        out.push({ u: mark.u + port.along, v: mark.bottom - item.fixture.y + port.y, r: Math.max(port.dia / 2, 0.012), kind: port.kind })
+        out.push({ u: mark.u + port.along, v: mark.bottom - item.fixture.y + port.y, r: Math.max(port.dia / 2, 0.012), kind: port.kind, dia: port.dia })
       }
     }
     return out
   })
 
-  // Supplies come down from the roof space: on each face the cold inlets share one chase and riser, and so do the hot.
-  // Wastes drop to the floor.
-  const pipeRuns = $derived.by(() => {
-    const runs: { kind: PortKind; points: [number, number][] }[] = []
+  // The water and waste pipes chased into this face, laid out the same way Quantities counts them.
+  const pipeRuns = $derived.by((): { kind: PortKind; points: [number, number][] }[] => {
     // Outside, a gas geyser's water goes straight through the wall behind it.
-    if (viewFace?.outside) return [...runs, ...gasRuns]
-    for (const kind of ['cold', 'hot'] as const) {
-      const inlets = ports.filter((port) => port.kind === kind).sort((a, b) => a.u - b.u)
-      if (inlets.length === 0) continue
-      const level = Math.max(...inlets.map((port) => port.v))
-      const riser = inlets[0].u
-      for (const port of inlets) if (port.v < level - 1e-6) runs.push({ kind, points: [[port.u, port.v], [port.u, level]] })
-      if (inlets.length > 1) runs.push({ kind, points: [[inlets[0].u, level], [inlets[inlets.length - 1].u, level]] })
-      runs.push({ kind, points: [[riser, level], [riser, WALL_HEAD]] })
-    }
-    for (const port of ports.filter((entry) => entry.kind === 'waste')) runs.push({ kind: 'waste', points: [[port.u, port.v], [port.u, ffl]] })
-    return [...runs, ...gasRuns]
+    if (viewFace?.outside) return gasRuns
+    return [...chaseRuns(ports.filter((port) => port.kind !== 'gas'), ffl, WALL_HEAD), ...gasRuns]
   })
 
   // Gas: copper pipe clipped along the outside wall from the bottles, rising to a gas geyser or through the wall
@@ -404,6 +393,26 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
     return runs
   })
+
+  // A pipe chased into the wall cannot run through a window or door either. The runs are square to the wall,
+  // so each straight stretch is checked against each opening's rectangle.
+  const shownPipes = $derived.by(() => {
+    const openings = displayWall && !logical ? shownOpenings(displayWall.openings) : []
+    return pipeRuns.map((run) => {
+      const through = openings.find((opening) =>
+        run.points.slice(1).some(([u1, v1], i) => {
+          const [u0, v0] = run.points[i]
+          const lo = { u: Math.min(u0, u1), v: Math.min(v0, v1) }
+          const hi = { u: Math.max(u0, u1), v: Math.max(v0, v1) }
+          return (
+            hi.u > opening.u + 0.01 && lo.u < opening.u + opening.width - 0.01 && hi.v > opening.v + 0.01 && lo.v < opening.v + opening.height - 0.01
+          )
+        }),
+      )
+      return { ...run, clash: Boolean(through), through: through?.kind }
+    })
+  })
+  const pipeClash = $derived(shownPipes.find((run) => run.clash) ?? null)
 
   const clash = $derived(conduits.find((conduit) => conduit.clash) ?? null)
 
@@ -947,6 +956,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         error: true,
       }
     }
+    if (pipeClash) {
+      const what = pipeClash.through === 'window' ? 'a window' : 'a door'
+      const pipe = { cold: 'cold water pipe', hot: 'hot water pipe', waste: 'waste pipe', gas: 'gas pipe' }[pipeClash.kind]
+      return { text: `A ${pipe} would run through ${what}. Move the fitting along the wall, or the opening.`, error: true }
+    }
     if (mode === 'place') return { text: `${insertHint(insertTool)} Hold Shift to place more than one; Esc goes back to selecting.`, error: false }
     if (wall.openings.length > 0 && scheduleLine) return { text: `${scheduleLine}. Click a window, door or fitting to select it.`, error: false }
     return { text: 'Click a window, door or fitting to select it, or choose Place to add one.', error: false }
@@ -1323,7 +1337,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           fittings={fittingMarks}
           {conduits}
           {ports}
-          pipes={pipeRuns}
+          pipes={shownPipes}
         />
       {/if}
       </div>

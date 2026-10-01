@@ -1,12 +1,15 @@
 import { fixtureSpec, tankLitres } from '../model/fixtures'
 import { gutterLayout } from './gutters'
-import type { Document, Fixture, FixtureKind, Floor, PlanPoint, ServiceKind } from '../model/types'
-import { finishedFloor, siteField } from './fixtures'
+import type { Document, Fixture, FixtureKind, Floor, PlanPoint, ServiceKind, Wall } from '../model/types'
+import { finishedFloor, fixturesOnWall, siteField } from './fixtures'
+import { PORTS, type PortKind } from '../model/ports'
+import { WALL_HEAD } from '../plot/fixture'
+import type { WallSide } from './spaces'
 import { groundPad, pointInRing, structureRings, type GroundPad } from './pad'
 import { bilinearHeight } from './terrain'
 import { wallReach } from './outline'
 import { masonryReach, roofPlan } from './roof'
-import { signedPolygonArea } from '../model/geom'
+import { cornerById, signedPolygonArea } from '../model/geom'
 import { supportingFloor } from '../model/stories'
 
 // Rules of thumb for an indicative layout, to be confirmed against SANS 10400-P and SANS 10252.
@@ -397,7 +400,8 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
   const geysers = placed.filter((item) => GEYSERS.includes(item.fixture.kind))
   let cold = 0
   for (const item of placed.filter((entry) => COLD.includes(entry.fixture.kind) || GEYSERS.includes(entry.fixture.kind))) {
-    const rise = Math.max(0, floorLevel(pad, item.floor, item.fixture) + item.fixture.y - floorLevel(pad, doc.building.floors.find((f) => f.index === 0) ?? item.floor, exit))
+    // Between storeys only: the climb up the wall to each tap is counted with the chases.
+    const rise = Math.max(0, floorLevel(pad, item.floor, item.fixture) - floorLevel(pad, doc.building.floors.find((f) => f.index === 0) ?? item.floor, exit))
     cold += manhattan(item.fixture, exit) + rise
   }
   const hot: PlumbingLayout['hot'] = []
@@ -431,6 +435,79 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
   const rain = rainwater(doc, tanks)
   issues.push(...unfedTanks(doc, tanks))
   return { exit, sewer, water, drains, stack, profile, waterMain, cold, hot, septic, rain, issues }
+}
+
+// A pipe's way through a wall face, seen square on: across the face (u) and up from the floor datum (v).
+export type FacePort = { u: number; v: number; kind: PortKind; dia: number }
+export type ChaseRun = { kind: PortKind; dia: number; points: [number, number][] }
+
+// Supplies come down from the roof space: on each face the cold inlets share one chase and riser, and so do the hot.
+// Wastes drop to the floor.
+export function chaseRuns(ports: FacePort[], floorLevel: number, ceiling: number): ChaseRun[] {
+  const runs: ChaseRun[] = []
+  for (const kind of ['cold', 'hot'] as const) {
+    const inlets = ports.filter((port) => port.kind === kind).sort((a, b) => a.u - b.u)
+    if (inlets.length === 0) continue
+    const dia = inlets[0].dia
+    const level = Math.max(...inlets.map((port) => port.v))
+    const riser = inlets[0].u
+    for (const port of inlets) if (port.v < level - 1e-6) runs.push({ kind, dia, points: [[port.u, port.v], [port.u, level]] })
+    if (inlets.length > 1) runs.push({ kind, dia, points: [[inlets[0].u, level], [inlets[inlets.length - 1].u, level]] })
+    runs.push({ kind, dia, points: [[riser, level], [riser, ceiling]] })
+  }
+  for (const port of ports.filter((entry) => entry.kind === 'waste')) {
+    runs.push({ kind: 'waste', dia: port.dia, points: [[port.u, port.v], [port.u, floorLevel]] })
+  }
+  return runs
+}
+
+export function runLength(run: Pick<ChaseRun, 'points'>): number {
+  let length = 0
+  for (let i = 1; i < run.points.length; i++) length += Math.hypot(run.points[i][0] - run.points[i - 1][0], run.points[i][1] - run.points[i - 1][1])
+  return length
+}
+
+// The plumbing ports on one face of a wall, measured across the face as seen from that side.
+export function facePorts(floor: Floor, wall: Wall, side: WallSide): FacePort[] {
+  const a = cornerById(floor.corners, wall.startCornerId)
+  const b = cornerById(floor.corners, wall.endCornerId)
+  if (!a || !b) return []
+  const length = Math.hypot(b.x - a.x, b.z - a.z)
+  const ffl = finishedFloor(floor)
+  const out: FacePort[] = []
+  for (const item of fixturesOnWall(floor, wall.id)) {
+    // Outside, a gas geyser's water goes straight through the wall behind it: nothing is chased.
+    if (item.side !== side || fixtureSpec(item.fixture.kind).outside) continue
+    const u = side === 1 ? item.u : length - item.u
+    for (const port of PORTS[item.fixture.kind] ?? []) {
+      if (port.kind === 'gas') continue
+      out.push({ u: u + port.along, v: ffl + port.y, kind: port.kind, dia: port.dia })
+    }
+  }
+  return out
+}
+
+// Everything chased into the walls inside the house: risers and drops by kind, and the length of chase cut.
+export function wallChases(doc: Document): { cold: number; hot: number; waste: Record<number, number>; chase: number } {
+  const totals = { cold: 0, hot: 0, waste: {} as Record<number, number>, chase: 0 }
+  for (const floor of doc.building.floors) {
+    for (const wall of floor.walls) {
+      if (wall.skin === 'logical') continue
+      for (const side of [1, -1] as const) {
+        for (const run of chaseRuns(facePorts(floor, wall, side), finishedFloor(floor), WALL_HEAD)) {
+          const length = runLength(run)
+          totals.chase += length
+          if (run.kind === 'cold') totals.cold += length
+          else if (run.kind === 'hot') totals.hot += length
+          else if (run.kind === 'waste') {
+            const dia = run.dia >= 0.1 ? 110 : 50
+            totals.waste[dia] = (totals.waste[dia] ?? 0) + length
+          }
+        }
+      }
+    }
+  }
+  return totals
 }
 
 export function waterTrench(length: number): number {

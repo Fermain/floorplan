@@ -59,6 +59,14 @@ export function defaultOpeningDimensions(
   return { v, height: head - v, width: snapToHalfModule(system, base.width, 'ceil') }
 }
 
+// The standard window and door sizes for a wall system: the clay sizes, snapped to its courses and modules.
+export function openingDefaultsFor(system: WallSystem): Pick<ProjectDefaults, 'windowWidth' | 'windowHeight' | 'sill' | 'doorHeight'> {
+  const window = defaultOpeningDimensions('window', system)
+  const door = defaultOpeningDimensions('external-door', system)
+  const mm = (m: number) => Math.round(m * 1000) / 1000
+  return { windowWidth: mm(window.width), windowHeight: mm(window.height), sill: mm(window.v), doorHeight: mm(door.height) }
+}
+
 function withDefaults(
   kind: OpeningKind,
   base: { v: number; height: number; width: number },

@@ -47,6 +47,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'pipe:22': 70,
   'pipe:15': 45,
   'pipe:15-hot': 60,
+  chase: 65,
   'inspection-eye': 250,
   'gas-pipe': 140,
   'gas-valve': 220,
