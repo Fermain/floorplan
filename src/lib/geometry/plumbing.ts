@@ -1,8 +1,8 @@
 import { fixtureSpec, tankLitres } from '../model/fixtures'
 import { gutterLayout } from './gutters'
 import type { Document, Fixture, FixtureKind, Floor, PlanPoint, ServiceKind } from '../model/types'
-import { finishedFloor } from './fixtures'
-import { groundPad, levelField, pointInRing, structureRings, type GroundPad } from './pad'
+import { finishedFloor, siteField } from './fixtures'
+import { groundPad, pointInRing, structureRings, type GroundPad } from './pad'
 import { bilinearHeight } from './terrain'
 import { wallReach } from './outline'
 import { masonryReach, roofPlan } from './roof'
@@ -155,8 +155,8 @@ function manhattan(a: PlanPoint, b: PlanPoint): number {
   return Math.abs(a.x - b.x) + Math.abs(a.z - b.z)
 }
 
-function groundAt(doc: Document, pad: GroundPad | null): (x: number, z: number) => number {
-  const field = pad ? levelField(doc.heightfield, pad.structures) : doc.heightfield
+function groundAt(doc: Document, _pad: GroundPad | null): (x: number, z: number) => number {
+  const field = siteField(doc)
   return (x, z) => bilinearHeight(field, x, z)
 }
 

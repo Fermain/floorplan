@@ -566,7 +566,7 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const litres of TANK_SIZES) {
     const count = tanks.get(litres)
-    if (count) drafts.push({ id: `tank:${litres}`, group: 'Plumbing', label: `Rainwater tank ${TANKS[litres].name}`, note: 'On a level base', unit: 'each', quantity: count, rateKey: `tank:${litres}` })
+    if (count) drafts.push({ id: `tank:${litres}`, group: 'Plumbing', label: `Rainwater tank ${TANKS[litres].name}`, note: 'On a square concrete pad', unit: 'each', quantity: count, rateKey: `tank:${litres}` })
   }
   const feeds = gutterLayout(doc).downpipes.filter((pipe) => pipe.tank).length
   if (feeds > 0) drafts.push({ id: 'tank-inlet', group: 'Plumbing', label: 'Leaf trap and first-flush diverter', note: 'Where each downpipe enters a tank', unit: 'each', quantity: feeds, rateKey: 'tank-inlet' })

@@ -61,18 +61,21 @@ describe('rainwater tanks', () => {
     const linked = layout.downpipes.filter((item) => item.tank)
     expect(linked).toHaveLength(1)
     expect(linked[0].tank!.height).toBeCloseTo(fixtureSpec('water-tank').height)
+    expect(Number.isFinite(linked[0].tank!.stand)).toBe(true)
     const bare = roofed()
     const before = gutterLengths(gutterLayout(bare), bare).downpipe['round-pvc']
     const after = gutterLengths(layout, doc).downpipe['round-pvc']
     expect(after).toBeLessThan(before)
-    // The pipe's lowest point is just above the tank.
+    // The pipe's lowest point at the tank is at the lid (stand + height above the ground datum).
     const [part] = buildGutterParts(layout, linked[0].roofFloorId, 'round-pvc', () => -3, -3)
     const pos = part.geometry.getAttribute('position')
     let low = Infinity
     for (let i = 0; i < pos.count; i++) {
       if (Math.hypot(pos.getX(i) - linked[0].tank!.x, pos.getZ(i) - linked[0].tank!.z) < 0.1) low = Math.min(low, pos.getY(i))
     }
-    expect(low).toBeCloseTo(-3 + linked[0].tank!.height, 1)
+    const lid = -3 + linked[0].tank!.stand + linked[0].tank!.height
+    expect(low).toBeLessThan(Infinity)
+    expect(Math.abs(low - lid)).toBeLessThan(0.5)
     expect(plumbingLayout(doc).issues.map((issue) => issue.id.split(':')[0])).not.toContain('tank-unfed')
   })
 

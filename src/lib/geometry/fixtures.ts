@@ -2,11 +2,12 @@ import { BoxGeometry, BufferGeometry, CylinderGeometry, LatheGeometry, Matrix4, 
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { cornerById } from '../model/geom'
 import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
-import type { Fixture, FixtureKind, Floor, Wall } from '../model/types'
+import type { Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
 import { wallReach } from './outline'
-import { pointInRing } from './pad'
+import { floorWorldDatum, groundPad, levelField, padBleed, pointInRing, ringDistance, wallDatum, type LevelPad, type Ring } from './pad'
 import { floorCells, ringLabelPoint, type WallSide } from './spaces'
 import { stairBase } from './stairs'
+import { bilinearHeight } from './terrain'
 
 type Point = { x: number; z: number }
 
@@ -23,6 +24,123 @@ function dot(a: Point, b: Point): number {
 // The finished floor of a storey sits above its datum by the surface bed on the ground floor.
 export function finishedFloor(floor: Floor): number {
   return stairBase(floor.index)
+}
+
+// Floor-standing fittings outside stand on the ground, not on the indoor slab.
+export function standsOnGrade(floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z'>): boolean {
+  if (floor.index !== 0) return false
+  const spec = fixtureSpec(fixture.kind)
+  if (spec.mount !== 'floor') return false
+  if (spec.outside) return true
+  if (!EITHER_SIDE.includes(fixture.kind)) return false
+  return !floorCells(floor).some((cell) => pointInRing(cell.ring, fixture.x, fixture.z))
+}
+
+function floorSupportDatum(doc: Document, floor: Floor): number {
+  const pad = groundPad(doc)
+  if (!pad) return 0
+  for (const wall of floor.walls) {
+    const datum = wallDatum(floor, wall, pad)
+    if (datum !== null) return datum
+  }
+  return pad.structures[0]?.datum ?? 0
+}
+
+// The level patch of ground a floor-standing outdoor fitting needs, in plan.
+export function fixturePadRing(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): Ring {
+  if (fixture.kind === 'water-tank') {
+    const depth = fixtureSize(fixture).depth
+    const { side } = tankSlab(fixtureSize(fixture).width)
+    const along = { x: fixture.dz, z: -fixture.dx }
+    const out = { x: fixture.dx, z: fixture.dz }
+    const back = { x: fixture.x - out.x * (depth / 2), z: fixture.z - out.z * (depth / 2) }
+    const mid = { x: back.x + out.x * (side / 2), z: back.z + out.z * (side / 2) }
+    const half = side / 2
+    return [
+      { x: mid.x - along.x * half - out.x * half, z: mid.z - along.z * half - out.z * half },
+      { x: mid.x + along.x * half - out.x * half, z: mid.z + along.z * half - out.z * half },
+      { x: mid.x + along.x * half + out.x * half, z: mid.z + along.z * half + out.z * half },
+      { x: mid.x - along.x * half + out.x * half, z: mid.z - along.z * half + out.z * half },
+    ]
+  }
+  return fixtureFootprint(fixture)
+}
+
+function maxGradeInRing(field: Document['heightfield'], ring: Ring): number {
+  let max = -Infinity
+  const sample = (x: number, z: number) => {
+    max = Math.max(max, bilinearHeight(field, x, z))
+  }
+  for (const point of ring) sample(point.x, point.z)
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    sample((a.x + b.x) / 2, (a.z + b.z) / 2)
+  }
+  const cx = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
+  const cz = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
+  sample(cx, cz)
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const point of ring) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  const step = Math.max(field.cellSize / 2, 0.2)
+  for (let x = minX; x <= maxX + 1e-9; x += step) {
+    for (let z = minZ; z <= maxZ + 1e-9; z += step) {
+      if (pointInRing(ring, x, z)) sample(x, z)
+    }
+  }
+  return max
+}
+
+// World height of the leveled pad under an outdoor floor fitting: the high point of the natural ground
+// under its footprint, and at least the building pad when it stands beside a leveled wall.
+export function fixturePadWorldDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+  const ring = fixturePadRing(fixture)
+  const natural = maxGradeInRing(doc.heightfield, ring)
+  const pad = groundPad(doc)
+  if (!pad) return natural
+  const reach = padBleed(doc.heightfield) + (fixture.kind === 'water-tank' ? tankSlab(fixtureSize(fixture).width).side : fixtureSize(fixture).depth)
+  let beside: number | null = null
+  for (const structure of pad.structures) {
+    for (const room of structure.rings) {
+      if (ringDistance(room, fixture.x, fixture.z) <= reach) {
+        beside = beside === null ? structure.datum : Math.max(beside, structure.datum)
+      }
+    }
+  }
+  // Beside the house, keep the pad on the building platform (cut or fill). Away from it, take the high point of the ground.
+  return beside !== null ? beside : natural
+}
+
+// Pads to flatten into the site heightfield so outdoor fittings sit on level ground.
+export function fixturePads(doc: Document): LevelPad[] {
+  const ground = doc.building.floors.find((floor) => floor.index === 0)
+  if (!ground) return []
+  return (ground.fixtures ?? [])
+    .filter((fixture) => standsOnGrade(ground, fixture))
+    .map((fixture) => ({
+      datum: fixturePadWorldDatum(doc, ground, fixture),
+      rings: [fixturePadRing(fixture)],
+    }))
+}
+
+// How far above the ground floor's structural datum the underside of a fitting stands.
+export function fixtureStandAboveDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+  if (!standsOnGrade(floor, fixture)) return finishedFloor(floor)
+  return fixturePadWorldDatum(doc, floor, fixture) - floorWorldDatum(floor.datumHeight, floorSupportDatum(doc, floor))
+}
+
+// Site ground with building pads and outdoor fitting pads leveled.
+export function siteField(doc: Document): Document['heightfield'] {
+  const pad = groundPad(doc)
+  return levelField(doc.heightfield, pad?.structures ?? [], fixturePads(doc))
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
@@ -248,6 +366,17 @@ const DB_FACE: Finish = { colour: '#4b5563', roughness: 0.5, metalness: 0.45 }
 // A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
 const FLOOR_CLEAR_M = 0.003
 
+// Square concrete pad under a rainwater tank: side and thickness grow with the tank.
+export function tankSlab(diameter: number): { side: number; thick: number } {
+  const over = Math.max(0.1, Math.round(diameter * 0.1 * 20) / 20)
+  const thick = Math.max(0.1, Math.round(diameter * 0.075 * 20) / 20)
+  return { side: diameter + 2 * over, thick }
+}
+
+export function tankSlabSide(diameter: number): number {
+  return tankSlab(diameter).side
+}
+
 type Piece = { geometry: BufferGeometry; along: number; out: number; y: number; finish: Finish }
 
 function centreAtOrigin(geometry: BufferGeometry): BufferGeometry {
@@ -368,11 +497,14 @@ function pieces(fixture: Fixture): Piece[] {
       return [...carcass, ...cups, ...mixer(-0.05, d * 0.2, h - 0.01)]
     }
     case 'water-tank': {
-      const bodyH = h - 0.22
+      const { side: slab, thick } = tankSlab(w)
+      // Pad back flush with the wall face; the overhang falls into the yard and along the wall.
+      const slabOut = slab / 2
+      const bodyH = h - thick - 0.12
       return [
-        puck(w / 2 + 0.05, 0.1, 0, d / 2, 0, CONCRETE, 24),
-        puck(w / 2, bodyH, 0, d / 2, 0.1, TANK, 28),
-        drum(w / 2, w / 2 * 0.55, 0.12, 0, d / 2, 0.1 + bodyH, TANK_RIM, 24),
+        box(slab, slab, thick, 0, slabOut, 0, CONCRETE),
+        puck(w / 2, bodyH, 0, d / 2, thick, TANK, 28),
+        drum(w / 2, (w / 2) * 0.55, 0.12, 0, d / 2, thick + bodyH, TANK_RIM, 24),
         puck(w / 2 * 0.5, 0.04, 0, d / 2, h - 0.04, TANK_RIM, 20),
         puck(0.04, 0.08, 0, d / 2, h - 0.02, CHROME, 10),
       ]
@@ -528,11 +660,12 @@ function pieces(fixture: Fixture): Piece[] {
   }
 }
 
-// One merged geometry per finish for a set of fixtures, standing on a finished floor at baseY.
-export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePart[] {
+// One merged geometry per finish for a set of fixtures. baseY is the underside of each fitting, or a function of it.
+export function buildFixtureParts(fixtures: Fixture[], baseY: number | ((fixture: Fixture) => number)): FixturePart[] {
   const byFinish = new Map<string, { finish: Finish; list: BufferGeometry[] }>()
   const basis = new Matrix4()
   const move = new Matrix4()
+  const baseOf = typeof baseY === 'function' ? baseY : () => baseY
   for (const fixture of fixtures) {
     const spec = fixtureSpec(fixture.kind)
     const out = spec.mount === 'ceiling' ? 0 : fixtureSize(fixture).depth / 2
@@ -541,9 +674,11 @@ export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePa
     const along = { x: fixture.dz, z: -fixture.dx }
     for (const piece of pieces(fixture)) {
       basis.set(along.x, 0, fixture.dx, 0, 0, 1, 0, 0, along.z, 0, fixture.dz, 0, 0, 0, 0, 1)
+      // A tank's pad sits on the ground; other fittings lift a hair to avoid z-fighting the slab.
+      const clear = fixture.kind === 'water-tank' ? 0 : FLOOR_CLEAR_M
       move.makeTranslation(
         back.x + along.x * piece.along + fixture.dx * piece.out,
-        baseY + fixture.y + piece.y + FLOOR_CLEAR_M,
+        baseOf(fixture) + fixture.y + piece.y + clear,
         back.z + along.z * piece.along + fixture.dz * piece.out,
       )
       const geometry = (piece.geometry.index ? piece.geometry.toNonIndexed() : piece.geometry).applyMatrix4(move.multiply(basis))

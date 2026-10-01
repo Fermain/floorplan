@@ -248,9 +248,12 @@ export function padBleed(field: Heightfield): number {
   return field.cellSize * Math.SQRT2 + WALL_OUTSTAND_M
 }
 
-export function levelField(field: Heightfield, structures: StructurePad[]): Heightfield {
+export type LevelPad = { datum: number; rings: Ring[] }
+
+export function levelField(field: Heightfield, structures: LevelPad[], extras: LevelPad[] = []): Heightfield {
   const heights = field.heights.slice()
   const bleed = padBleed(field)
+  const fixtureBleed = field.cellSize * Math.SQRT2
   for (let r = 0; r < field.rows; r++) {
     for (let c = 0; c < field.cols; c++) {
       const x = field.originX + c * field.cellSize
@@ -267,6 +270,17 @@ export function levelField(field: Heightfield, structures: StructurePad[]): Heig
         }
       }
       if (datum !== null && best <= bleed) heights[r * field.cols + c] = datum
+      // Fitting pads only reshape the ground outside: never lift terrain through a room slab.
+      const indoors = structures.some((structure) => structure.rings.some((room) => pointInRing(room, x, z)))
+      if (indoors) continue
+      for (const pad of extras) {
+        for (const ring of pad.rings) {
+          if (ringDistance(ring, x, z) <= fixtureBleed) {
+            heights[r * field.cols + c] = pad.datum
+            break
+          }
+        }
+      }
     }
   }
   return { ...field, heights }

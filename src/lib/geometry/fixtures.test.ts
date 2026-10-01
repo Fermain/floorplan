@@ -3,9 +3,24 @@ import { fixtureDocument } from '../plot/fixture'
 import { addFixture, addWallRing, moveCorners, removeFixture, updateFixture } from '../model/mutations'
 import { FIXTURES, fixtureFootprint } from '../model/fixtures'
 import type { Document } from '../model/types'
-import { buildFixtureParts, fixtureOnFace, fixtureWall, placeFixture } from './fixtures'
+import {
+  buildFixtureParts,
+  finishedFloor,
+  fixtureOnFace,
+  fixturePadRing,
+  fixturePadWorldDatum,
+  fixtureStandAboveDatum,
+  fixtureWall,
+  placeFixture,
+  siteField,
+  standsOnGrade,
+  tankSlab,
+  tankSlabSide,
+} from './fixtures'
+import { groundPad } from './pad'
 import { floorCells } from './spaces'
 import { pointInRing } from './pad'
+import { bilinearHeight } from './terrain'
 
 const east = { x: 1, z: 0 }
 
@@ -105,6 +120,91 @@ describe('fixture edits', () => {
         part.geometry.dispose()
       }
     }
+  })
+
+  it('seats a rainwater tank on a square pad flush with the floor', () => {
+    const parts = buildFixtureParts([{ id: 'f', kind: 'water-tank', x: 1, z: 1, dx: 0, dz: 1, y: 0, litres: 5000 }], 0)
+    let minY = Infinity
+    let maxSpan = 0
+    for (const part of parts) {
+      part.geometry.computeBoundingBox()
+      const box = part.geometry.boundingBox!
+      minY = Math.min(minY, box.min.y)
+      maxSpan = Math.max(maxSpan, box.max.x - box.min.x, box.max.z - box.min.z)
+      part.geometry.dispose()
+    }
+    expect(minY).toBeCloseTo(0, 5)
+    expect(maxSpan).toBeCloseTo(tankSlabSide(1.8), 5)
+  })
+
+  it('scales the tank pad with the tank', () => {
+    const small = tankSlab(1.1)
+    const large = tankSlab(2.4)
+    expect(small.side).toBeGreaterThan(1.1)
+    expect(large.side).toBeGreaterThan(small.side)
+    expect(large.thick).toBeGreaterThan(small.thick)
+  })
+
+  it('stands outdoor floor fittings on grade, not on the indoor slab', () => {
+    const doc = room()
+    const floor = doc.building.floors[0]
+    const tank = placeFixture(floor, { x: 7, z: 3.6 }, 'water-tank', { x: 0, z: -1 })
+    expect(tank.problem).toBeNull()
+    expect(standsOnGrade(floor, tank.fixture)).toBe(true)
+    expect(fixtureStandAboveDatum(doc, floor, tank.fixture)).toBeLessThan(finishedFloor(floor) - 0.05)
+    const socket = placeFixture(floor, { x: 7, z: net(doc).minZ + 0.3 }, 'socket', { x: 1, z: 0 })
+    expect(standsOnGrade(floor, socket.fixture)).toBe(false)
+    expect(fixtureStandAboveDatum(doc, floor, socket.fixture)).toBeCloseTo(finishedFloor(floor))
+  })
+
+  it('levels a terrace under a tank on a slope so the pad sits on the ground', () => {
+    const doc = room()
+    const floor = doc.building.floors[0]
+    const field = doc.heightfield
+    // A steep fall away from the south wall.
+    for (let r = 0; r < field.rows; r++) {
+      for (let c = 0; c < field.cols; c++) {
+        const z = field.originZ + r * field.cellSize
+        field.heights[r * field.cols + c] = 2 - z * 0.15
+      }
+    }
+    const placed = placeFixture(floor, { x: 7, z: 3.6 }, 'water-tank', { x: 0, z: -1 })
+    expect(placed.problem).toBeNull()
+    const withTank = addFixture(doc, floor.id, placed.fixture).document
+    const stand = fixturePadWorldDatum(withTank, withTank.building.floors[0], withTank.building.floors[0].fixtures![0])
+    const site = siteField(withTank)
+    const fixture = withTank.building.floors[0].fixtures![0]
+    expect(bilinearHeight(site, fixture.x, fixture.z)).toBeCloseTo(stand, 3)
+    const ring = fixturePadRing(fixture)
+    const cx = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
+    const cz = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
+    expect(bilinearHeight(site, cx, cz)).toBeCloseTo(stand, 3)
+    for (const point of ring) {
+      expect(bilinearHeight(site, point.x, point.z)).toBeGreaterThanOrEqual(stand - 0.02)
+    }
+    expect(fixtureStandAboveDatum(withTank, withTank.building.floors[0], fixture)).toBeCloseTo(
+      stand - (groundPad(withTank)?.structures[0]?.datum ?? 0),
+      2,
+    )
+  })
+
+  it('does not lift the ground inside a room when a tank pad sits outside', () => {
+    const doc = room()
+    const floor = doc.building.floors[0]
+    const field = doc.heightfield
+    for (let r = 0; r < field.rows; r++) {
+      for (let c = 0; c < field.cols; c++) {
+        field.heights[r * field.cols + c] = 3
+      }
+    }
+    const placed = placeFixture(floor, { x: 7, z: 3.6 }, 'water-tank', { x: 0, z: -1 })
+    expect(placed.problem).toBeNull()
+    const withTank = addFixture(doc, floor.id, placed.fixture).document
+    const pad = groundPad(withTank)!
+    const site = siteField(withTank)
+    const inside = { x: 7, z: 6 }
+    expect(pointInRing(pad.structures[0].rings[0], inside.x, inside.z)).toBe(true)
+    expect(bilinearHeight(site, inside.x, inside.z)).toBeCloseTo(pad.structures[0].datum, 5)
   })
 })
 

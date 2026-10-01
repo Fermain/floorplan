@@ -4,6 +4,7 @@ import { cornerById } from '../model/geom'
 import { fixtureSize } from '../model/fixtures'
 import { supportingFloor } from '../model/stories'
 import type { Document, Floor, GutterType, Roof } from '../model/types'
+import { fixtureStandAboveDatum } from './fixtures'
 import { wallReach } from './outline'
 import { masonryReach, roofFacesForFloor, type RoofVertex } from './roof'
 import { WALL_HEAD } from '../plot/fixture'
@@ -20,8 +21,8 @@ export const GUTTERS: Record<GutterType, { name: string; colour: string; text: s
 // A stretch of gutter under one eave, above one wall of the storey below, in the roof's own frame.
 export type GutterPiece = { roofFloorId: string; wallId: string | null; a: RoofVertex; b: RoofVertex; out: { x: number; z: number }; on: boolean }
 
-// A rainwater tank a downpipe empties into: where it stands and how tall it is above the ground floor.
-export type TankInlet = { id: string; x: number; z: number; height: number; radius: number }
+// A rainwater tank a downpipe empties into: stand is how far its pad sits above the ground-floor datum.
+export type TankInlet = { id: string; x: number; z: number; height: number; stand: number; radius: number }
 
 export type Downpipe = { roofFloorId: string; x: number; z: number; top: number; tank?: TankInlet }
 
@@ -39,7 +40,14 @@ export function linkTanks(doc: Document, downpipes: Downpipe[]): Downpipe[] {
     .filter((fixture) => fixture.kind === 'water-tank')
     .map((fixture) => {
       const size = fixtureSize(fixture)
-      return { id: fixture.id, x: fixture.x, z: fixture.z, height: fixture.y + size.height, radius: size.width / 2 }
+      return {
+        id: fixture.id,
+        x: fixture.x,
+        z: fixture.z,
+        height: fixture.y + size.height,
+        stand: fixtureStandAboveDatum(doc, ground!, fixture),
+        radius: size.width / 2,
+      }
     })
   return downpipes.map((pipe) => {
     const tank = tanks
@@ -178,13 +186,13 @@ function runs(pieces: GutterPiece[]): GutterPiece[][] {
 export type GutterPart = { geometry: BufferGeometry; colour: string }
 
 // Gutters and downpipes in the roof's frame; bottomAt gives the local height a downpipe runs down to, and
-// groundFloor the local height of the ground floor's finished floor, where rainwater tanks stand.
+// groundDatum the local height of the ground-floor structural datum (outdoor tanks stand on grade above that).
 export function buildGutterParts(
   layout: GutterLayout,
   roofFloorId: string,
   type: GutterType,
   bottomAt: (x: number, z: number) => number,
-  groundFloor?: number,
+  groundDatum?: number,
 ): GutterPart[] {
   const round = type === 'round-pvc'
   const parts: BufferGeometry[] = []
@@ -207,8 +215,8 @@ export function buildGutterParts(
   for (const pipe of layout.downpipes) {
     if (pipe.roofFloorId !== roofFloorId) continue
     const top = pipe.top - 0.1
-    const tank = groundFloor !== undefined ? pipe.tank : undefined
-    const bottom = tank ? groundFloor! + tank.height + INLET_RISE_M : bottomAt(pipe.x, pipe.z)
+    const tank = groundDatum !== undefined ? pipe.tank : undefined
+    const bottom = tank ? groundDatum! + tank.stand + tank.height + INLET_RISE_M : bottomAt(pipe.x, pipe.z)
     const height = top - bottom
     if (height <= 0.05) continue
     const geometry = round ? new CylinderGeometry(0.04, 0.04, height, 10) : new BoxGeometry(0.065, height, 0.065)
@@ -251,7 +259,8 @@ export function gutterLengths(layout: GutterLayout, doc: Document): { gutter: Re
       if (pipe.roofFloorId !== floor.id) continue
       pipes[type] += 1
       // Into a tank, the downpipe stops above it and leads across to its lid.
-      downpipe[type] += head + pipe.top - (pipe.tank ? pipe.tank.height + INLET_RISE_M : 0) + leaderLength(pipe)
+      const tankTop = pipe.tank ? pipe.tank.stand + pipe.tank.height : 0
+      downpipe[type] += head + pipe.top - (pipe.tank ? tankTop + INLET_RISE_M : 0) + leaderLength(pipe)
     }
   }
   return { gutter, downpipe, pipes }

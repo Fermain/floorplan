@@ -56,7 +56,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
   import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
-  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixtureStandAboveDatum, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
     evenPositions,
@@ -206,7 +206,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   })
 
   const fittingParts = $derived.by((): FixturePart[] =>
-    floor ? buildFixtureParts(shownFittings, floor.datumHeight + ffl) : [],
+    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture)) : [],
   )
 
   $effect(() => {
@@ -234,12 +234,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       const moving = fixtureDrag?.id === item.fixture.id ? fixtureDrag : null
       const u = moving ? moving.u : item.u
       const y = moving ? moving.y : item.fixture.y
+      const stand = floor ? fixtureStandAboveDatum(doc, floor, item.fixture) : ffl
       return {
         id: item.fixture.id,
         u: viewU(u),
         width: fixtureSize(item.fixture).width,
-        bottom: ffl + y,
-        top: ffl + y + fixtureSize(item.fixture).height,
+        bottom: stand + y,
+        top: stand + y + fixtureSize(item.fixture).height,
         selected: item.fixture.id === selectedFixtureId,
         label: spec.name,
       }
@@ -250,7 +251,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     for (const item of faceFittings) {
       const size = fixtureSize(item.fixture)
       const pad = 0.04
-      const bottom = ffl + item.fixture.y
+      const bottom = (floor ? fixtureStandAboveDatum(doc, floor, item.fixture) : ffl) + item.fixture.y
       if (Math.abs(u - item.u) <= size.width / 2 + pad && v >= bottom - pad && v <= bottom + size.height + pad) return item
     }
     return null
@@ -368,7 +369,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     const across = (at: { x: number; z: number }) => (at.x - p.x) * n.x + (at.z - p.z) * n.z
     const along = (at: { x: number; z: number }) => (at.x - p.x) * t.x + (at.z - p.z) * t.z
     const onFace = (at: { x: number; z: number }) => Math.abs(across(at) - reach) < 0.12 && along(at) > -0.2 && along(at) < length + 0.2
-    const level = ffl + GAS_RUN_Y
+    const level = (viewFace?.outside ? 0 : ffl) + GAS_RUN_Y
     const here = (fixtureId: string) => faceFittings.find((item) => item.fixture.id === fixtureId)
     for (const run of gas.runs) {
       if (viewFace?.outside) {
@@ -381,7 +382,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           if (Math.abs(ua - ub) > 1e-3) runs.push({ kind: 'gas', points: [[ua, level], [ub, level]] })
         }
         const bottles = here(run.cylinder.fixture.id)
-        if (bottles) runs.push({ kind: 'gas', points: [[viewU(bottles.u), ffl + regulatorY(bottles.fixture)], [viewU(Math.min(length, Math.max(0, along(run.path[0])))), level]] })
+        if (bottles) {
+          const stand = fixtureStandAboveDatum(doc, floor, bottles.fixture)
+          runs.push({ kind: 'gas', points: [[viewU(bottles.u), stand + regulatorY(bottles.fixture)], [viewU(Math.min(length, Math.max(0, along(run.path[0])))), level]] })
+        }
         const end = run.path[run.path.length - 1]
         const heater = here(run.item.fixture.id)
         const port = (PORTS[run.item.fixture.kind] ?? []).find((item) => item.kind === 'gas')
@@ -498,8 +502,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
     const offset = floor.datumHeight + WALL_HEAD
     const ground = doc.building.floors.find((item) => item.index === 0)
-    const groundLevel = ground ? ground.datumHeight + finishedFloor(ground) - offset : undefined
-    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset, groundLevel).map((part) => ({
+    const groundDatum = ground ? ground.datumHeight - offset : undefined
+    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset, groundDatum).map((part) => ({
       geometry: part.geometry.translate(0, offset, 0),
       colour: part.colour,
       opacity: 1,
@@ -762,7 +766,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       fixtureDrag = {
         id: fitting.fixture.id,
         grabU: uv.u - fitting.u,
-        grabV: uv.v - (ffl + fitting.fixture.y),
+        grabV: uv.v - (fixtureStandAboveDatum(doc, floor, fitting.fixture) + fitting.fixture.y),
         u: fitting.u,
         y: fitting.fixture.y,
         moved: false,

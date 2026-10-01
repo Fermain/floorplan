@@ -29,7 +29,7 @@
     TANKS,
     tankLitres,
   } from '../../lib/model/fixtures'
-  import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
+  import { fixtureWall, placeFixture, siteField, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
@@ -55,7 +55,7 @@
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
   import { isUnlandedWall } from '../../lib/geometry/support'
-  import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
+  import { connectedCornerIds, groundPad } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
@@ -563,11 +563,7 @@
   const showUnlandedWarning = $derived(
     tool === 'select' || tool === 'draw-double' || tool === 'draw-logical' || tool === 'draw-rect',
   )
-  const contours = $derived.by(() => {
-    const pad = groundPad(document)
-    const field = pad ? levelField(document.heightfield, pad.structures) : document.heightfield
-    return contourPlanPaths(field)
-  })
+  const contours = $derived.by(() => contourPlanPaths(siteField(document)))
 
   function plateFill(floorId: string, ring: number): string {
     const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
