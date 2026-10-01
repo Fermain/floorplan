@@ -44,6 +44,16 @@ describe('plot sides and roads', () => {
     expect(triangle.document.plot.roads).toEqual([0])
   })
 
+  it('stops the centre line where one road crosses another', async () => {
+    const { centreDashes } = await import('./roads')
+    const corner = roadStrips({ ...square, roads: [0, 1] })
+    const dashes = centreDashes(corner)
+    // No dash touches two roads' tar: each stops short of the junction.
+    const crossing = dashes.filter(([a, b]) => corner.filter((strip) => pointInRing(strip.road, a.x, a.z) || pointInRing(strip.road, b.x, b.z)).length > 1)
+    expect(crossing).toEqual([])
+    expect(dashes.length).toBeLessThan(centreDashes([corner[0]]).length + centreDashes([corner[1]]).length)
+  })
+
   it('gives the corner sample both streets and the splay', () => {
     expect(samplePlot('corner').plot.roads).toEqual([0, 1, 2])
   })

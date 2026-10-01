@@ -28,7 +28,7 @@
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
-  import { plotSide, roadReach, roadStrips } from '../../lib/geometry/roads'
+  import { centreDashes, plotSide, roadReach, roadStrips } from '../../lib/geometry/roads'
   import {
     DEFAULT_SEWER_DEPTH_M,
     DRAIN_FALL,
@@ -2235,10 +2235,15 @@
       pointer-events="all"
     />
     <g class="roads" pointer-events="none">
+      <!-- In layers, so where roads meet each one's tar covers the other's verge. -->
       {#each roads as strip (strip.edge)}
         <polygon points={pointsAttr(strip.verge.map((p) => [p.x, p.z] as SvgPoint))} class="verge" />
+      {/each}
+      {#each roads as strip (strip.edge)}
         <polygon points={pointsAttr(strip.road.map((p) => [p.x, p.z] as SvgPoint))} class="carriageway" />
-        <line x1={strip.centre[0].x} y1={strip.centre[0].z} x2={strip.centre[1].x} y2={strip.centre[1].z} class="centre-line" stroke-width={s(0.1)} stroke-dasharray="{s(1)} {s(0.8)}" />
+      {/each}
+      {#each centreDashes(roads) as [a, b], i (i)}
+        <line x1={a.x} y1={a.z} x2={b.x} y2={b.z} class="centre-line" stroke-width={0.12} />
       {/each}
     </g>
     <polygon

@@ -83,6 +83,24 @@ export function roadStrips(plot: Plot): RoadStrip[] {
   return strips
 }
 
+// The dashes down the middle of each road, 2 m on and 3 m off, stopping where it crosses another road.
+export function centreDashes(strips: RoadStrip[]): [Point, Point][] {
+  const dashes: [Point, Point][] = []
+  for (const strip of strips) {
+    const [from, to] = strip.centre
+    const length = Math.hypot(to.x - from.x, to.z - from.z)
+    const at = (along: number) => ({ x: from.x + strip.t.x * along, z: from.z + strip.t.z * along })
+    const others = strips.filter((other) => other !== strip)
+    for (let s = 0; s + 2 <= length; s += 5) {
+      const a = at(s)
+      const b = at(s + 2)
+      const crossing = others.some((other) => pointInRing(other.road, a.x, a.z) || pointInRing(other.road, b.x, b.z))
+      if (!crossing) dashes.push([a, b])
+    }
+  }
+  return dashes
+}
+
 export type RoadPart = { geometry: BufferGeometry; colour: string }
 
 const VERGE_COLOUR = '#7d9a6a'
@@ -132,13 +150,18 @@ export function buildRoadParts(plot: Plot, heightAt: (x: number, z: number) => n
   for (const strip of strips) {
     verge.push(...drape(strip.verge, heightAt, 0.03))
     road.push(...drape(strip.road, heightAt, 0.05))
-    const [from, to] = strip.centre
-    const length = Math.hypot(to.x - from.x, to.z - from.z)
-    const half = 0.06
-    for (let s = 0; s + 2 <= length; s += 5) {
-      const p = (along: number, side: number) => ({ x: from.x + strip.t.x * along + strip.n.x * side, z: from.z + strip.t.z * along + strip.n.z * side })
-      lines.push(...drape([p(s, -half), p(s + 2, -half), p(s + 2, half), p(s, half)], heightAt, 0.07, 2))
-    }
+  }
+  const half = 0.06
+  for (const [a, b] of centreDashes(strips)) {
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    const side = { x: (-(b.z - a.z) / length) * half, z: ((b.x - a.x) / length) * half }
+    const quad = [
+      { x: a.x - side.x, z: a.z - side.z },
+      { x: b.x - side.x, z: b.z - side.z },
+      { x: b.x + side.x, z: b.z + side.z },
+      { x: a.x + side.x, z: a.z + side.z },
+    ]
+    lines.push(...drape(quad, heightAt, 0.07, 2))
   }
   return [
     { geometry: geometryOf(verge), colour: VERGE_COLOUR },
