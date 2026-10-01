@@ -95,6 +95,34 @@ export type Stair = {
   width: number
 }
 
+export type FixtureKind =
+  | 'socket'
+  | 'switch'
+  | 'light'
+  | 'outdoor-light'
+  | 'stove-isolator'
+  | 'extractor'
+  | 'db-board'
+  | 'wc'
+  | 'basin'
+  | 'shower'
+  | 'bath'
+  | 'sink'
+  | 'washing-machine'
+  | 'geyser'
+  | 'outside-tap'
+
+// (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
+export type Fixture = {
+  id: string
+  kind: FixtureKind
+  x: number
+  z: number
+  dx: number
+  dz: number
+  y: number
+}
+
 export type Floor = {
   id: string
   index: number
@@ -105,6 +133,7 @@ export type Floor = {
   roomFinishes: Record<string, string>
   spaces?: Space[]
   stairs?: Stair[]
+  fixtures?: Fixture[]
   outline?: { x: number; z: number }[][]
   roof?: Roof
 }

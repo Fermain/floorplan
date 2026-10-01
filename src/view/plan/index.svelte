@@ -11,6 +11,11 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
   import Trash2 from '@lucide/svelte/icons/trash-2'
+  import Plug from '@lucide/svelte/icons/plug'
+  import FixtureSymbol from './FixtureSymbol.svelte'
+  import { FIXTURES, fixtureFootprint, fixtureSpec } from '../../lib/model/fixtures'
+  import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
+  import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -29,6 +34,7 @@
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
   import {
     cellAt,
+    floorCells,
     layoutSpaces,
     ringLabelPoint,
     ROOM_TYPES,
@@ -39,7 +45,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { Stair } from '../../lib/model/types'
+  import type { FixtureKind, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -90,7 +96,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -152,6 +158,9 @@
   let selectedCell = $state<{ floorId: string; x: number; z: number } | null>(null)
   let newRoomType = $state<RoomType>('bedroom')
   let stairTurn = $state(0)
+  let fixtureKind = $state<FixtureKind>('socket')
+  let fixtureTurn = $state(0)
+  let selectedFixture = $state<{ floorId: string; id: string } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
 
@@ -701,7 +710,7 @@
   }
 
   function cancelDraw() {
-    if (tool === 'draw-stair') {
+    if (tool === 'draw-stair' || tool === 'draw-fixture') {
       setTool('select')
       errorMessage = null
       return
@@ -740,9 +749,11 @@
     plateRing?: number | null
     cell?: { floorId: string; x: number; z: number } | null
     stair?: { floorId: string; id: string } | null
+    fixture?: { floorId: string; id: string } | null
   }) {
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
+    selectedFixture = next.fixture ?? null
     selectedWallId = next.wallId ?? null
     selectedEdge = next.edge ?? null
     selectedOutline = next.outline ?? null
@@ -787,8 +798,18 @@
       return
     }
 
+    if (tool === 'draw-fixture') {
+      placeFixtureAt(plan)
+      return
+    }
+
     if (tool === 'select') {
       if (beginNodeDrag(activeFloor, plan, event)) return
+      const fixture = fixtureAt(plan.x, plan.z)
+      if (fixture) {
+        chooseSelection({ fixture })
+        return
+      }
       const id = pickWall(activeFloor, plan.x, plan.z)
       if (id) {
         chooseSelection({ wallId: id })
@@ -1522,6 +1543,103 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const levelFixtures = $derived(
+    levelFloors.flatMap((floor) => (floor.fixtures ?? []).map((fixture) => ({ floorId: floor.id, fixture }))),
+  )
+
+  const chosenFixture = $derived.by(() => {
+    const pick = selectedFixture
+    if (!pick) return null
+    const found = levelFixtures.find((item) => item.fixture.id === pick.id)
+    if (!found) return null
+    const floor = floors.find((item) => item.id === found.floorId)
+    return { ...found, spec: fixtureSpec(found.fixture.kind), onWall: floor ? fixtureWall(floor, found.fixture) : null }
+  })
+
+  function fixtureAt(x: number, z: number): { floorId: string; id: string } | null {
+    for (const item of [...levelFixtures].reverse()) {
+      const ring = fixtureFootprint(item.fixture)
+      const spec = fixtureSpec(item.fixture.kind)
+      const hit = spec.width < 0.3 || spec.depth < 0.3
+        ? Math.hypot(item.fixture.x - x, item.fixture.z - z) < 0.2
+        : pointInRing(ring, x, z)
+      if (hit) return { floorId: item.floorId, id: item.fixture.id }
+    }
+    return null
+  }
+
+  const fixtureGhost = $derived.by(() => {
+    const pointer = pointerPlan
+    if (tool !== 'draw-fixture' || !pointer || !activeFloor) return null
+    const grid = highlightedDirection(activeFloor)
+    const length = grid ? Math.hypot(grid.dx, grid.dz) : 0
+    let preferred = grid && length > 1e-9 ? { x: grid.dx / length, z: grid.dz / length } : { x: 1, z: 0 }
+    for (let i = 0; i < ((fixtureTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
+    let best: { floorId: string; placement: FixturePlacement } | null = null
+    for (const floor of levelFloors) {
+      const placement = placeFixture(floor, pointer, fixtureKind, preferred)
+      if (!best || (best.placement.problem && !placement.problem)) best = { floorId: floor.id, placement }
+    }
+    return best
+  })
+
+  function placeFixtureAt(plan: { x: number; z: number }) {
+    pointerPlan = plan
+    const ghost = fixtureGhost
+    if (!ghost) return
+    if (ghost.placement.problem) {
+      errorMessage = ghost.placement.problem
+      return
+    }
+    applyResult(documentStore.addFixture(ghost.floorId, ghost.placement.fixture))
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-fixture') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'r' && event.key !== 'R') return
+      if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      event.preventDefault()
+      fixtureTurn += 1
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  function removeChosenFixture() {
+    const chosen = chosenFixture
+    if (!chosen) return
+    if (applyResult(documentStore.removeFixture(chosen.floorId, chosen.fixture.id))) chooseSelection({})
+  }
+
+  function setChosenFixtureHeight(mm: number) {
+    const chosen = chosenFixture
+    if (!chosen || !Number.isFinite(mm)) return
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { y: Math.max(0, mm / 1000) }))
+  }
+
+  function suggestForSelectedRoom() {
+    const chosen = selectedRoom
+    if (!chosen?.resolved) return
+    const floor = floors.find((item) => item.id === chosen.floorId)
+    if (!floor) return
+    const cells = floorCells(floor)
+    const drafts = chosen.resolved.cells.flatMap((cell) => {
+      const own = cells.find((item) => roomKey(item.room.cornerIds) === roomKey(cell.room.cornerIds)) ?? cell
+      return suggestRoomFixtures(document, floor, own, chosen.resolved!.space.type, cells)
+    })
+    const ok = applyResult(documentStore.addFixtures(floor.id, drafts))
+    if (ok) errorMessage = null
+  }
+
+  const selectedRoomFixtures = $derived.by(() => {
+    const chosen = selectedRoom
+    if (!chosen?.resolved) return 0
+    return levelFixtures.filter(
+      (item) => item.floorId === chosen.floorId && chosen.resolved!.cells.some((cell) => pointInRing(cell.ring, item.fixture.x, item.fixture.z)),
+    ).length
+  })
+
   function patchChosenStair(patch: Partial<Pick<Stair, 'width' | 'x' | 'z' | 'dx' | 'dz'>>) {
     const chosen = chosenStair
     if (!chosen) return
@@ -1549,6 +1667,7 @@
   const deletable = $derived.by((): { label: string; run: () => void } | null => {
     if (roofFloor) return null
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
+    if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -1576,6 +1695,14 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-fixture') {
+      const ghost = fixtureGhost
+      const spec = fixtureSpec(fixtureKind)
+      if (!ghost) return `${spec.name}: ${spec.text}`
+      if (ghost.placement.problem) return `${spec.name}. ${ghost.placement.problem}`
+      const height = spec.mount === 'ceiling' ? '' : ` ${Math.round(ghost.placement.fixture.y * 1000)} mm up.`
+      return `${spec.name}.${height} Click to place; Esc when done.`
+    }
     if (tool === 'draw-stair') {
       const ghost = stairGhost
       if (!ghost) return 'Point inside a room to place a stair. It needs a storey above it.'
@@ -1698,7 +1825,29 @@
       <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
         <Footprints /><span class="hidden sm:inline">Stair</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
+        <Plug /><span class="hidden sm:inline">Fittings</span>
+      </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if tool === 'draw-fixture'}
+      <Select.Root type="single" value={fixtureKind} onValueChange={(next) => (fixtureKind = next as FixtureKind)}>
+        <Select.Trigger size="sm" class="w-44" aria-label="Fitting">{fixtureSpec(fixtureKind).name}</Select.Trigger>
+        <Select.Content>
+          <Select.Group>
+            <Select.Label>Electrical</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'electrical') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+          <Select.Group>
+            <Select.Label>Plumbing</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'plumbing') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+        </Select.Content>
+      </Select.Root>
+    {/if}
     {#if deletable}
       <Button
         variant="ghost"
@@ -2034,6 +2183,14 @@
             ])}
             class="stair-arrow"
           />
+        {/if}
+      </g>
+      <g class="fixtures" pointer-events="none">
+        {#each levelFixtures as item (item.fixture.id)}
+          <FixtureSymbol fixture={item.fixture} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+        {/each}
+        {#if fixtureGhost}
+          <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
         {/if}
       </g>
       <g class="room-labels" pointer-events="none">
@@ -2381,6 +2538,31 @@
         </div>
       </aside>
     {/if}
+    {#if chosenFixture && !roofFloor}
+      <aside class="inspector" aria-label="Fitting">
+        <h2 class="font-semibold">{chosenFixture.spec.name}</h2>
+        <p class="text-muted-foreground">{chosenFixture.spec.text}</p>
+        {#if chosenFixture.spec.mount !== 'ceiling'}
+          <div class="grid gap-1.5">
+            <Label for="fixture-height">{chosenFixture.spec.mount === 'wall' ? 'Height above floor (mm)' : 'Raised off the floor (mm)'}</Label>
+            <Input
+              id="fixture-height"
+              type="number"
+              min="0"
+              step="50"
+              value={Math.round(chosenFixture.fixture.y * 1000)}
+              onchange={(event) => setChosenFixtureHeight(Number(event.currentTarget.value))}
+            />
+          </div>
+        {/if}
+        <div class="grid gap-2">
+          {#if chosenFixture.onWall}
+            <Button variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
+          {/if}
+          <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
+        </div>
+      </aside>
+    {/if}
     {#if selectedRoom && !roofFloor}
       <aside class="inspector" aria-label="Room">
         {#if selectedRoom.resolved}
@@ -2452,6 +2634,14 @@
           {:else if !isHabitable(resolved.space.type)}
             <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
+          <div class="grid gap-1.5 border-t pt-3">
+            <Button variant="outline" onclick={suggestForSelectedRoom}><Plug />Suggest fittings</Button>
+            <p class="text-xs text-muted-foreground">
+              {selectedRoomFixtures > 0
+                ? `${selectedRoomFixtures} fittings in this room. Suggesting adds a fresh set.`
+                : `Lights, switches, sockets and plumbing for a ${roomTypeLabel(resolved.space.type).toLowerCase()}.`}
+            </p>
+          </div>
           <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
           <p>

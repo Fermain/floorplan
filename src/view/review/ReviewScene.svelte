@@ -40,6 +40,7 @@
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
+  import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
@@ -95,6 +96,7 @@
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
+  let fixtureMeshes = $state<{ key: string; parts: FixturePart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -227,6 +229,12 @@
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
+    const fittings = floors
+      .filter((floor) => (floor.fixtures ?? []).length > 0)
+      .map((floor) => ({
+        key: floor.id,
+        parts: buildFixtureParts(floor.fixtures ?? [], floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) + finishedFloor(floor)),
+      }))
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
@@ -236,7 +244,9 @@
     stairMeshes = stairs
     fenceMeshes = fences
     pillarMeshes = pillars
+    fixtureMeshes = fittings
     return () => {
+      for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
@@ -517,6 +527,14 @@
           polygonOffsetUnits={1}
         />
       </T.Mesh>
+    {/each}
+
+    {#each fixtureMeshes as fitting (fitting.key)}
+      {#each fitting.parts as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.5} />
+        </T.Mesh>
+      {/each}
     {/each}
 
     {#each pillarMeshes as pillar (pillar.key)}

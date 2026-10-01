@@ -42,7 +42,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { FenceType, SupportType } from '../../lib/model/types'
+  import type { FenceType, FixtureKind, SupportType } from '../../lib/model/types'
+  import { FIXTURES, fixtureSpec } from '../../lib/model/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
     evenPositions,
@@ -83,6 +85,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   let drag = $state<Drag | null>(null)
+
+  let insertFixture = $state<FixtureKind | null>(null)
+  let selectedFixtureId = $state<string | null>(null)
+  type FixtureDrag = { id: string; grabU: number; grabV: number; u: number; y: number; moved: boolean }
+  let fixtureDrag = $state<FixtureDrag | null>(null)
 
   const doc = $derived(documentStore.document)
 
@@ -163,6 +170,106 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     const length = frame.length
     return openings.map((opening) => ({ ...opening, u: length - opening.u - opening.width }))
   }
+
+  const ffl = $derived(floor ? finishedFloor(floor) : 0)
+  const wallFittings = $derived(floor && wall && !logical ? fixturesOnWall(floor, wall.id) : [])
+  const faceFittings = $derived(wallFittings.filter((item) => item.side === side))
+  const selectedFitting = $derived(faceFittings.find((item) => item.fixture.id === selectedFixtureId) ?? null)
+  const fittingChoices = $derived(
+    FIXTURES.filter((spec) => spec.mount !== 'ceiling' && spec.outside === (viewFace?.outside ?? false)),
+  )
+
+  // Where each fitting on this wall is drawn, with a fitting being dragged shown where it is going.
+  const shownFittings = $derived.by(() => {
+    const moving = fixtureDrag
+    if (!floor || !wall) return wallFittings.map((item) => item.fixture)
+    return wallFittings.map((item) => {
+      if (!moving || moving.id !== item.fixture.id) return item.fixture
+      const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, moving.u, moving.y)
+      return moved ? { ...item.fixture, ...moved } : item.fixture
+    })
+  })
+
+  const fittingParts = $derived.by((): FixturePart[] =>
+    floor ? buildFixtureParts(shownFittings, floor.datumHeight + ffl) : [],
+  )
+
+  $effect(() => {
+    const parts = fittingParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  function viewU(u: number): number {
+    return side === -1 && frame ? frame.length - u : u
+  }
+
+  const fittingMarks = $derived(
+    faceFittings.map((item) => {
+      const spec = fixtureSpec(item.fixture.kind)
+      const moving = fixtureDrag?.id === item.fixture.id ? fixtureDrag : null
+      const u = moving ? moving.u : item.u
+      const y = moving ? moving.y : item.fixture.y
+      return {
+        id: item.fixture.id,
+        u: viewU(u),
+        width: spec.width,
+        bottom: ffl + y,
+        top: ffl + y + spec.height,
+        selected: item.fixture.id === selectedFixtureId,
+        label: spec.name,
+      }
+    }),
+  )
+
+  function fittingAt(u: number, v: number) {
+    for (const item of faceFittings) {
+      const spec = fixtureSpec(item.fixture.kind)
+      const pad = 0.04
+      const bottom = ffl + item.fixture.y
+      if (Math.abs(u - item.u) <= spec.width / 2 + pad && v >= bottom - pad && v <= bottom + spec.height + pad) return item
+    }
+    return null
+  }
+
+  function snapFittingY(y: number): number {
+    const step = system.courseHeight / 2
+    return Math.max(0, Math.round(y / step) * step)
+  }
+
+  function chooseFitting(id: string | null) {
+    selectedFixtureId = id
+    if (id) onSelectOpening?.(null)
+  }
+
+  function removeSelectedFitting() {
+    if (!floor || !selectedFixtureId) return
+    documentStore.removeFixture(floor.id, selectedFixtureId)
+    selectedFixtureId = null
+  }
+
+  function setSelectedFittingHeight(mm: number) {
+    if (!floor || !selectedFitting || !Number.isFinite(mm)) return
+    documentStore.updateFixture(floor.id, selectedFitting.fixture.id, { y: Math.max(0, mm / 1000) })
+  }
+
+  $effect(() => {
+    if (!selectedFixtureId) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      event.preventDefault()
+      removeSelectedFitting()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  $effect(() => {
+    if (selectedOpeningId) selectedFixtureId = null
+  })
 
   const fenceParts = $derived.by((): FencePart[] => {
     if (!floor || !wall || !fence) return []
@@ -385,8 +492,24 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (!uv) return
     readout = uv
 
+    const fitting = fittingAt(uv.u, uv.v)
+    if (fitting) {
+      chooseFitting(fitting.fixture.id)
+      fixtureDrag = {
+        id: fitting.fixture.id,
+        grabU: uv.u - fitting.u,
+        grabV: uv.v - (ffl + fitting.fixture.y),
+        u: fitting.u,
+        y: fitting.fixture.y,
+        moved: false,
+      }
+      ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+      return
+    }
+
     const hit = openingAt(displayWall ?? wall, uv.u, uv.v)
     if (hit) {
+      selectedFixtureId = null
       onSelectOpening?.(hit.id)
       drag = {
         id: hit.id,
@@ -402,6 +525,18 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return
     }
 
+    if (insertFixture) {
+      const spec = fixtureSpec(insertFixture)
+      const y = spec.mount === 'wall' ? snapFittingY(uv.v - ffl - spec.height / 2) : spec.y
+      const draft = fixtureOnFace(floor, wall, side, insertFixture, uv.u, y)
+      if (!draft) return
+      const result = documentStore.addFixture(floor.id, draft)
+      const added = result.ok ? result.document.building.floors.find((item) => item.id === floor.id)?.fixtures?.at(-1) : undefined
+      if (added) chooseFitting(added.id)
+      return
+    }
+
+    selectedFixtureId = null
     const min = openingMinWidth(insertTool)
     const placed = placeSnappedOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings, min, system)
     if (placed === null) return
@@ -443,8 +578,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     onSelectOpening?.(null)
   }
 
-  function chooseInsert(tool: OpeningKind) {
-    insertTool = tool
+  function chooseInsert(value: string) {
+    if (value.startsWith('fitting:')) {
+      insertFixture = value.slice('fitting:'.length) as FixtureKind
+      return
+    }
+    insertFixture = null
+    insertTool = value as OpeningKind
   }
 
   const insertChoices: { kind: OpeningKind; label: string }[] = [
@@ -455,6 +595,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     { kind: 'garage', label: 'Garage door' },
     { kind: 'portal', label: 'Portal' },
   ]
+  const insertValue = $derived(insertFixture ? `fitting:${insertFixture}` : insertTool)
+  const insertLabel = $derived(
+    insertFixture ? fixtureSpec(insertFixture).name : (insertChoices.find((choice) => choice.kind === insertTool)?.label ?? ''),
+  )
 
   $effect(() => {
     onStatus?.(focusStatus())
@@ -492,6 +636,18 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
               ? 'a door'
               : 'a window'
       return { text: `This wall is too short for ${noun}.`, error: true }
+    }
+    if (selectedFitting) {
+      const spec = fixtureSpec(selectedFitting.fixture.kind)
+      const u = viewU(fixtureDrag?.id === selectedFitting.fixture.id ? fixtureDrag.u : selectedFitting.u)
+      const y = fixtureDrag?.id === selectedFitting.fixture.id ? fixtureDrag.y : selectedFitting.fixture.y
+      return {
+        text: `${spec.name}, ${mm(y)} mm up, its middle ${mm(u)} mm from the left. Drag to move; Delete removes it.`,
+        error: false,
+      }
+    }
+    if (insertFixture && !readout) {
+      return { text: `Click the wall to place a ${fixtureSpec(insertFixture).name.toLowerCase()}.`, error: false }
     }
     if (readout) {
       const shownU = side === -1 && frame ? frame.length - readout.u : readout.u
@@ -535,6 +691,17 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (!uv) return
     readout = uv
 
+    const sliding = fixtureDrag
+    if (sliding && frame) {
+      const item = wallFittings.find((entry) => entry.fixture.id === sliding.id)
+      if (!item) return
+      const spec = fixtureSpec(item.fixture.kind)
+      const u = Math.min(frame.length - spec.width / 2, Math.max(spec.width / 2, uv.u - sliding.grabU))
+      const y = spec.mount === 'wall' ? snapFittingY(uv.v - sliding.grabV - ffl) : item.fixture.y
+      fixtureDrag = { ...sliding, u, y, moved: sliding.moved || Math.abs(u - item.u) > 0.01 || Math.abs(y - item.fixture.y) > 1e-6 }
+      return
+    }
+
     const current = drag
     if (!current || !frame) return
     const moving = wall.openings.find((opening) => opening.id === current.id)
@@ -547,6 +714,15 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   function onViewportPointerUp(event: PointerEvent) {
+    const movingFitting = fixtureDrag
+    if (movingFitting && floor && wall) {
+      const item = wallFittings.find((entry) => entry.fixture.id === movingFitting.id)
+      if (item && movingFitting.moved) {
+        const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, movingFitting.u, movingFitting.y)
+        if (moved) documentStore.updateFixture(floor.id, item.fixture.id, { x: moved.x, z: moved.z, dx: moved.dx, dz: moved.dz, y: moved.y })
+      }
+      fixtureDrag = null
+    }
     const current = drag
     if (current && floor && wall && frame) {
       const moving = wall.openings.find((opening) => opening.id === current.id)
@@ -660,18 +836,46 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
       <div class="flex items-center gap-2">
         <span class="text-muted-foreground">Place</span>
-        <Select.Root type="single" value={insertTool} onValueChange={(next) => chooseInsert(next as OpeningKind)}>
-          <Select.Trigger size="sm" class="w-32 sm:w-40" aria-label="Opening to place">
-            {insertChoices.find((choice) => choice.kind === insertTool)?.label}
+        <Select.Root type="single" value={insertValue} onValueChange={chooseInsert}>
+          <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="What to place">
+            {insertLabel}
           </Select.Trigger>
           <Select.Content>
-            {#each insertChoices as choice (choice.kind)}
-              <Select.Item value={choice.kind}>{choice.label}</Select.Item>
-            {/each}
+            <Select.Group>
+              <Select.Label>Openings</Select.Label>
+              {#each insertChoices as choice (choice.kind)}
+                <Select.Item value={choice.kind}>{choice.label}</Select.Item>
+              {/each}
+            </Select.Group>
+            <Select.Group>
+              <Select.Label>Fittings {viewFace?.outside ? 'outside' : 'inside'}</Select.Label>
+              {#each fittingChoices as spec (spec.id)}
+                <Select.Item value={`fitting:${spec.id}`} label={spec.name} />
+              {/each}
+            </Select.Group>
           </Select.Content>
         </Select.Root>
       </div>
-      {#if widthLimits && widthAllowed}
+      {#if selectedFitting}
+        {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
+        <Separator orientation="vertical" class="hidden h-5 sm:block" />
+        <span class="font-medium">{spec.name}</span>
+        {#if spec.mount !== 'ceiling'}
+          <label class="flex items-center gap-2">
+            <span class="text-muted-foreground">{spec.mount === 'wall' ? 'Height' : 'Raised'}</span>
+            <Input
+              class="h-7 w-20"
+              type="number"
+              min="0"
+              step="50"
+              value={mm(selectedFitting.fixture.y)}
+              onchange={(event) => setSelectedFittingHeight(Number(event.currentTarget.value))}
+            />
+            <span class="text-muted-foreground">mm</span>
+          </label>
+        {/if}
+        <Button variant="destructive" size="sm" onclick={removeSelectedFitting}>Remove fitting</Button>
+      {:else if widthLimits && widthAllowed && !insertFixture}
         <Separator orientation="vertical" class="hidden h-5 sm:block" />
         <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <span class="shrink-0 text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
@@ -755,7 +959,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         frameGeometry={wallModel.frame}
         glassGeometry={wallModel.glass}
         panelMeshes={wallModel.panels}
-        fenceParts={[...fenceParts, ...pillarParts.map((part) => ({ ...part, opacity: 1 }))]}
+        fenceParts={[
+          ...fenceParts,
+          ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
+          ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
+        ]}
         {orthoCamera}
         {onOrthoCamera}
       />
@@ -767,6 +975,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           openings={logical ? [] : shownOpenings(displayWall.openings)}
           selectedId={selectedOpeningId}
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
+          fittings={fittingMarks}
         />
       {/if}
       </div>

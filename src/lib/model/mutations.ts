@@ -13,12 +13,14 @@ import {
 import { segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
-import { DEFAULT_STAIR_WIDTH_M, stairFitProblem } from '../geometry/stairs'
+import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
 import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
-import { roomKey } from './rooms'
+import { fixtureProblem } from './fixtures'
+import { pointInRing } from '../geometry/pad'
+import { deriveRooms, roomKey } from './rooms'
 import {
   blankStorey,
   prepareStorey,
@@ -30,6 +32,7 @@ import type {
   CostAssumptions,
   Document,
   Fence,
+  Fixture,
   Support,
   Floor,
   Heightfield,
@@ -398,6 +401,76 @@ export function setSupport(
   return ok(replaceFloor(document, { ...floor, walls }))
 }
 
+export function addFixture(document: Document, floorId: string, fixture: Omit<Fixture, 'id'>): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const problem = fixtureProblem(fixture)
+  if (problem) return fail(document, problem)
+  const placed: Fixture = { ...fixture, id: newId('fixture') }
+  return ok(replaceFloor(document, { ...floor, fixtures: [...(floor.fixtures ?? []), placed] }))
+}
+
+export function addFixtures(document: Document, floorId: string, drafts: Omit<Fixture, 'id'>[]): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  for (const draft of drafts) {
+    const problem = fixtureProblem(draft)
+    if (problem) return fail(document, problem)
+  }
+  if (drafts.length === 0) return fail(document, 'nothing to add')
+  const placed = drafts.map((draft) => ({ ...draft, id: newId('fixture') }))
+  return ok(replaceFloor(document, { ...floor, fixtures: [...(floor.fixtures ?? []), ...placed] }))
+}
+
+export function updateFixture(
+  document: Document,
+  floorId: string,
+  fixtureId: string,
+  patch: Partial<Omit<Fixture, 'id' | 'kind'>>,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const current = floor.fixtures?.find((item) => item.id === fixtureId)
+  if (!current) return fail(document, 'fixture not found')
+  const next = { ...current, ...patch }
+  const problem = fixtureProblem(next)
+  if (problem) return fail(document, problem)
+  const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? next : item))
+  return ok(replaceFloor(document, { ...floor, fixtures }))
+}
+
+export function removeFixture(document: Document, floorId: string, fixtureId: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  if (!floor.fixtures?.some((item) => item.id === fixtureId)) return fail(document, 'fixture not found')
+  return ok(replaceFloor(document, { ...floor, fixtures: floor.fixtures.filter((item) => item.id !== fixtureId) }))
+}
+
+// Stairs and fixtures inside the rooms that move go with them.
+function carryContents(floor: Floor, moving: Set<string>, move: (x: number, z: number) => { x: number; z: number }, turn: (dx: number, dz: number) => { x: number; z: number }): Pick<Floor, 'stairs' | 'fixtures'> {
+  const rings = deriveRooms(floor)
+    .filter((room) => room.cornerIds.every((id) => moving.has(id)))
+    .map((room) => room.cornerIds.map((id) => floor.corners.find((corner) => corner.id === id)!))
+  const inside = (x: number, z: number) => rings.some((ring) => pointInRing(ring, x, z))
+  const stairs = floor.stairs?.map((stair) => {
+    const length = stairLayout(stair, floor.index).length
+    if (!inside(stair.x + (stair.dx * length) / 2, stair.z + (stair.dz * length) / 2)) return stair
+    const at = move(stair.x, stair.z)
+    const dir = turn(stair.dx, stair.dz)
+    return { ...stair, x: at.x, z: at.z, dx: dir.x, dz: dir.z }
+  })
+  const fixtures = floor.fixtures?.map((fixture) => {
+    if (!inside(fixture.x, fixture.z)) return fixture
+    const at = move(fixture.x, fixture.z)
+    const dir = turn(fixture.dx, fixture.dz)
+    return { ...fixture, x: at.x, z: at.z, dx: dir.x, dz: dir.z }
+  })
+  return {
+    ...(stairs ? { stairs } : {}),
+    ...(fixtures ? { fixtures } : {}),
+  }
+}
+
 export function setRate(document: Document, key: string, value: number | null): MutationResult {
   if (value !== null && (!Number.isFinite(value) || value < 0)) return fail(document, 'rate must be zero or more')
   const rates = { ...(document.costing?.rates ?? {}) }
@@ -471,7 +544,8 @@ export function moveCorners(
       return fail(document, 'wall outside plot')
     }
   }
-  return ok(replaceFloor(document, { ...floor, corners: nextCorners }))
+  const carried = carryContents(floor, moving, (x, z) => ({ x: x + dx, z: z + dz }), (x, z) => ({ x, z }))
+  return ok(replaceFloor(document, { ...floor, corners: nextCorners, ...carried }))
 }
 
 export function rotateOffset(dx: number, dz: number, angle: number): { x: number; z: number } {
@@ -519,7 +593,16 @@ export function rotateCorners(
       return fail(document, 'wall outside plot')
     }
   }
-  return ok(replaceFloor(document, { ...floor, corners: nextCorners }))
+  const carried = carryContents(
+    floor,
+    moving,
+    (x, z) => {
+      const next = rotateOffset(x - pivot.x, z - pivot.z, angle)
+      return { x: pivot.x + next.x, z: pivot.z + next.z }
+    },
+    (x, z) => rotateOffset(x, z, angle),
+  )
+  return ok(replaceFloor(document, { ...floor, corners: nextCorners, ...carried }))
 }
 
 function shortWallReason(kind: OpeningKind): string {

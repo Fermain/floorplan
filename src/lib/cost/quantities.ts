@@ -5,13 +5,14 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
+import { FIXTURES } from '../model/fixtures'
 import {
   floorSupports,
   pierCourses,
@@ -24,7 +25,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -40,7 +41,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -397,6 +398,24 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm³',
       quantity: round(groundSupports * SUPPORT_BASE_M * SUPPORT_BASE_M * SUPPORT_BASE_DEPTH_M * waste, 2),
       rateKey: 'concrete-m3',
+    })
+  }
+
+  const fittings = new Map<FixtureKind, number>()
+  for (const floor of doc.building.floors) {
+    for (const fixture of floor.fixtures ?? []) fittings.set(fixture.kind, (fittings.get(fixture.kind) ?? 0) + 1)
+  }
+  for (const spec of FIXTURES) {
+    const count = fittings.get(spec.id)
+    if (!count) continue
+    drafts.push({
+      id: `fixture:${spec.id}`,
+      group: spec.trade === 'electrical' ? 'Electrical' : 'Plumbing',
+      label: spec.name,
+      note: 'Fitting only; cable, pipe and labour not yet counted',
+      unit: 'each',
+      quantity: count,
+      rateKey: `fixture:${spec.id}`,
     })
   }
 

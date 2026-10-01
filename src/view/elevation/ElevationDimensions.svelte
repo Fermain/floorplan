@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  // A fitting as seen on this face: u is its middle measured from the left of the view, bottom and top its height.
+  export type Fitting = { id: string; u: number; width: number; bottom: number; top: number; selected: boolean; label: string }
+</script>
+
 <script lang="ts">
   import type { Opening } from '../../lib/model/types'
   import { elevationWindow } from './elevation'
@@ -9,9 +14,10 @@
     openings: Opening[]
     selectedId: string | null
     floorLevel: number | null
+    fittings?: Fitting[]
   }
 
-  let { length, height, head, openings, selectedId, floorLevel }: Props = $props()
+  let { length, height, head, openings, selectedId, floorLevel, fittings = [] }: Props = $props()
 
   let width = $state(0)
   let tall = $state(0)
@@ -28,6 +34,13 @@
   })
 
   const chainV = $derived(head + 0.28)
+  const fittingChainV = $derived(-0.32)
+  const fittingStops = $derived.by(() => {
+    if (fittings.length === 0) return []
+    const points = [0, length, ...fittings.map((fitting) => fitting.u)]
+    return [...new Set(points.map((u) => Math.round(u * 1000) / 1000))].sort((a, b) => a - b)
+  })
+  const chosenFitting = $derived(fittings.find((fitting) => fitting.selected) ?? null)
   const selected = $derived(openings.find((opening) => opening.id === selectedId) ?? null)
 
   function mm(m: number): string {
@@ -86,6 +99,36 @@
         </text>
       </g>
     {/if}
+    {#if fittingStops.length > 0}
+      <g class="fittings">
+        <line x1={0} y1={y(fittingChainV)} x2={length} y2={y(fittingChainV)} />
+        {#each fittingStops as u (u)}
+          <line x1={u} y1={y(fittingChainV - tick * 1.5)} x2={u} y2={y(fittingChainV + tick * 1.5)} />
+        {/each}
+        {#each fittingStops.slice(0, -1) as u, i (u)}
+          {@const next = fittingStops[i + 1]}
+          {#if next - u > font * 2.2}
+            <text x={(u + next) / 2} y={y(fittingChainV) + font * 1.2} font-size={font} text-anchor="middle">
+              {mm(next - u)}
+            </text>
+          {/if}
+        {/each}
+      </g>
+    {/if}
+    {#if chosenFitting}
+      {@const pad = tick}
+      <g class="chosen-fitting">
+        <rect
+          x={chosenFitting.u - chosenFitting.width / 2 - pad}
+          y={y(chosenFitting.top + pad)}
+          width={chosenFitting.width + pad * 2}
+          height={chosenFitting.top - chosenFitting.bottom + pad * 2}
+        />
+        <text x={chosenFitting.u + chosenFitting.width / 2 + font * 0.6} y={y(chosenFitting.top) + font * 0.9} font-size={font}>
+          {chosenFitting.label} · {mm(chosenFitting.bottom - (floorLevel ?? 0))} up
+        </text>
+      </g>
+    {/if}
     {#if floorLevel !== null}
       <g class="ffl">
         <line x1={-0.3} y1={y(floorLevel)} x2={length + 0.3} y2={y(floorLevel)} />
@@ -134,6 +177,25 @@
 
   .heights text {
     fill: #92400e;
+  }
+
+  .fittings line {
+    stroke: #b45309;
+  }
+
+  .fittings text {
+    fill: #92400e;
+  }
+
+  .chosen-fitting rect {
+    fill: none;
+    stroke: #2563eb;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .chosen-fitting text {
+    fill: #1d4ed8;
   }
 
   .ffl line {
