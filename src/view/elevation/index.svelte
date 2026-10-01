@@ -34,6 +34,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
+  import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
+  import Plus from '@lucide/svelte/icons/plus'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import {
     DEFAULT_FENCE_HEIGHT_M,
@@ -92,6 +95,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   let drag = $state<Drag | null>(null)
 
+  // Like the plan: clicks select by default; a click places something only in Place mode.
+  let mode = $state<'select' | 'place'>('select')
   let insertFixture = $state<FixtureKind | null>(null)
   let selectedFixtureId = $state<string | null>(null)
   type FixtureDrag = { id: string; grabU: number; grabV: number; u: number; y: number; moved: boolean }
@@ -275,6 +280,27 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   $effect(() => {
     if (selectedOpeningId) selectedFixtureId = null
+  })
+
+  // Esc steps back: out of placing, then out of a selection, and only then out of Focus (handled by the page).
+  $effect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key === 'v' || event.key === 'V') mode = 'select'
+      else if (event.key === 'p' || event.key === 'P') mode = 'place'
+      else if (event.key === 'Escape') {
+        if (mode === 'place') mode = 'select'
+        else if (selectedOpeningId || selectedFixtureId) {
+          onSelectOpening?.(null)
+          selectedFixtureId = null
+        } else return
+        event.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   })
 
   // The roof whose eave runs above this wall, and the gutter along it.
@@ -605,6 +631,12 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return
     }
 
+    if (mode === 'select') {
+      onSelectOpening?.(null)
+      selectedFixtureId = null
+      return
+    }
+
     if (insertFixture) {
       const spec = fixtureSpec(insertFixture)
       const y = spec.mount === 'wall' ? snapFittingY(uv.v - ffl - spec.height / 2) : spec.y
@@ -726,7 +758,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         error: false,
       }
     }
-    if (insertFixture && !readout) {
+    if (mode === 'place' && insertFixture && !readout) {
       return { text: `Click the wall to place a ${fixtureSpec(insertFixture).name.toLowerCase()}.`, error: false }
     }
     if (readout) {
@@ -743,8 +775,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return { text: parts.join(', '), error: false }
     }
     if (!locked) return { text: 'Perspective. The fixed view is where this wall is edited.', error: false }
-    if (wall.openings.length > 0 && scheduleLine) return { text: scheduleLine, error: false }
-    return { text: insertHint(insertTool), error: false }
+    if (mode === 'place') return { text: `${insertHint(insertTool)} Esc goes back to selecting.`, error: false }
+    if (wall.openings.length > 0 && scheduleLine) return { text: `${scheduleLine}. Click a window, door or fitting to select it.`, error: false }
+    return { text: 'Click a window, door or fitting to select it, or choose Place to add one.', error: false }
   }
 
   function insertHint(kind: OpeningKind): string {
@@ -930,8 +963,20 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       </div>
     {:else}
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
-      <div class="flex items-center gap-2">
-        <span class="text-muted-foreground">Place</span>
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={mode}
+        onValueChange={(next) => {
+          if (next) mode = next as 'select' | 'place'
+        }}
+        aria-label="Focus tool"
+      >
+        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)"><MousePointer2 />Select</ToggleGroup.Item>
+        <ToggleGroup.Item value="place" aria-label="Place" title="Place a window, door or fitting (P)"><Plus />Place</ToggleGroup.Item>
+      </ToggleGroup.Root>
+      <div class="flex items-center gap-2" hidden={mode !== 'place'}>
         <Select.Root type="single" value={insertValue} onValueChange={chooseInsert}>
           <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="What to place">
             {insertLabel}
@@ -971,7 +1016,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </label>
         {/if}
         <Button variant="destructive" size="sm" onclick={removeSelectedFitting}>Remove fitting</Button>
-      {:else if widthLimits && widthAllowed && !insertFixture}
+      {:else if widthLimits && widthAllowed && (editingOpening || (mode === 'place' && !insertFixture))}
         <Separator orientation="vertical" class="hidden h-5 sm:block" />
         <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <span class="shrink-0 text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
@@ -1090,6 +1135,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       <div
         class="viewport"
         class:elevation={locked}
+        class:placing={locked && mode === 'place'}
         onpointerdown={onViewportPointerDown}
         onpointermove={onViewportPointerMove}
         onpointerup={onViewportPointerUp}
@@ -1132,6 +1178,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 </div>
 
 <style>
+  .viewport.placing {
+    cursor: crosshair;
+  }
+
   .root {
     display: flex;
     flex-direction: column;

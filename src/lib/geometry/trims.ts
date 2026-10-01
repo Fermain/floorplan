@@ -83,9 +83,14 @@ export function trimRuns(doc: Document, floor: Floor): TrimRun[] {
   return runs
 }
 
-function sweep(profile: [number, number][], from: Point, along: Point, n: Point, length: number, y: number): BufferGeometry {
+function sweep(profile: [number, number][], start: Point, direction: Point, n: Point, length: number, y: number): BufferGeometry {
   const shape = new Shape(profile.map(([x, up]) => ({ x, y: up }) as never))
   const geometry = new ExtrudeGeometry(shape, { depth: length, bevelEnabled: false })
+  // Keep the frame right-handed so the faces point out of the trim and catch the light: sweep from the
+  // other end when the face runs the other way.
+  const handed = new Vector3(n.x, 0, n.z).dot(new Vector3(0, 1, 0).cross(new Vector3(direction.x, 0, direction.z))) > 0
+  const along = handed ? direction : { x: -direction.x, z: -direction.z }
+  const from = handed ? start : { x: start.x + direction.x * length, z: start.z + direction.z * length }
   const basis = new Matrix4().makeBasis(new Vector3(n.x, 0, n.z), new Vector3(0, 1, 0), new Vector3(along.x, 0, along.z))
   geometry.applyMatrix4(new Matrix4().makeTranslation(from.x, y, from.z).multiply(basis))
   return geometry.index ? geometry.toNonIndexed() : geometry
@@ -93,8 +98,8 @@ function sweep(profile: [number, number][], from: Point, along: Point, n: Point,
 
 export type TrimPart = { geometry: BufferGeometry; colour: string }
 
-const SKIRTING_COLOUR = '#f5f2ea'
-const CORNICE_COLOUR = '#fbfaf6'
+const SKIRTING_COLOUR = '#ffffff'
+const CORNICE_COLOUR = '#ffffff'
 
 // Skirting and cornice for some runs on one floor, whose datum sits at baseY.
 export function buildTrimParts(runs: TrimRun[], floor: Floor, baseY: number): TrimPart[] {

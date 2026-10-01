@@ -26,6 +26,7 @@
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
       }
       if (event.key === 'Escape') {
+        if (event.defaultPrevented) return
         event.preventDefault()
         void goto(planHref(id, floor?.index ?? 0))
         return
