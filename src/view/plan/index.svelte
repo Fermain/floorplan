@@ -16,6 +16,7 @@
   import { FIXTURES, fixtureFootprint, fixtureSpec } from '../../lib/model/fixtures'
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
+  import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -1556,6 +1557,29 @@
     return { ...found, spec: fixtureSpec(found.fixture.kind), onWall: floor ? fixtureWall(floor, found.fixture) : null }
   })
 
+  const wiring = $derived(electricalLayout(document))
+  const wiringProblems = $derived(electricalIssues(document))
+
+  const shownCircuits = $derived.by(() => {
+    const chosen = chosenFixture
+    if (!chosen) return []
+    if (chosen.fixture.kind === 'db-board') return wiring.circuits
+    return wiring.circuits.filter((circuit) => circuit.points.some((point) => point.fixture.id === chosen.fixture.id))
+  })
+
+  // Runs drawn square to the walls, as the cable goes across the ceiling.
+  function circuitLines(circuit: Circuit): SvgPoint[] {
+    const level = new Set(levelFloors.map((floor) => floor.id))
+    const points: SvgPoint[] = []
+    circuit.path.forEach((point, i) => {
+      if (!level.has(point.floorId)) return
+      const previous = circuit.path[i - 1]
+      if (previous && level.has(previous.floorId)) points.push([point.x, previous.z])
+      points.push([point.x, point.z])
+    })
+    return points
+  }
+
   function fixtureAt(x: number, z: number): { floorId: string; id: string } | null {
     for (const item of [...levelFixtures].reverse()) {
       const ring = fixtureFootprint(item.fixture)
@@ -1775,6 +1799,9 @@
       }
       if (floating) return 'Nothing is enclosed on the storey below, so this storey has no floor to stand on.'
     }
+    const levelIds = new Set(levelFloors.map((floor) => floor.id))
+    const wiringProblem = wiringProblems.find((issue) => !issue.floorId || levelIds.has(issue.floorId))
+    if (wiringProblem && levelFixtures.length > 0) return wiringProblem.text
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
       return 'A wall on this storey does not land on a wall below. A logical wall below can carry it.'
     }
@@ -2185,6 +2212,14 @@
           />
         {/if}
       </g>
+      <g class="circuits" pointer-events="none">
+        {#each shownCircuits as circuit (circuit.id)}
+          {@const points = circuitLines(circuit)}
+          {#if points.length > 1}
+            <polyline points={pointsAttr(points)} fill="none" stroke="#d97706" stroke-width={s(0.02)} stroke-dasharray={dash(0.15, 0.1)} />
+          {/if}
+        {/each}
+      </g>
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           <FixtureSymbol fixture={item.fixture} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
@@ -2542,6 +2577,22 @@
       <aside class="inspector" aria-label="Fitting">
         <h2 class="font-semibold">{chosenFixture.spec.name}</h2>
         <p class="text-muted-foreground">{chosenFixture.spec.text}</p>
+        {#if chosenFixture.fixture.kind === 'db-board'}
+          <p>
+            Feeds {wiring.circuits.length} {wiring.circuits.length === 1 ? 'circuit' : 'circuits'}{wiring.boardSize
+              ? `; a ${wiring.boardSize}-way board.`
+              : '.'}
+          </p>
+        {:else if shownCircuits[0]}
+          {@const circuit = shownCircuits[0]}
+          <p>
+            On <span class="font-medium">{circuit.id}</span>, {circuit.name.toLowerCase()}: {circuit.breaker} A breaker,
+            {circuit.cable} mm² cable, {circuit.points.length}
+            {circuit.points.length === 1 ? 'point' : 'points'}, about {checkFormat.format(circuit.length)} m of cable.
+          </p>
+        {:else if chosenFixture.spec.trade === 'electrical'}
+          <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
+        {/if}
         {#if chosenFixture.spec.mount !== 'ceiling'}
           <div class="grid gap-1.5">
             <Label for="fixture-height">{chosenFixture.spec.mount === 'wall' ? 'Height above floor (mm)' : 'Raised off the floor (mm)'}</Label>

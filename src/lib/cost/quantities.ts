@@ -13,6 +13,7 @@ import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 import { FIXTURES } from '../model/fixtures'
+import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import {
   floorSupports,
   pierCourses,
@@ -416,6 +417,55 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'each',
       quantity: count,
       rateKey: `fixture:${spec.id}`,
+    })
+  }
+
+  const wiring = electricalLayout(doc)
+  const cable = new Map<number, number>()
+  let drops = 0
+  const breakers = new Map<number, number>()
+  for (const circuit of wiring.circuits) {
+    cable.set(circuit.cable, (cable.get(circuit.cable) ?? 0) + circuit.length)
+    drops += circuit.drops
+    breakers.set(circuit.breaker, (breakers.get(circuit.breaker) ?? 0) + 1)
+  }
+  for (const [size, length] of [...cable].sort((a, b) => a[0] - b[0])) {
+    drafts.push({
+      id: `cable:${size}`,
+      group: 'Electrical',
+      label: `Surfix cable ${size} mm²`,
+      note: `${round(length, 1)} m run up, across the ceiling and down, plus 10%`,
+      unit: 'm',
+      quantity: Math.ceil(length * CABLE_WASTE),
+      rateKey: `cable:${size}`,
+    })
+  }
+  if (drops > 0) {
+    drafts.push({
+      id: 'conduit-20',
+      group: 'Electrical',
+      label: 'Conduit 20 mm',
+      note: 'Chased into the walls for every drop to a point',
+      unit: 'm',
+      quantity: Math.ceil(drops * CABLE_WASTE),
+      rateKey: 'conduit-20',
+    })
+  }
+  if (wiring.boxes > 0) {
+    drafts.push({ id: 'flush-box', group: 'Electrical', label: 'Flush boxes', note: 'One behind every wall point', unit: 'each', quantity: wiring.boxes, rateKey: 'flush-box' })
+  }
+  for (const [rating, count] of [...breakers].sort((a, b) => a[0] - b[0])) {
+    drafts.push({ id: `breaker:${rating}`, group: 'Electrical', label: `Circuit breaker ${rating} A`, note: `${count} circuit${count === 1 ? '' : 's'}`, unit: 'each', quantity: count, rateKey: `breaker:${rating}` })
+  }
+  if (wiring.circuits.length > 0) {
+    drafts.push({
+      id: 'earth-leakage',
+      group: 'Electrical',
+      label: 'Earth leakage unit, 30 mA',
+      note: wiring.boardSize ? `In a ${wiring.boardSize}-way board with ${wiring.ways} ways in use` : `${wiring.ways} ways in use`,
+      unit: 'each',
+      quantity: 1,
+      rateKey: 'earth-leakage',
     })
   }
 

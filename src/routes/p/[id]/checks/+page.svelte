@@ -6,6 +6,7 @@
   import * as Table from '$lib/components/ui/table'
   import { buildingChecks, FENESTRATION_MAX_RATIO, type RoomCheck } from '$lib/geometry/sans'
   import { layoutSpaces, roomTypeLabel } from '$lib/geometry/spaces'
+  import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { planHref } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
@@ -13,6 +14,9 @@
   const id = $derived(page.params.id ?? '')
   const doc = $derived(documentStore.document)
   const checks = $derived(buildingChecks(doc))
+  const electrical = $derived(electricalLayout(doc))
+  const electricalProblems = $derived(electricalIssues(doc))
+  const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
   const rows = $derived.by(() => {
     const out = []
@@ -142,6 +146,95 @@
       <p class="text-sm text-muted-foreground">
         {unnamed} {unnamed === 1 ? 'part of the plan is' : 'parts of the plan are'} not in a named room, so not checked.
       </p>
+    {/if}
+
+    <div class="mt-4">
+      <h2 class="text-base font-semibold">Electrical</h2>
+      <p class="text-sm text-muted-foreground">
+        Circuits laid out from the fittings on the plan, as a guide to cost. A registered electrician designs the
+        installation to SANS 10142-1 and issues the certificate of compliance.
+      </p>
+    </div>
+
+    {#if electrical.circuits.length === 0}
+      <Card.Root>
+        <Card.Content class="py-6 text-sm text-muted-foreground">
+          {electrical.board
+            ? 'Add lights, sockets or a stove isolator and their circuits appear here.'
+            : 'Place a distribution board with the Fittings tool, or suggest fittings for a room with an outside door, and the circuits appear here.'}
+        </Card.Content>
+      </Card.Root>
+    {:else}
+      <div class="grid gap-4 sm:grid-cols-3">
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Circuits</Card.Description>
+            <Card.Title class="text-2xl">{electrical.circuits.length}</Card.Title>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Board</Card.Description>
+            <Card.Title class="text-2xl">{electrical.boardSize ? `${electrical.boardSize}-way` : 'Over 36 ways'}</Card.Title>
+            <Card.Description>{electrical.ways} ways used, with main switch and earth leakage</Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Cable</Card.Description>
+            <Card.Title class="text-2xl">{number.format(cableTotal)} m</Card.Title>
+            <Card.Description>Before waste</Card.Description>
+          </Card.Header>
+        </Card.Root>
+      </div>
+
+      <Card.Root>
+        <Card.Content class="p-0">
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head class="pl-4">Circuit</Table.Head>
+                <Table.Head>Breaker</Table.Head>
+                <Table.Head>Cable</Table.Head>
+                <Table.Head>Points</Table.Head>
+                <Table.Head class="pr-4 text-right">Run</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each electrical.circuits as circuit (circuit.id)}
+                <Table.Row>
+                  <Table.Cell class="pl-4">
+                    <span class="font-medium">{circuit.id}</span>
+                    <span class="text-muted-foreground">· {circuit.name}</span>
+                  </Table.Cell>
+                  <Table.Cell class="tabular-nums">{circuit.breaker} A</Table.Cell>
+                  <Table.Cell class="tabular-nums">{circuit.cable} mm²</Table.Cell>
+                  <Table.Cell class="tabular-nums">{circuit.points.length}</Table.Cell>
+                  <Table.Cell class="pr-4 text-right tabular-nums">{number.format(circuit.length)} m</Table.Cell>
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        </Card.Content>
+      </Card.Root>
+    {/if}
+
+    {#if electricalProblems.length > 0}
+      <Card.Root>
+        <Card.Content class="grid gap-2 py-4 text-sm">
+          {#each electricalProblems as issue (issue.id)}
+            <div class="flex items-start justify-between gap-3">
+              <span class="text-amber-700">{issue.text}</span>
+              {#if issue.floorId}
+                {@const floor = doc.building.floors.find((item) => item.id === issue.floorId)}
+                {#if floor}
+                  <Button variant="ghost" size="sm" href={planHref(id, floor.index)}>Show on plan</Button>
+                {/if}
+              {/if}
+            </div>
+          {/each}
+        </Card.Content>
+      </Card.Root>
     {/if}
   </div>
 </div>

@@ -143,7 +143,12 @@ export function suggestRoomFixtures(doc: Document, floor: Floor, cell: Cell, typ
     const before = door.u - 0.15 - width / 2
     const roomAfter = door.face.length - after
     const u = roomAfter >= before ? after : before
-    if (add(at(door.face, 'switch', u))) reserve(door.face, u, width)
+    // Bathroom and toilet switches go outside the door, away from water.
+    const wet = type === 'bathroom' || type === 'toilet'
+    if (wet) {
+      const draft = at(door.face, 'switch', u, door.face.side === 1 ? -1 : 1)
+      if (draft) drafts.push(draft)
+    } else if (add(at(door.face, 'switch', u))) reserve(door.face, u, width)
   }
 
   const external = faces.flatMap((face) => face.doors.filter((item) => item.kind === 'external-door').map((item) => ({ face, ...item })))
