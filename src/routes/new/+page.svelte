@@ -62,6 +62,12 @@
     void goto(`${resolve('/new')}?step=${next}`)
   }
 
+  // Double-clicking a choice picks it and moves on.
+  function advance() {
+    const next = STEPS[index + 1]
+    if (next) go(next.id)
+  }
+
   async function readFile(event: Event): Promise<string | undefined> {
     const input = event.currentTarget
     if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
@@ -178,7 +184,7 @@
           winter sun.
         </p>
       </div>
-      <SitePicker bind:value={sampleId.value} />
+      <SitePicker bind:value={sampleId.value} onchoose={advance} />
       <Card.Root class={cn(draft.site === 'custom' && 'border-primary ring-2 ring-primary/20')}>
         <Card.Header>
           <Card.Title>Your own plot</Card.Title>
@@ -218,7 +224,7 @@
           rates.
         </p>
       </div>
-      <WallPicker bind:value={draft.systemId} />
+      <WallPicker bind:value={draft.systemId} onchoose={advance} />
     {:else if step === 'roof'}
       <div>
         <h1 class="text-xl font-semibold">What kind of roof?</h1>
@@ -229,6 +235,7 @@
         bind:covering={draft.roofCovering}
         bind:pitchDeg={draft.roofPitchDeg}
         bind:eaves={draft.roofEaves}
+        onchoose={advance}
       />
     {:else if step === 'openings'}
       <div>

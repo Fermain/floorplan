@@ -6,7 +6,8 @@
   import WallSwatch from './WallSwatch.svelte'
   import { thicknessMm, unitCostPerSquareMetre, unitsPerSquareMetre, WALL_BLURBS } from './wallInfo'
 
-  let { value = $bindable() }: { value: WallSystemId } = $props()
+  // onchoose runs on a double-click, after the system is selected.
+  let { value = $bindable(), onchoose }: { value: WallSystemId; onchoose?: () => void } = $props()
 
   const money = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 })
 </script>
@@ -22,6 +23,10 @@
         value === system.id && 'border-primary ring-2 ring-primary/20',
       )}
       onclick={() => (value = system.id)}
+      ondblclick={() => {
+        value = system.id
+        onchoose?.()
+      }}
     >
       <WallSwatch class="w-full rounded-md" {system} />
       <div>

@@ -12,7 +12,8 @@
     covering = $bindable(),
     pitchDeg = $bindable(),
     eaves = $bindable(),
-  }: { form: RoofForm; covering: RoofCovering; pitchDeg: number; eaves: number } = $props()
+    onchoose,
+  }: { form: RoofForm; covering: RoofCovering; pitchDeg: number; eaves: number; onchoose?: () => void } = $props()
 
   const FORMS: { id: RoofForm; name: string; text: string }[] = [
     { id: 'hip', name: 'Hip', text: 'Slopes on every side. Sheds wind well and needs no gable walls.' },
@@ -43,6 +44,10 @@
             form === item.id && 'border-primary ring-2 ring-primary/20',
           )}
           onclick={() => chooseForm(item.id)}
+          ondblclick={() => {
+            chooseForm(item.id)
+            onchoose?.()
+          }}
         >
           <RoofGlyph class="h-16 w-full" form={item.id} />
           <div class="font-medium">{item.name}</div>
@@ -64,6 +69,10 @@
             covering === item.id && 'border-primary ring-2 ring-primary/20',
           )}
           onclick={() => (covering = item.id)}
+          ondblclick={() => {
+            covering = item.id
+            onchoose?.()
+          }}
         >
           <CoveringSwatch class="h-14 w-full rounded-md" spec={item} />
           <div class="font-medium">{item.name}</div>
