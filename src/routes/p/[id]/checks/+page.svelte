@@ -8,6 +8,9 @@
   import { layoutSpaces, roomTypeLabel } from '$lib/geometry/spaces'
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
+  import { gasLayout } from '$lib/geometry/gas'
+  import { bottleSetup } from '$lib/model/fixtures'
+  import { BATTERY_MODULE_KWH, powerLayout, suggestedPanels } from '$lib/geometry/power'
   import { planHref } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
@@ -18,6 +21,8 @@
   const electrical = $derived(electricalLayout(doc))
   const electricalProblems = $derived(electricalIssues(doc))
   const pipes = $derived(plumbingLayout(doc))
+  const power = $derived(powerLayout(doc))
+  const gas = $derived(gasLayout(doc))
   const longestHot = $derived(pipes.hot.reduce((most, run) => Math.max(most, run.length), 0))
   const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
@@ -240,6 +245,107 @@
       </Card.Root>
     {/if}
 
+    {#if electrical.circuits.length > 0}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold">Load shedding and solar</h2>
+        <p class="text-sm text-muted-foreground">
+          Tick the circuits to keep on when the power goes off. The inverter and battery are sized from rough loads for
+          each kind of circuit; a solar installer sizes the real system.
+        </p>
+      </div>
+      <Card.Root>
+        <Card.Content class="grid gap-4 py-4 text-sm">
+          <div class="flex flex-wrap gap-x-6 gap-y-2">
+            {#each electrical.circuits as circuit (circuit.id)}
+              <label class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  class="size-4 accent-primary"
+                  checked={(doc.services?.essential ?? []).includes(circuit.id)}
+                  onchange={(event) => documentStore.setEssential(circuit.id, event.currentTarget.checked)}
+                />
+                <span class="font-medium">{circuit.id}</span>
+                <span class="text-muted-foreground">{circuit.name}</span>
+              </label>
+            {/each}
+          </div>
+          <div class="flex flex-wrap items-end gap-4">
+            <div class="grid gap-1.5">
+              <label for="backup-hours" class="text-xs text-muted-foreground">Hours of backup</label>
+              <input
+                id="backup-hours"
+                type="number"
+                min="1"
+                max="24"
+                class="h-8 w-24 rounded-md border bg-background px-2"
+                value={power.hours}
+                onchange={(event) => documentStore.setBackupHours(Number(event.currentTarget.value))}
+              />
+            </div>
+            <div class="grid gap-1.5">
+              <label for="solar-panels" class="text-xs text-muted-foreground">Solar panels (up to {power.capacity})</label>
+              <input
+                id="solar-panels"
+                type="number"
+                min="0"
+                max={power.capacity}
+                class="h-8 w-24 rounded-md border bg-background px-2"
+                value={doc.services?.solarPanels ?? 0}
+                onchange={(event) => documentStore.setSolarPanels(Math.max(0, Math.round(Number(event.currentTarget.value))))}
+              />
+            </div>
+            {#if power.essential.length > 0 && power.capacity > 0}
+              <Button variant="outline" size="sm" onclick={() => documentStore.setSolarPanels(suggestedPanels(power))}>
+                Suggest panels ({suggestedPanels(power)})
+              </Button>
+            {/if}
+          </div>
+        </Card.Content>
+      </Card.Root>
+      {#if power.essential.length > 0 || power.panels > 0}
+        <div class="grid gap-4 sm:grid-cols-3">
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Inverter</Card.Description>
+              <Card.Title class="text-2xl">{power.inverterKva ? `${power.inverterKva} kVA` : '–'}</Card.Title>
+              <Card.Description>Peak essential load about {number.format(power.peak / 1000)} kW</Card.Description>
+            </Card.Header>
+          </Card.Root>
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Battery</Card.Description>
+              <Card.Title class="text-2xl">{number.format(power.batteryModules * BATTERY_MODULE_KWH)} kWh</Card.Title>
+              <Card.Description>
+                {power.batteryModules} × {BATTERY_MODULE_KWH} kWh for {power.hours} hours at about {Math.round(power.running)} W
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Solar</Card.Description>
+              <Card.Title class="text-2xl">{number.format(power.kwp)} kWp</Card.Title>
+              <Card.Description>
+                {power.panels > 0
+                  ? `${power.panels} panels, about ${Math.round(power.yearly).toLocaleString('en-ZA')} kWh a year`
+                  : power.capacity > 0
+                    ? `Room for ${power.capacity} panels on the sunnier roof faces`
+                    : 'Add a roof to lay out panels'}
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        </div>
+      {/if}
+      {#if power.warnings.length > 0}
+        <Card.Root>
+          <Card.Content class="grid gap-2 py-4 text-sm">
+            {#each power.warnings as warning (warning.id)}
+              <span class="text-amber-700">{warning.text}</span>
+            {/each}
+          </Card.Content>
+        </Card.Root>
+      {/if}
+    {/if}
+
     <div class="mt-4">
       <h2 class="text-base font-semibold">Plumbing</h2>
       <p class="text-sm text-muted-foreground">
@@ -258,7 +364,7 @@
       <div class="grid gap-4 sm:grid-cols-3">
         <Card.Root>
           <Card.Header>
-            <Card.Description>Drain to the sewer</Card.Description>
+            <Card.Description>{pipes.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</Card.Description>
             <Card.Title class="text-2xl {pipes.profile && pipes.profile.shortBy > 0.005 ? 'text-amber-700' : ''}">
               {pipes.profile ? `${number.format(pipes.profile.length)} m` : '–'}
             </Card.Title>
@@ -266,7 +372,7 @@
               {pipes.profile
                 ? pipes.profile.shortBy > 0.005
                   ? `Arrives ${Math.round(pipes.profile.shortBy * 1000)} mm below the sewer`
-                  : `Falls into the sewer; ${number.format(pipes.profile.deepest)} m at its deepest`
+                  : `Falls into the ${pipes.septic ? 'tank' : 'sewer'}; ${number.format(pipes.profile.deepest)} m at its deepest`
                 : 'No drains yet'}
             </Card.Description>
           </Card.Header>
@@ -288,6 +394,37 @@
       </div>
     {/if}
 
+    {#if pipes.septic || pipes.rain}
+      <div class="grid gap-4 sm:grid-cols-2">
+        {#if pipes.septic}
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Septic tank</Card.Description>
+              <Card.Title class="text-2xl">{pipes.septic.litres.toLocaleString('en-ZA')} litres</Card.Title>
+              <Card.Description>
+                For {pipes.septic.bedrooms} {pipes.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}, overflowing to a soakaway.
+                The local authority approves the size and position.
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        {/if}
+        {#if pipes.rain}
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Rainwater off the roof</Card.Description>
+              <Card.Title class="text-2xl">{Math.round(pipes.rain.yearly / 1000).toLocaleString('en-ZA')} kL a year</Card.Title>
+              <Card.Description>
+                {number.format(pipes.rain.catchment)} m² of roof at {pipes.rain.rainfall} mm of rain.
+                {pipes.rain.tanks > 0
+                  ? `${pipes.rain.litres.toLocaleString('en-ZA')} L in ${pipes.rain.tanks} ${pipes.rain.tanks === 1 ? 'tank fills' : 'tanks fill'} from ${number.format(pipes.rain.fillMm)} mm of rain.`
+                  : `About ${(Math.ceil(pipes.rain.stormLitres / 500) * 500).toLocaleString('en-ZA')} L of tanks would hold a ${25} mm storm. Add one under a downpipe with the Fittings tool.`}
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        {/if}
+      </div>
+    {/if}
+
     {#if pipes.issues.length > 0}
       <Card.Root>
         <Card.Content class="grid gap-2 py-4 text-sm">
@@ -301,5 +438,60 @@
       </Card.Root>
     {/if}
 
+    {#if gas.appliances.length > 0 || gas.cylinders.length > 0}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold">Gas</h2>
+        <p class="text-sm text-muted-foreground">
+          LP gas from bottles outside, piped in copper round the house. A registered gas installer lays it to SANS 10087-1
+          and issues a certificate of conformity.
+        </p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Appliances</Card.Description>
+            <Card.Title class="text-2xl">{gas.appliances.length}</Card.Title>
+            <Card.Description>
+              {gas.appliances.map((item) => item.fixture.kind === 'gas-stove' ? 'stove' : 'geyser').join(', ') || 'None yet'}
+            </Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Copper pipe</Card.Description>
+            <Card.Title class="text-2xl">{gas.runs.length > 0 ? `${number.format(gas.length)} m` : '–'}</Card.Title>
+            <Card.Description>15 mm, along the outside walls and in to each appliance</Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Gas bottles</Card.Description>
+            <Card.Title class="text-2xl">
+              {gas.cylinders.length > 0
+                ? gas.cylinders.map((item) => `${bottleSetup(item.fixture).count} × ${bottleSetup(item.fixture).kg} kg`).join(', ')
+                : '–'}
+            </Card.Title>
+            <Card.Description>Two or more on a changeover regulator, so one can be swapped while the other runs</Card.Description>
+          </Card.Header>
+        </Card.Root>
+      </div>
+      {#if gas.issues.length > 0}
+        <Card.Root>
+          <Card.Content class="grid gap-2 py-4 text-sm">
+            {#each gas.issues as issue (issue.id)}
+              <div class="flex items-start justify-between gap-3">
+                <span class="text-amber-700">{issue.text}</span>
+                {#if issue.floorId}
+                  {@const floor = doc.building.floors.find((item) => item.id === issue.floorId)}
+                  {#if floor}
+                    <Button variant="ghost" size="sm" href={planHref(id, floor.index)}>Show on plan</Button>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </Card.Content>
+        </Card.Root>
+      {/if}
+    {/if}
   </div>
 </div>

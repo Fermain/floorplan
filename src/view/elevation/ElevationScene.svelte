@@ -49,6 +49,12 @@
     center.z,
   ])
 
+  // Light the face in view from the front and a little above, whichever way it faces.
+  const lightFrom = $derived.by((): [number, number, number] => {
+    const from = frame.axisZ.clone().multiplyScalar(8).addScaledVector(frame.axisY, 6).addScaledVector(frame.axisX, 2)
+    return [from.x, from.y, from.z]
+  })
+
   const perspPosTuple = $derived.by((): [number, number, number] => {
     const c = wallCenterWorld(frame)
     const span = Math.max(frame.length, frame.height)
@@ -84,7 +90,7 @@
   />
 
   <T.AmbientLight intensity={0.45} />
-  <T.DirectionalLight position={[5, 8, 8]} intensity={1.1} />
+  <T.DirectionalLight position={lightFrom} intensity={1.1} />
 
   {#each wallGeometries as geometry (geometry.uuid)}
     <T.Mesh {geometry}>

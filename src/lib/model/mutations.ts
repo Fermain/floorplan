@@ -18,7 +18,8 @@ import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
-import { fixtureProblem } from './fixtures'
+import { fixtureProblem, swapsFor } from './fixtures'
+import { faceKey, trimProblem } from './trims'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
 import {
@@ -31,10 +32,13 @@ import {
 import type {
   CostAssumptions,
   Document,
+  FaceTrim,
   Fence,
   Fixture,
+  FixtureKind,
   PlanPoint,
   ServiceKind,
+  SewerType,
   Support,
   Floor,
   Heightfield,
@@ -441,6 +445,18 @@ export function updateFixture(
   return ok(replaceFloor(document, { ...floor, fixtures }))
 }
 
+// Swap a fitting for another that stands in the same spot, keeping where it is.
+export function setFixtureKind(document: Document, floorId: string, fixtureId: string, kind: FixtureKind): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const current = floor.fixtures?.find((item) => item.id === fixtureId)
+  if (!current) return fail(document, 'fixture not found')
+  if (current.kind === kind) return ok(document)
+  if (!swapsFor(current.kind).includes(kind)) return fail(document, 'those fittings cannot be swapped')
+  const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? { ...item, kind } : item))
+  return ok(replaceFloor(document, { ...floor, fixtures }))
+}
+
 export function removeFixture(document: Document, floorId: string, fixtureId: string): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
@@ -489,9 +505,66 @@ export function setServiceBends(document: Document, kind: ServiceKind, bends: Pl
   return ok({ ...document, services: { ...services, bends: { ...(services.bends ?? {}), [kind]: bends.map((p) => ({ x: p.x, z: p.z })) } } })
 }
 
+export function setSewerType(document: Document, type: SewerType): MutationResult {
+  if (type !== 'municipal' && type !== 'septic') return fail(document, 'unknown sewer type')
+  return ok({ ...document, services: { ...(document.services ?? {}), sewerType: type } })
+}
+
+export function setSoakaway(document: Document, point: PlanPoint): MutationResult {
+  if (!pointInPlot(document.plot, point.x, point.z)) return fail(document, 'soakaway outside plot')
+  return ok({ ...document, services: { ...(document.services ?? {}), soakaway: { x: point.x, z: point.z } } })
+}
+
+export function setRainfall(document: Document, millimetres: number): MutationResult {
+  if (!(millimetres >= 50 && millimetres <= 3000)) return fail(document, 'rainfall out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), rainfallMm: millimetres } })
+}
+
+export function setEssential(document: Document, circuitId: string, essential: boolean): MutationResult {
+  const current = new Set(document.services?.essential ?? [])
+  if (essential) current.add(circuitId)
+  else current.delete(circuitId)
+  return ok({ ...document, services: { ...(document.services ?? {}), essential: [...current].sort() } })
+}
+
+export function setBackupHours(document: Document, hours: number): MutationResult {
+  if (!(hours >= 1 && hours <= 24)) return fail(document, 'backup hours out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), backupHours: hours } })
+}
+
+export function setSolarPanels(document: Document, panels: number): MutationResult {
+  if (!Number.isInteger(panels) || panels < 0 || panels > 200) return fail(document, 'panel count out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), solarPanels: panels } })
+}
+
 export function setSewerDepth(document: Document, depth: number): MutationResult {
   if (!(depth >= 0.3 && depth <= 4)) return fail(document, 'sewer depth out of range')
   return ok({ ...document, services: { ...(document.services ?? {}), sewerDepth: depth } })
+}
+
+// Choose the trim on one face of a wall; a choice that matches the project default is dropped so it follows the default.
+export function setFaceTrim(document: Document, floorId: string, wallId: string, side: 1 | -1, patch: FaceTrim): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin === 'logical') return fail(document, 'a logical wall has no faces to trim')
+  const problem = trimProblem(patch)
+  if (problem) return fail(document, problem)
+  const defaults = projectDefaults(document)
+  const key = faceKey(side)
+  const merged: FaceTrim = { ...(wall.trim?.[key] ?? {}), ...patch }
+  if (merged.skirting === defaults.skirting) delete merged.skirting
+  if (merged.cornice === defaults.cornice) delete merged.cornice
+  const trim = { ...(wall.trim ?? {}) }
+  if (merged.skirting === undefined && merged.cornice === undefined) delete trim[key]
+  else trim[key] = merged
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    const { trim: _old, ...rest } = item
+    return Object.keys(trim).length > 0 ? { ...rest, trim } : rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {
@@ -821,6 +894,19 @@ export function setRoof(document: Document, floorId: string, roof: Roof | null):
   if (roof.form !== undefined && !['hip', 'gable', 'mono'].includes(roof.form)) return fail(document, 'unknown roof form')
   if (roof.turns !== undefined && !Number.isInteger(roof.turns)) return fail(document, 'roof turns must be whole')
   if (roof.covering !== undefined && !COVERINGS.some((item) => item.id === roof.covering)) return fail(document, 'unknown roof covering')
+  if (roof.gutter !== undefined && roof.gutter !== 'round-pvc' && roof.gutter !== 'square-metal') return fail(document, 'unknown gutter')
+  return ok(replaceFloor(document, { ...floor, roof }))
+}
+
+// Keep or take away the gutter along the eave above one wall.
+export function setWallGutter(document: Document, roofFloorId: string, wallId: string, gutter: boolean): MutationResult {
+  const floor = getFloor(document, roofFloorId)
+  if (!floor?.roof) return fail(document, 'roof not found')
+  const without = new Set(floor.roof.noGutter ?? [])
+  if (gutter) without.delete(wallId)
+  else without.add(wallId)
+  const { noGutter: _old, ...rest } = floor.roof
+  const roof = without.size > 0 ? { ...rest, noGutter: [...without].sort() } : rest
   return ok(replaceFloor(document, { ...floor, roof }))
 }
 

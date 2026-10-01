@@ -41,6 +41,9 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
+  import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
+  import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
@@ -80,6 +83,8 @@
     texture: CanvasTexture | null
     colour: string
     gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
+    panels: BufferGeometry | null
+    gutters: GutterPart[]
     y: number
   }
   type StairMesh = { key: string; geometry: BufferGeometry; y: number }
@@ -97,6 +102,7 @@
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
   let fixtureMeshes = $state<{ key: string; parts: FixturePart[] }[]>([])
+  let trimMeshes = $state<{ key: string; parts: TrimPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -229,6 +235,10 @@
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
+    const trims = floors.map((floor) => ({
+      key: floor.id,
+      parts: buildTrimParts(trimRuns(doc, floor), floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))),
+    }))
     const fittings = floors
       .filter((floor) => (floor.fixtures ?? []).length > 0)
       .map((floor) => ({
@@ -245,7 +255,9 @@
     fenceMeshes = fences
     pillarMeshes = pillars
     fixtureMeshes = fittings
+    trimMeshes = trims
     return () => {
+      for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
@@ -266,6 +278,8 @@
         roof.meshes.under?.dispose()
         roof.meshes.edges?.dispose()
         roof.gable.body?.dispose()
+        roof.panels?.dispose()
+        for (const part of roof.gutters) part.geometry.dispose()
         roof.gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
@@ -284,8 +298,26 @@
     return above ? FLOOR_TO_FLOOR : undefined
   }
 
+  function panelGeometry(spots: PanelSpot[]): BufferGeometry | null {
+    if (spots.length === 0) return null
+    const positions: number[] = []
+    for (const { corners: [a, b, c, d] } of spots) {
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z)
+    }
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    geometry.computeVertexNormals()
+    return geometry
+  }
+
   function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
+    const solar = powerLayout(doc)
+    const eaves = gutterLayout(doc)
+    const field = pad ? levelField(doc.heightfield, pad.structures) : doc.heightfield
     const meshes: RoofMesh[] = []
+    // Rainwater tanks stand on the ground floor's level; downpipes into them stop there.
+    const ground = doc.building.floors.find((item) => item.index === 0)
+    const groundLevel = ground ? floorWorldDatum(ground.datumHeight, supportGrade(ground, pad)) + finishedFloor(ground) : undefined
     for (const floor of doc.building.floors) {
       const roof = floor.roof
       if (!roof || floor.index === 0) continue
@@ -305,6 +337,14 @@
         texture: coveringTexture(spec),
         colour: spec.colour,
         gable,
+        panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
+        gutters: buildGutterParts(
+          eaves,
+          floor.id,
+          gutterOf(roof),
+          (x, z) => bilinearHeight(field, x, z) - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
+          groundLevel === undefined ? undefined : groundLevel - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
+        ),
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }
@@ -529,6 +569,14 @@
       </T.Mesh>
     {/each}
 
+    {#each trimMeshes as trim (trim.key)}
+      {#each trim.parts as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} receiveShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.6} side={DoubleSide} />
+        </T.Mesh>
+      {/each}
+    {/each}
+
     {#each fixtureMeshes as fitting (fitting.key)}
       {#each fitting.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow receiveShadow>
@@ -583,6 +631,16 @@
       {#if roof.meshes.edges}
         <T.Mesh geometry={roof.meshes.edges} position.y={roof.y} castShadow>
           <T.MeshStandardMaterial color="#e7e5e4" roughness={0.7} side={DoubleSide} />
+        </T.Mesh>
+      {/if}
+      {#each roof.gutters as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.5} metalness={0.2} />
+        </T.Mesh>
+      {/each}
+      {#if roof.panels}
+        <T.Mesh geometry={roof.panels} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color="#1e2a44" metalness={0.4} roughness={0.25} side={DoubleSide} />
         </T.Mesh>
       {/if}
       {#if roof.gable.body}

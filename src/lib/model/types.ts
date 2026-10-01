@@ -51,6 +51,12 @@ export type Support = {
   spacing: number
 }
 
+export type SkirtingType = 'rounded' | 'square' | 'angled'
+export type CorniceType = 'rounded' | 'coral'
+
+// What runs along one face of a wall inside a room; anything left out follows the project default.
+export type FaceTrim = { skirting?: SkirtingType | 'none'; cornice?: CorniceType | 'none' }
+
 export type Wall = {
   id: string
   startCornerId: string
@@ -59,6 +65,8 @@ export type Wall = {
   systemId?: WallSystemId
   fence?: Fence
   support?: Support
+  // front is the face on side 1 of the wall, back the face on side -1.
+  trim?: { front?: FaceTrim; back?: FaceTrim }
   openings: Opening[]
 }
 
@@ -112,6 +120,14 @@ export type FixtureKind =
   | 'geyser'
   | 'solar-geyser'
   | 'outside-tap'
+  | 'water-tank'
+  | 'stove'
+  | 'gas-stove'
+  | 'gas-geyser'
+  | 'gas-cylinder'
+
+export type BottleSize = 9 | 19 | 48
+export type TankLitres = 1000 | 2500 | 5000 | 10000
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -122,6 +138,12 @@ export type Fixture = {
   dx: number
   dz: number
   y: number
+  // Gas bottles only: how many stand in a row, their size, and whether a steel cage locks them in.
+  bottles?: number
+  bottleKg?: BottleSize
+  cage?: boolean
+  // Rainwater tanks only: how much the tank holds.
+  litres?: TankLitres
 }
 
 export type Floor = {
@@ -143,12 +165,17 @@ export type RoofForm = 'hip' | 'gable' | 'mono'
 
 export type RoofCovering = 'concrete-tile' | 'clay-tile' | 'ibr' | 'corrugated'
 
+export type GutterType = 'round-pvc' | 'square-metal'
+
 export type Roof = {
   pitchDeg: number
   eaves: number
   form?: RoofForm
   turns?: number
   covering?: RoofCovering
+  // Every eave gets a gutter of this type, except above the walls listed in noGutter.
+  gutter?: GutterType
+  noGutter?: string[]
 }
 
 export type ProjectDefaults = {
@@ -160,6 +187,8 @@ export type ProjectDefaults = {
   windowHeight: number
   sill: number
   doorHeight: number
+  skirting: SkirtingType | 'none'
+  cornice: CorniceType | 'none'
 }
 
 export type Building = {
@@ -187,10 +216,20 @@ export type ServiceKind = 'sewer' | 'water'
 export type PlanPoint = { x: number; z: number }
 
 // Where the plot's services connect on the boundary, and the bends in the pipes run to them outside.
+export type SewerType = 'municipal' | 'septic'
+
 export type SiteServices = {
   sewer?: PlanPoint
   water?: PlanPoint
   sewerDepth?: number
+  // Off the municipal sewer the drain ends in a septic tank, which overflows to a soakaway.
+  sewerType?: SewerType
+  soakaway?: PlanPoint
+  rainfallMm?: number
+  // Load shedding: circuits kept on by the inverter, hours of backup, and solar panels on the roof.
+  essential?: string[]
+  backupHours?: number
+  solarPanels?: number
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
 }
 

@@ -5,16 +5,21 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { FIXTURES } from '../model/fixtures'
+import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
+import { gasLayout } from '../geometry/gas'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
+import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
+import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
+import { trimLengths } from '../geometry/trims'
+import { CORNICES, SKIRTINGS } from '../model/trims'
 import {
   floorSupports,
   pierCourses,
@@ -27,7 +32,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -43,7 +48,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -409,10 +414,11 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    if (!count) continue
+    // Gas bottles and rainwater tanks are counted below, by size.
+    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank') continue
     drafts.push({
       id: `fixture:${spec.id}`,
-      group: spec.trade === 'electrical' ? 'Electrical' : 'Plumbing',
+      group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : 'Plumbing',
       label: spec.name,
       note: 'Fitting only; cable, pipe and labour not yet counted',
       unit: 'each',
@@ -470,6 +476,39 @@ export function takeoff(doc: Document): QuantityLine[] {
     })
   }
 
+  const trims = trimLengths(doc)
+  for (const spec of SKIRTINGS) {
+    const length = trims.skirting[spec.id]
+    if (length > 0) drafts.push({ id: `skirting:${spec.id}`, group: 'Finishes', label: `${spec.name} skirting`, note: 'Round every room, less doorways, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `skirting:${spec.id}` })
+  }
+  for (const spec of CORNICES) {
+    const length = trims.cornice[spec.id]
+    if (length > 0) drafts.push({ id: `cornice:${spec.id}`, group: 'Finishes', label: `${spec.name} cornice`, note: 'Round every room at the ceiling, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `cornice:${spec.id}` })
+  }
+
+  const gutters = gutterLengths(gutterLayout(doc), doc)
+  for (const type of ['round-pvc', 'square-metal'] as GutterType[]) {
+    if (gutters.gutter[type] > 0) {
+      drafts.push({ id: `gutter:${type}`, group: 'Roof', label: `${GUTTERS[type].name} gutter`, note: 'Along the eaves, plus 10%', unit: 'm', quantity: Math.ceil(gutters.gutter[type] * 1.1), rateKey: `gutter:${type}` })
+    }
+    if (gutters.pipes[type] > 0) {
+      drafts.push({ id: `downpipe:${type}`, group: 'Roof', label: `${GUTTERS[type].name} downpipes`, note: `${gutters.pipes[type]} from the eaves to the ground`, unit: 'm', quantity: Math.ceil(gutters.downpipe[type]), rateKey: `downpipe:${type}` })
+    }
+  }
+
+  const power = powerLayout(doc)
+  if (power.inverterKva) {
+    drafts.push({ id: `inverter:${power.inverterKva}`, group: 'Electrical', label: `Inverter ${power.inverterKva} kVA`, note: `Peak essential load about ${round(power.peak / 1000, 1)} kW`, unit: 'each', quantity: 1, rateKey: `inverter:${power.inverterKva}` })
+    drafts.push({ id: 'essentials-board', group: 'Electrical', label: 'Essentials board and changeover', note: `${power.essential.length} circuits kept on in load shedding`, unit: 'each', quantity: 1, rateKey: 'essentials-board' })
+  }
+  if (power.batteryModules > 0) {
+    drafts.push({ id: 'battery', group: 'Electrical', label: `Lithium battery ${BATTERY_MODULE_KWH} kWh`, note: `${round(power.batteryKwh, 1)} kWh for ${power.hours} hours of the essentials`, unit: 'each', quantity: power.batteryModules, rateKey: 'battery' })
+  }
+  if (power.panels > 0) {
+    drafts.push({ id: 'solar-panel', group: 'Electrical', label: `Solar panel ${PANEL_W} W`, note: `${round(power.kwp, 2)} kWp, about ${Math.round(power.yearly).toLocaleString('en-ZA')} kWh a year`, unit: 'each', quantity: power.panels, rateKey: 'solar-panel' })
+    drafts.push({ id: 'panel-mounting', group: 'Electrical', label: 'Panel mounting', note: 'Rails and roof hooks for each panel', unit: 'each', quantity: power.panels, rateKey: 'panel-mounting' })
+  }
+
   const pipes = plumbingLayout(doc)
   const drainBy = (dia: number) => pipes.drains.filter((drain) => drain.dia === dia).reduce((sum, drain) => sum + drain.length, 0)
   const soil = drainBy(110) + pipes.stack + (pipes.profile?.length ?? 0)
@@ -496,6 +535,18 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: pipes.profile.points.length,
       rateKey: 'inspection-eye',
     })
+    if (pipes.septic) {
+      drafts.push({
+        id: 'septic-tank',
+        group: 'Plumbing',
+        label: `Septic tank ${pipes.septic.litres.toLocaleString('en-ZA')} litres`,
+        note: `Sized for ${pipes.septic.bedrooms} ${pipes.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`,
+        unit: 'each',
+        quantity: 1,
+        rateKey: 'septic-tank',
+      })
+      drafts.push({ id: 'soakaway', group: 'Plumbing', label: 'Soakaway', note: 'Stone-filled pit or trench for the tank overflow', unit: 'each', quantity: 1, rateKey: 'soakaway' })
+    }
     drafts.push({ id: 'gully', group: 'Plumbing', label: 'Gully', note: 'Where the wastes leave the house', unit: 'each', quantity: 1, rateKey: 'gully' })
     const trench = pipes.profile.trench + waterTrench(pipes.waterMain)
     drafts.push({
@@ -507,6 +558,37 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: round(trench, 1),
       rateKey: 'trench',
     })
+  }
+
+  const tanks = new Map<TankLitres, number>()
+  for (const floor of doc.building.floors) {
+    for (const fixture of floor.fixtures ?? []) if (fixture.kind === 'water-tank') tanks.set(tankLitres(fixture), (tanks.get(tankLitres(fixture)) ?? 0) + 1)
+  }
+  for (const litres of TANK_SIZES) {
+    const count = tanks.get(litres)
+    if (count) drafts.push({ id: `tank:${litres}`, group: 'Plumbing', label: `Rainwater tank ${TANKS[litres].name}`, note: 'On a level base', unit: 'each', quantity: count, rateKey: `tank:${litres}` })
+  }
+  const feeds = gutterLayout(doc).downpipes.filter((pipe) => pipe.tank).length
+  if (feeds > 0) drafts.push({ id: 'tank-inlet', group: 'Plumbing', label: 'Leaf trap and first-flush diverter', note: 'Where each downpipe enters a tank', unit: 'each', quantity: feeds, rateKey: 'tank-inlet' })
+
+  const gas = gasLayout(doc)
+  const bottles = new Map<BottleSize, number>()
+  let cages = 0
+  for (const item of gas.cylinders) {
+    const setup = bottleSetup(item.fixture)
+    bottles.set(setup.kg, (bottles.get(setup.kg) ?? 0) + setup.count)
+    if (setup.cage) cages += 1
+  }
+  for (const kg of BOTTLE_SIZES) {
+    const count = bottles.get(kg)
+    if (count) drafts.push({ id: `gas-bottle:${kg}`, group: 'Gas', label: `LP gas bottle ${BOTTLES[kg].name}`, note: 'Deposit and first fill', unit: 'each', quantity: count, rateKey: `gas-bottle:${kg}` })
+  }
+  if (gas.cylinders.length > 0) drafts.push({ id: 'gas-regulator', group: 'Gas', label: 'Regulator and manifold', note: 'Automatic changeover between bottles where there are two or more', unit: 'each', quantity: gas.cylinders.length, rateKey: 'gas-regulator' })
+  if (cages > 0) drafts.push({ id: 'gas-cage', group: 'Gas', label: 'Gas bottle cage', note: 'Galvanised steel, locked, on a level slab', unit: 'each', quantity: cages, rateKey: 'gas-cage' })
+  if (gas.runs.length > 0) {
+    drafts.push({ id: 'gas-pipe', group: 'Gas', label: 'Copper gas pipe 15 mm', note: 'From the bottles round the outside walls to each appliance, plus 10%', unit: 'm', quantity: Math.ceil(gas.length * 1.1), rateKey: 'gas-pipe' })
+    drafts.push({ id: 'gas-valve', group: 'Gas', label: 'Gas isolating valves', note: 'One at each appliance', unit: 'each', quantity: gas.runs.length, rateKey: 'gas-valve' })
+    drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
   }
 
   const fences = new Map<string, { length: number; area: number; posts: number }>()

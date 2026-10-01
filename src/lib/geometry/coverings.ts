@@ -65,6 +65,14 @@ export function coveringOf(roof: Pick<Roof, 'covering'>): CoveringSpec {
   return COVERINGS.find((item) => item.id === (roof.covering ?? DEFAULT_COVERING)) ?? COVERINGS[0]
 }
 
+// A pitch raised to the least the covering takes. A pitch that sat at the old covering's least follows to the new
+// one's; any other steeper pitch is left alone.
+export function fitPitch(pitchDeg: number, covering: RoofCovering | undefined, previous?: RoofCovering): number {
+  const least = coveringOf({ covering }).minPitchDeg
+  if (previous !== undefined && Math.abs(pitchDeg - coveringOf({ covering: previous }).minPitchDeg) < 1e-6) return least
+  return Math.max(pitchDeg, least)
+}
+
 export function tilesPerM2(spec: CoveringSpec): number {
   return spec.kind === 'tile' ? 1 / (spec.across * spec.along) : 0
 }

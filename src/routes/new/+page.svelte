@@ -1,4 +1,6 @@
 <script lang="ts">
+  import TrimPicker from '$lib/components/project/TrimPicker.svelte'
+  import { corniceSpec, skirtingSpec } from '$lib/model/trims'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
@@ -32,6 +34,7 @@
     { id: 'walls', label: 'Walls' },
     { id: 'roof', label: 'Roof' },
     { id: 'openings', label: 'Openings' },
+    { id: 'finishes', label: 'Finishes' },
     { id: 'name', label: 'Name' },
   ] as const
 
@@ -60,6 +63,12 @@
   function go(next: StepId) {
     problem = ''
     void goto(`${resolve('/new')}?step=${next}`)
+  }
+
+  // Double-clicking a choice picks it and moves on.
+  function advance() {
+    const next = STEPS[index + 1]
+    if (next) go(next.id)
   }
 
   async function readFile(event: Event): Promise<string | undefined> {
@@ -178,7 +187,7 @@
           winter sun.
         </p>
       </div>
-      <SitePicker bind:value={sampleId.value} />
+      <SitePicker bind:value={sampleId.value} onchoose={advance} />
       <Card.Root class={cn(draft.site === 'custom' && 'border-primary ring-2 ring-primary/20')}>
         <Card.Header>
           <Card.Title>Your own plot</Card.Title>
@@ -218,7 +227,7 @@
           rates.
         </p>
       </div>
-      <WallPicker bind:value={draft.systemId} />
+      <WallPicker bind:value={draft.systemId} onchoose={advance} />
     {:else if step === 'roof'}
       <div>
         <h1 class="text-xl font-semibold">What kind of roof?</h1>
@@ -229,6 +238,7 @@
         bind:covering={draft.roofCovering}
         bind:pitchDeg={draft.roofPitchDeg}
         bind:eaves={draft.roofEaves}
+        onchoose={advance}
       />
     {:else if step === 'openings'}
       <div>
@@ -242,6 +252,12 @@
         bind:sill={draft.sill}
         bind:doorHeight={draft.doorHeight}
       />
+    {:else if step === 'finishes'}
+      <div>
+        <h1 class="text-xl font-semibold">Skirting and cornice</h1>
+        <p class="text-sm text-muted-foreground">Run round every room. You can change or take them off any wall in Focus.</p>
+      </div>
+      <TrimPicker bind:skirting={draft.skirting} bind:cornice={draft.cornice} onchoose={advance} />
     {:else}
       <div>
         <h1 class="text-xl font-semibold">Name your project</h1>
@@ -291,6 +307,8 @@
             {draft.roofPitchDeg}° pitch, {mm(draft.roofEaves)} mm eaves. Windows {mm(draft.windowWidth)} × {mm(
               draft.windowHeight,
             )} mm on a {mm(draft.sill)} mm sill; doors {mm(draft.doorHeight)} mm high.
+            {draft.skirting === 'none' ? 'No skirting' : `${skirtingSpec(draft.skirting).name} skirting`},
+            {draft.cornice === 'none' ? 'no cornice' : `${corniceSpec(draft.cornice).name.toLowerCase()} cornice`}.
           </Card.Content>
         </Card.Root>
       </div>
