@@ -64,14 +64,21 @@
   import { liftAboveGround } from './ground-limit'
   import ReviewSky from './ReviewSky.svelte'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
+  import ReviewCutaway from './ReviewCutaway.svelte'
+  import { isCutAway, type CutShape, type WallView } from './cutaway'
   import { Button } from '$lib/components/ui/button'
 
   interface Props {
     sunDate: Date
     onSelectWall?: (wallId: string) => void
+    // How far ahead of the camera the cutaway reaches (0 for none), how the walls show, and the top storey shown.
+    cutDepth?: number
+    cutShape?: CutShape
+    walls?: WallView
+    upTo?: number | null
   }
 
-  let { sunDate, onSelectWall }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null }: Props = $props()
 
   type WallMeshes = {
     key: string
@@ -85,7 +92,7 @@
     glass: BufferGeometry | null
     panels: OpeningPanelMesh[]
   }
-  type FloorSlab = { key: string; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
+  type FloorSlab = { key: string; storey: number; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = {
     key: string
     meshes: RoofMeshes
@@ -96,7 +103,7 @@
     gutters: GutterPart[]
     y: number
   }
-  type StairMesh = { key: string; geometry: BufferGeometry; y: number }
+  type StairMesh = { key: string; storey: number; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
 
@@ -116,7 +123,7 @@
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
   let fixtureMeshes = $state<{ key: string; datum: number; parts: FixturePart[] }[]>([])
-  let trimMeshes = $state<{ key: string; parts: TrimPart[] }[]>([])
+  let trimMeshes = $state<{ key: string; datum: number; parts: TrimPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -211,9 +218,19 @@
   type Pick = { kind: 'wall'; floorId: string; wallId: string } | { kind: 'fixture'; floorId: string; fixtureId: string }
   let selected = $state<Pick | null>(null)
   let hovered = $state<Pick | null>(null)
+  // While the camera is being turned, nothing under the pointer is highlighted.
+  let orbiting = $state(false)
 
   const same = (a: Pick | null, b: Pick | null) =>
     a !== null && b !== null && a.kind === b.kind && a.floorId === b.floorId && (a.kind === 'wall' ? a.wallId === (b as typeof a).wallId : a.fixtureId === (b as typeof a).fixtureId)
+
+  // Storeys above the one chosen are lifted off, with the roof; walls may be cut at waist height or hidden.
+  const HALF_WALL_M = 1.2
+  const storeyOf = $derived(Object.fromEntries(doc.building.floors.map((floor) => [floor.id, floor.index])) as Record<string, number>)
+  const shown = (storey: number | undefined) => upTo === null || (storey ?? 0) <= upTo
+  const shownFloor = (floorId: string) => shown(storeyOf[floorId])
+  // With half walls, everything on a storey is cut at the same height above its floor: walls, trims and fittings.
+  const halfCut = (datum: number) => (walls === 'half' ? { cutAbove: datum + HALF_WALL_M } : {})
 
   const storeyName = (index: number) => (index === 0 ? 'the ground floor' : `storey ${index + 1}`)
 
@@ -227,17 +244,21 @@
   function wallHandlers(wall: WallMeshes) {
     return {
       onclick: (event: IntersectionEvent<MouseEvent>) => {
+        if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
         if (event.delta > DRAG_PX) return
         selected = wallPick(wall)
       },
       ondblclick: (event: IntersectionEvent<MouseEvent>) => {
+        if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
         onSelectWall?.(wall.wallId)
       },
-      onpointerenter: (event: IntersectionEvent<PointerEvent>) => {
+      onpointermove: (event: IntersectionEvent<PointerEvent>) => {
+        if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
-        hovered = wallPick(wall)
+        if (orbiting) return
+        if (!same(hovered, wallPick(wall))) hovered = wallPick(wall)
       },
       onpointerleave: () => {
         if (hovered?.kind === 'wall' && hovered.wallId === wall.wallId) hovered = null
@@ -261,13 +282,17 @@
   function fixtureHandlers(floorId: string) {
     return {
       onclick: (event: IntersectionEvent<MouseEvent>) => {
+        if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
         if (event.delta > DRAG_PX) return
         selected = fixtureAtPoint(floorId, event.point)
       },
       onpointermove: (event: IntersectionEvent<PointerEvent>) => {
+        if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
-        hovered = fixtureAtPoint(floorId, event.point)
+        if (orbiting) return
+        const pick = fixtureAtPoint(floorId, event.point)
+        if (!same(hovered, pick)) hovered = pick
       },
       onpointerleave: () => {
         if (hovered?.kind === 'fixture') hovered = null
@@ -281,12 +306,19 @@
     selected = null
   }
 
-  function wallGlow(wall: WallMeshes): { emissive: string; emissiveIntensity: number } {
-    const pick = wallPick(wall)
-    if (same(selected, pick)) return { emissive: '#2563eb', emissiveIntensity: 0.45 }
-    if (same(hovered, pick)) return { emissive: '#60a5fa', emissiveIntensity: 0.25 }
-    return { emissive: '#000000', emissiveIntensity: 0 }
-  }
+  const highlightedWalls = $derived.by(() => {
+    const out: { key: string; wall: WallMeshes; colour: string; opacity: number }[] = []
+    for (const [pick, colour, opacity] of [
+      [selected, '#2563eb', 0.4],
+      [hovered, '#60a5fa', 0.25],
+    ] as const) {
+      if (pick?.kind !== 'wall') continue
+      if (pick === hovered && same(selected, hovered)) continue
+      const wall = wallMeshes.find((item) => item.floorId === pick.floorId && item.wallId === pick.wallId)
+      if (wall && walls !== 'hidden' && shownFloor(wall.floorId)) out.push({ key: `${colour}:${wall.key}`, wall, colour, opacity })
+    }
+    return out
+  })
 
   // A box drawn round the fitting picked or under the pointer.
   const fixtureBoxes = $derived.by(() => {
@@ -420,10 +452,10 @@
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
-    const trims = floors.map((floor) => ({
-      key: floor.id,
-      parts: buildTrimParts(trimRuns(doc, floor), floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))),
-    }))
+    const trims = floors.map((floor) => {
+      const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
+      return { key: floor.id, datum, parts: buildTrimParts(trimRuns(doc, floor), floor, datum) }
+    })
     const fittings = floors
       .filter((floor) => (floor.fixtures ?? []).length > 0)
       .map((floor) => {
@@ -550,6 +582,7 @@
         if (!geometry) continue
         meshes.push({
           key: stair.id,
+          storey: floor.index,
           geometry,
           y: floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)),
         })
@@ -594,6 +627,7 @@
         geometry.rotateX(-Math.PI / 2)
         slabs.push({
           key: `${structureIndex}-${polygonIndex}`,
+          storey: 0,
           geometry,
           y: structure.datum + SURFACE_BED_TOP_ABOVE_DATUM_M - SURFACE_BED_THICKNESS_M,
           color: '#a3a3a3',
@@ -623,6 +657,7 @@
         geometry.rotateX(-Math.PI / 2)
         decks.push({
           key: `deck-${floor.id}-${index}`,
+          storey: floor.index,
           geometry,
           y: floorWorldDatum(floor.datumHeight, grade) - DECK_THICKNESS,
           color: '#d6d3d1',
@@ -718,10 +753,16 @@
         enabled={!locked}
         target={orbitTarget}
         onchange={(event) => keepCameraAboveGround(event.target)}
+        onstart={() => {
+          orbiting = true
+          hovered = null
+        }}
+        onend={() => (orbiting = false)}
       />
     </T.PerspectiveCamera>
 
     <ReviewSky {sun} centre={plotCenter} />
+    <ReviewCutaway depth={cutDepth} shape={cutShape} />
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}
@@ -733,12 +774,12 @@
     />
 
     {#if groundGeometry}
-      <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick}>
+      <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial vertexColors roughness={0.95} />
       </T.Mesh>
     {/if}
     {#each roadMeshes as part (part.geometry.uuid)}
-      <T.Mesh geometry={part.geometry} receiveShadow>
+      <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
       </T.Mesh>
     {/each}
@@ -753,7 +794,7 @@
       </T.LineSegments>
     {/if}
 
-    {#each floorSlabs as slab (slab.key)}
+    {#each floorSlabs.filter((slab) => shown(slab.storey)) as slab (slab.key)}
       <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>
         <T.MeshStandardMaterial
           color={slab.color}
@@ -766,15 +807,18 @@
       </T.Mesh>
     {/each}
 
-    {#each trimMeshes as trim (trim.key)}
+    {#each trimMeshes.filter((trim) => shownFloor(trim.key)) as trim (trim.key)}
+      <T.Group userData={halfCut(trim.datum)}>
       {#each trim.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} receiveShadow>
           <T.MeshStandardMaterial color={part.colour} roughness={0.6} side={DoubleSide} />
         </T.Mesh>
       {/each}
+      </T.Group>
     {/each}
 
-    {#each fixtureMeshes as fitting (fitting.key)}
+    {#each fixtureMeshes.filter((fitting) => shownFloor(fitting.key)) as fitting (fitting.key)}
+      <T.Group userData={halfCut(fitting.datum)}>
       {#each fitting.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow receiveShadow {...fixtureHandlers(fitting.key)}>
           <T.MeshStandardMaterial
@@ -786,9 +830,10 @@
           />
         </T.Mesh>
       {/each}
+      </T.Group>
     {/each}
 
-    {#each pillarMeshes as pillar (pillar.key)}
+    {#each pillarMeshes.filter((pillar) => shownFloor(pillar.key.split(':')[0])) as pillar (pillar.key)}
       {#each pillar.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow receiveShadow>
           <T.MeshStandardMaterial color={part.colour} roughness={0.85} />
@@ -796,7 +841,7 @@
       {/each}
     {/each}
 
-    {#each fenceMeshes as fence (fence.key)}
+    {#each fenceMeshes.filter((fence) => shownFloor(fence.key.split(':')[0])) as fence (fence.key)}
       {#each fence.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow={part.opacity >= 1} receiveShadow>
           <T.MeshStandardMaterial
@@ -811,13 +856,13 @@
       {/each}
     {/each}
 
-    {#each stairMeshes as stair (stair.key)}
+    {#each stairMeshes.filter((stair) => shown(stair.storey)) as stair (stair.key)}
       <T.Mesh geometry={stair.geometry} position.y={stair.y} castShadow receiveShadow>
         <T.MeshStandardMaterial color="#b8b2a7" roughness={0.9} />
       </T.Mesh>
     {/each}
 
-    {#each roofMeshes as roof (roof.key)}
+    {#each roofMeshes.filter((roof) => shownFloor(roof.key)) as roof (roof.key)}
       <T.Mesh geometry={roof.meshes.top ?? undefined} position.y={roof.y} castShadow>
         <T.MeshStandardMaterial
           map={roof.texture}
@@ -858,21 +903,21 @@
       {/if}
     {/each}
 
-    {#each wallMeshes as wall (wall.key)}
-      <T.Group position.y={wall.datumY}>
+    {#each walls === 'hidden' ? [] : wallMeshes.filter((wall) => shownFloor(wall.floorId)) as wall (wall.key)}
+      <T.Group position.y={wall.datumY} userData={halfCut(wall.datumY)}>
         {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
           <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#6e6256" {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#6e6256" />
           </T.Mesh>
         {/each}
         {#each wall.courses as geom, i (`${wall.key}-course-${i}`)}
           <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
           </T.Mesh>
         {/each}
         {#if wall.lintel}
           <T.Mesh geometry={wall.lintel} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#8a8680" {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#8a8680" />
           </T.Mesh>
         {/if}
         {#if wall.frame}
@@ -899,6 +944,25 @@
               emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
               toneMapped={panel.emissive === '#000000'}
               roughness={0.72}
+            />
+          </T.Mesh>
+        {/each}
+      </T.Group>
+    {/each}
+
+    <!-- The wall picked or under the pointer, washed blue: a copy of its faces drawn over it, cut like the wall. -->
+    {#each highlightedWalls as item (item.key)}
+      <T.Group position.y={item.wall.datumY} userData={halfCut(item.wall.datumY)}>
+        {#each [...item.wall.geoms, ...item.wall.courses] as geom, i (`${item.key}-${i}`)}
+          <T.Mesh geometry={geom} renderOrder={2}>
+            <T.MeshBasicMaterial
+              color={item.colour}
+              transparent
+              opacity={item.opacity}
+              depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={-2}
+              polygonOffsetUnits={-2}
             />
           </T.Mesh>
         {/each}
