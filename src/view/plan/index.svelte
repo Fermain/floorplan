@@ -993,7 +993,7 @@
       const floor = levelFloors.find((item) => item.id === moving.floorId)
       const item = floor?.fixtures?.find((entry) => entry.id === moving.id)
       if (!floor || !item) return
-      const placement = placeFixture(floor, plan, item.kind, { x: item.dx, z: item.dz }, { setup: setupOf(item), downpipes: downpipeSpots })
+      const placement = placeFixture(floor, plan, item.kind, { x: item.dx, z: item.dz }, { setup: setupOf(item), downpipes: downpipeSpots, plot: plotRing })
       if (!placement.problem) fixtureMove = { ...moving, preview: { ...item, ...placement.fixture, id: item.id } }
       return
     }
@@ -1818,7 +1818,7 @@
     for (let i = 0; i < ((fixtureTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
     let best: { floorId: string; placement: FixturePlacement } | null = null
     for (const floor of levelFloors) {
-      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { setup: placeSizes[fixtureKind], downpipes: downpipeSpots })
+      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { setup: placeSizes[fixtureKind], downpipes: downpipeSpots, plot: plotRing })
       if (!best || (best.placement.problem && !placement.problem)) best = { floorId: floor.id, placement }
     }
     return best

@@ -132,15 +132,25 @@
     return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
   }
 
+  // The camera looks at the building, from far enough back to take it all in; on an empty plot, at the plot.
+  const focus = $derived.by(() => {
+    const corners = doc.building.floors.flatMap((floor) => floor.corners)
+    if (corners.length === 0) return { x: plotCenter.x, z: plotCenter.z, reach: 14 }
+    const xs = corners.map((corner) => corner.x)
+    const zs = corners.map((corner) => corner.z)
+    const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs))
+    return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2, reach: Math.max(14, size * 1.1) }
+  })
+
   const orbitTarget = $derived.by(() => {
-    const next: [number, number, number] = [plotCenter.x, plotCenter.y, plotCenter.z]
+    const next: [number, number, number] = [focus.x, plotCenter.y, focus.z]
     if (sameTriple(stableTarget, next)) return stableTarget
     stableTarget = next
     return stableTarget
   })
 
   const cameraPosition = $derived.by(() => {
-    const next: [number, number, number] = [plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]
+    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, focus.z + focus.reach]
     if (sameTriple(stableCamera, next)) return stableCamera
     stableCamera = next
     return stableCamera
@@ -554,7 +564,7 @@
       makeDefault
       position={cameraPosition}
       oncreate={(ref) => {
-        ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
+        ref.lookAt(focus.x, plotCenter.y, focus.z)
       }}
     >
       <OrbitControls

@@ -279,7 +279,11 @@ export function electricalIssues(doc: Document): ElectricalIssue[] {
     const wet = (floor.fixtures ?? []).filter((fixture) => fixture.kind === 'bath' || fixture.kind === 'shower')
     for (const fixture of floor.fixtures ?? []) {
       if (fixture.kind === 'socket') {
-        const near = wet.find((item) => distanceToRing(fixtureFootprint(item), fixture.x, fixture.z) < BATHROOM_ZONE_M)
+        // Only in the same room: a socket on the far side of the bathroom wall is outside the zones.
+        const room = roomOf(fixture.x, fixture.z)?.room
+        const near = wet.find(
+          (item) => roomOf(item.x, item.z)?.room === room && distanceToRing(fixtureFootprint(item), fixture.x, fixture.z) < BATHROOM_ZONE_M,
+        )
         if (near) {
           issues.push({
             id: `zone:${fixture.id}`,

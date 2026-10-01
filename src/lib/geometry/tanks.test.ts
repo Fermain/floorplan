@@ -158,3 +158,16 @@ describe('fitting setup, shared by Plan and Focus', () => {
     expect(inside.fixture).toMatchObject({ bottles: 1, bottleKg: 19, cage: false })
   })
 })
+
+describe('outdoor fittings stay on the plot', () => {
+  it('will not put a tank over the boundary, even to reach a downpipe', () => {
+    const doc = roofed()
+    const floor = doc.building.floors[0]
+    // A downpipe right on the east boundary of a plot that ends a metre past the wall.
+    const ring: [number, number][] = [[0, 0], [12.9, 0], [12.9, 20], [0, 20]]
+    const placed = placeFixture(floor, { x: 12.5, z: 7 }, 'water-tank', { x: 1, z: 0 }, { downpipes: [{ x: 12.85, z: 7 }], plot: ring })
+    expect(placed.problem).not.toBeNull()
+    const free = placeFixture(floor, { x: 12.5, z: 7 }, 'water-tank', { x: 1, z: 0 }, { downpipes: [{ x: 12.85, z: 7 }] })
+    expect(free.problem).toBeNull()
+  })
+})
