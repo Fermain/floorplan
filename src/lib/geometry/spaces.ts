@@ -117,3 +117,35 @@ export function ringLabelPoint(ring: Ring): { x: number; z: number } {
   const centroid = { x: cx / (3 * area), z: cz / (3 * area) }
   return pointInRing(ring, centroid.x, centroid.z) ? centroid : (ring[0] ?? centroid)
 }
+
+export type WallSide = 1 | -1
+
+export type WallFace = { side: WallSide; label: string; outside: boolean }
+
+// Side 1 faces (-dz, dx) from the wall's start to its end; side -1 faces the other way.
+export function wallFaces(floor: Floor, wallId: string): [WallFace, WallFace] | null {
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return null
+  const a = cornerById(floor.corners, wall.startCornerId)
+  const b = cornerById(floor.corners, wall.endCornerId)
+  if (!a || !b) return null
+  const length = Math.hypot(b.x - a.x, b.z - a.z)
+  if (length < 1e-9) return null
+  const normal = { x: -(b.z - a.z) / length, z: (b.x - a.x) / length }
+  const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
+  const layout = layoutSpaces(floor)
+  const cells = [...layout.loose, ...layout.spaces.flatMap((resolved) => resolved.cells)]
+  const face = (side: WallSide): WallFace => {
+    const cell = cellAt(cells, mid.x + normal.x * side * 0.05, mid.z + normal.z * side * 0.05)
+    if (!cell) return { side, label: 'Outside', outside: true }
+    const named = layout.spaces.find((resolved) => resolved.cells.includes(cell))
+    return { side, label: named?.space.name ?? 'Inside', outside: false }
+  }
+  return [face(1), face(-1)]
+}
+
+// Focus opens an outside wall from outside, and any other wall from side 1.
+export function defaultWallSide(faces: [WallFace, WallFace] | null): WallSide {
+  if (!faces) return 1
+  return faces[1].outside && !faces[0].outside ? -1 : 1
+}

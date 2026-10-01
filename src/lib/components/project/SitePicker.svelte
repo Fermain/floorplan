@@ -4,7 +4,8 @@
   import { cn } from '$lib/utils'
   import PlotThumbnail from './PlotThumbnail.svelte'
 
-  let { value = $bindable() }: { value: SamplePlotId } = $props()
+  // onchoose runs on a double-click, after the plot is selected.
+  let { value = $bindable(), onchoose }: { value: SamplePlotId; onchoose?: () => void } = $props()
 
   const number = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 1 })
   const cards = SAMPLE_PLOTS.map((sample) => ({ sample, facts: plotFacts(sample.plot, sample.heightfield) }))
@@ -21,6 +22,10 @@
         value === sample.id && 'border-primary ring-2 ring-primary/20',
       )}
       onclick={() => (value = sample.id)}
+      ondblclick={() => {
+        value = sample.id
+        onchoose?.()
+      }}
     >
       <PlotThumbnail class="aspect-[4/3] w-full rounded-md" plot={sample.plot} heightfield={sample.heightfield} />
       <div>

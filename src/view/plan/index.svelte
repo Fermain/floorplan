@@ -11,6 +11,38 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
   import Trash2 from '@lucide/svelte/icons/trash-2'
+  import Plug from '@lucide/svelte/icons/plug'
+  import FixtureSymbol from './FixtureSymbol.svelte'
+  import {
+    BOTTLE_SIZES,
+    BOTTLES,
+    bottleSetup,
+    FIXTURES,
+    fitFixtureY,
+    fixtureFootprint,
+    fixtureSize,
+    fixtureSpec,
+    MAX_BOTTLES,
+    reseat,
+    swapsFor,
+    TANK_SIZES,
+    TANKS,
+    tankLitres,
+  } from '../../lib/model/fixtures'
+  import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
+  import { suggestRoomFixtures } from '../../lib/geometry/suggest'
+  import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
+  import { gasLayout } from '../../lib/geometry/gas'
+  import {
+    DEFAULT_SEWER_DEPTH_M,
+    DRAIN_FALL,
+    plumbingLayout,
+    SEPTIC_CLEAR_BUILDING_M,
+    SEPTIC_INLET_DEPTH_M,
+    SOAKAWAY_CLEAR_BOUNDARY_M,
+    SOAKAWAY_CLEAR_BUILDING_M,
+    soakawayPoint,
+  } from '../../lib/geometry/plumbing'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -29,6 +61,7 @@
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
   import {
     cellAt,
+    floorCells,
     layoutSpaces,
     ringLabelPoint,
     ROOM_TYPES,
@@ -39,7 +72,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { Stair } from '../../lib/model/types'
+  import type { BottleSize, Fixture, FixtureKind, TankLitres, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -49,8 +82,9 @@
     topStoreyIndex,
     supportingFloor,
   } from '../../lib/model/stories'
-  import { COVERINGS, coveringOf, DEFAULT_COVERING } from '../../lib/geometry/coverings'
-  import type { RoofCovering } from '../../lib/model/types'
+  import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
+  import { GUTTERS, gutterLayout, gutterOf, linkTanks } from '../../lib/geometry/gutters'
+  import type { GutterType, Roof, RoofCovering } from '../../lib/model/types'
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
@@ -90,7 +124,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -152,6 +186,15 @@
   let selectedCell = $state<{ floorId: string; x: number; z: number } | null>(null)
   let newRoomType = $state<RoomType>('bedroom')
   let stairTurn = $state(0)
+  let fixtureKind = $state<FixtureKind>('socket')
+  let fixtureTurn = $state(0)
+  let selectedFixture = $state<{ floorId: string; id: string } | null>(null)
+  let selectedService = $state<ServiceKind | null>(null)
+  let selectedBend = $state<number | null>(null)
+  // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
+  // A fitting being dragged in Select: where it would land, re-snapped to the walls as it goes.
+  let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
+  let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
 
@@ -701,7 +744,7 @@
   }
 
   function cancelDraw() {
-    if (tool === 'draw-stair') {
+    if (tool === 'draw-stair' || tool === 'draw-fixture') {
       setTool('select')
       errorMessage = null
       return
@@ -740,9 +783,15 @@
     plateRing?: number | null
     cell?: { floorId: string; x: number; z: number } | null
     stair?: { floorId: string; id: string } | null
+    fixture?: { floorId: string; id: string } | null
+    service?: ServiceKind | null
+    bend?: number | null
   }) {
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
+    selectedFixture = next.fixture ?? null
+    selectedService = next.service ?? null
+    selectedBend = next.bend ?? null
     selectedWallId = next.wallId ?? null
     selectedEdge = next.edge ?? null
     selectedOutline = next.outline ?? null
@@ -787,8 +836,25 @@
       return
     }
 
+    if (tool === 'draw-fixture') {
+      placeFixtureAt(plan)
+      return
+    }
+
     if (tool === 'select') {
+      if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
+      const fixture = fixtureAt(plan.x, plan.z)
+      if (fixture) {
+        chooseSelection({ fixture })
+        // Floor-standing fittings can be dragged to a new spot; wall points are moved in Focus.
+        const found = levelFixtures.find((item) => item.fixture.id === fixture.id)
+        if (found && fixtureSpec(found.fixture.kind).mount === 'floor') {
+          fixtureMove = { floorId: fixture.floorId, id: fixture.id, preview: null }
+          svgEl?.setPointerCapture(event.pointerId)
+        }
+        return
+      }
       const id = pickWall(activeFloor, plan.x, plan.z)
       if (id) {
         chooseSelection({ wallId: id })
@@ -895,6 +961,8 @@
     pendingDraw = null
     chainOriginId = null
     pointerPlan = null
+    // A rectangle is a one-off: the next click draws walls again.
+    tool = toolBeforeRect
   }
 
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
@@ -920,6 +988,19 @@
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     pointerPlan = plan
     if (!plan || !activeFloor) return
+    if (serviceDrag) {
+      if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
+      return
+    }
+    if (fixtureMove) {
+      const moving = fixtureMove
+      const floor = levelFloors.find((item) => item.id === moving.floorId)
+      const item = floor?.fixtures?.find((entry) => entry.id === moving.id)
+      if (!floor || !item) return
+      const placement = placeFixture(floor, plan, item.kind, { x: item.dx, z: item.dz }, { setup: setupOf(item), downpipes: downpipeSpots })
+      if (!placement.problem) fixtureMove = { ...moving, preview: { ...item, ...placement.fixture, id: item.id } }
+      return
+    }
     if (rotateDrag) {
       const pivot = cornerById(activeFloor.corners, rotateDrag.pivotId)
       if (!pivot) return
@@ -959,6 +1040,23 @@
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
+    }
+    const moved = fixtureMove
+    if (moved) {
+      fixtureMove = null
+      const next = moved.preview
+      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz }))
+      return
+    }
+    const dragging = serviceDrag
+    if (dragging) {
+      serviceDrag = null
+      if (dragging.moved) {
+        if (dragging.target === 'end') applyResult(documentStore.setServicePoint(dragging.kind, dragging.point))
+        else if (dragging.target === 'soakaway') applyResult(documentStore.setSoakaway(dragging.point))
+        else applyResult(documentStore.setServiceBends(dragging.kind, bendsWith(dragging.kind, dragging.target, dragging.point)))
+      }
+      return
     }
     const turning = rotateDrag
     if (turning) {
@@ -1115,7 +1213,7 @@
     const defaults = projectDefaults(documentStore.document)
     applyResult(
       documentStore.setRoof(floor.id, {
-        pitchDeg: defaults.roofPitchDeg,
+        pitchDeg: fitPitch(defaults.roofPitchDeg, defaults.roofCovering),
         eaves: defaults.roofEaves,
         form: defaults.roofForm,
         covering: defaults.roofCovering,
@@ -1129,7 +1227,7 @@
     const current = floor.roof
     const pitchDeg =
       form === 'mono' ? MONO_ROOF_PITCH_DEG : (current.form ?? 'hip') === 'mono' ? DEFAULT_ROOF_PITCH_DEG : current.pitchDeg
-    applyResult(documentStore.setRoof(floor.id, { ...current, form, turns: 0, pitchDeg }))
+    applyResult(documentStore.setRoof(floor.id, { ...current, form, turns: 0, pitchDeg: fitPitch(pitchDeg, current.covering) }))
   }
 
   function turnRoof() {
@@ -1142,7 +1240,11 @@
   function setRoofCovering(covering: RoofCovering) {
     const floor = roofFloor
     if (!floor?.roof) return
-    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering }))
+    applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering, pitchDeg: fitPitch(floor.roof.pitchDeg, covering, floor.roof.covering ?? DEFAULT_COVERING) }))
+  }
+
+  function floorRoof(floorId: string, roof: Roof) {
+    applyResult(documentStore.setRoof(floorId, roof))
   }
 
   function setRoofPitch(value: number) {
@@ -1522,6 +1624,291 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const levelFixtures = $derived(
+    levelFloors.flatMap((floor) => (floor.fixtures ?? []).map((fixture) => ({ floorId: floor.id, fixture }))),
+  )
+
+  const chosenFixture = $derived.by(() => {
+    const pick = selectedFixture
+    if (!pick) return null
+    const found = levelFixtures.find((item) => item.fixture.id === pick.id)
+    if (!found) return null
+    const floor = floors.find((item) => item.id === found.floorId)
+    return { ...found, spec: fixtureSpec(found.fixture.kind), onWall: floor ? fixtureWall(floor, found.fixture) : null }
+  })
+
+  const plumbing = $derived(plumbingLayout(document))
+  const showServices = $derived(activeStoreyIndex === 0 && plumbing.exit !== null)
+
+  function bendsWith(kind: ServiceKind, index: number, point: { x: number; z: number }): { x: number; z: number }[] {
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    if (index >= bends.length || index < 0) return bends
+    bends[index] = point
+    return bends
+  }
+
+  // The route as drawn, with any drag in progress applied.
+  function shownPath(kind: ServiceKind): { x: number; z: number }[] {
+    const exit = plumbing.exit
+    if (!exit) return []
+    const end = kind === 'sewer' ? plumbing.sewer : plumbing.water
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    const drag = serviceDrag
+    if (drag && drag.kind === kind) {
+      if (drag.target === 'end') return [exit, ...bends, drag.point]
+      if (drag.target === 'soakaway') return [exit, ...bends, end]
+      bends[drag.target] = drag.point
+    }
+    return [exit, ...bends, end]
+  }
+
+  const sewerPath = $derived(showServices ? shownPath('sewer') : [])
+  const waterPath = $derived(showServices ? shownPath('water') : [])
+  const sewerProfile = $derived.by(() => {
+    if (!showServices || plumbing.drains.length === 0) return null
+    if (!serviceDrag || serviceDrag.kind !== 'sewer') return plumbing.profile
+    const bends = sewerPath.slice(1, -1)
+    const end = sewerPath.at(-1)!
+    const draft = { ...document, services: { ...(document.services ?? {}), sewer: end, bends: { ...(document.services?.bends ?? {}), sewer: bends } } }
+    return plumbingLayout(draft).profile
+  })
+
+  const soakaway = $derived.by(() => {
+    if (!showServices || !plumbing.septic) return null
+    const drag = serviceDrag
+    if (drag?.target === 'soakaway') return drag.point
+    if (drag?.target === 'end') return soakawayPoint({ ...document, services: { ...(document.services ?? {}), sewer: drag.point } }, drag.point, plumbing.exit)
+    return plumbing.septic.soakaway
+  })
+
+  function nearSegment(path: { x: number; z: number }[], x: number, z: number, reach: number): number | null {
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]
+      const b = path[i]
+      const dx = b.x - a.x
+      const dz = b.z - a.z
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)))
+      if (Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)) < reach) return i
+    }
+    return null
+  }
+
+  function beginServiceDrag(plan: { x: number; z: number }, event: PointerEvent): boolean {
+    if (!showServices || !svgEl) return false
+    const grab = s(0.6)
+    for (const kind of ['sewer', 'water'] as ServiceKind[]) {
+      const path = kind === 'sewer' ? sewerPath : waterPath
+      if (path.length < 2) continue
+      const end = path.at(-1)!
+      const start = (target: 'end' | 'soakaway' | number, point: { x: number; z: number }) => {
+        chooseSelection({ service: kind, bend: typeof target === 'number' ? target : null })
+        serviceDrag = { kind, target, point, moved: false }
+        svgEl?.setPointerCapture(event.pointerId)
+        return true
+      }
+      if (Math.hypot(end.x - plan.x, end.z - plan.z) < grab) return start('end', end)
+      const pit = soakaway
+      if (kind === 'sewer' && pit && Math.hypot(pit.x - plan.x, pit.z - plan.z) < Math.max(grab, 1.2)) return start('soakaway', pit)
+      if (selectedService === kind) {
+        for (let i = 1; i < path.length - 1; i++) {
+          if (Math.hypot(path[i].x - plan.x, path[i].z - plan.z) < grab) return start(i - 1, path[i])
+        }
+        for (let i = 1; i < path.length; i++) {
+          const mid = { x: (path[i - 1].x + path[i].x) / 2, z: (path[i - 1].z + path[i].z) / 2 }
+          if (Math.hypot(mid.x - plan.x, mid.z - plan.z) < grab) {
+            const bends = [...(document.services?.bends?.[kind] ?? [])]
+            bends.splice(i - 1, 0, mid)
+            if (!applyResult(documentStore.setServiceBends(kind, bends))) return true
+            return start(i - 1, mid)
+          }
+        }
+      }
+      if (nearSegment(path, plan.x, plan.z, s(0.25)) !== null) {
+        chooseSelection({ service: kind })
+        return true
+      }
+    }
+    return false
+  }
+
+  function removeSelectedBend() {
+    const kind = selectedService
+    const index = selectedBend
+    if (!kind || index === null) return
+    const bends = [...(document.services?.bends?.[kind] ?? [])]
+    bends.splice(index, 1)
+    if (applyResult(documentStore.setServiceBends(kind, bends))) chooseSelection({ service: kind })
+  }
+
+  function straightenSelected() {
+    const kind = selectedService
+    if (!kind) return
+    if (applyResult(documentStore.setServiceBends(kind, []))) chooseSelection({ service: kind })
+  }
+
+  const gas = $derived(gasLayout(document))
+  // Downpipes come down to the ground floor, where rainwater tanks can stand under them.
+  const eaves = $derived(gutterLayout(document))
+  const downpipeSpots = $derived(activeStoreyIndex === 0 ? eaves.downpipes : [])
+  // A rainwater tank being dragged or placed connects to downpipes near where it would land.
+  const shownDownpipes = $derived.by(() => {
+    if (activeStoreyIndex !== 0) return []
+    const moving = fixtureMove?.preview
+    const ghost = fixtureGhost && !fixtureGhost.placement.problem && fixtureGhost.placement.fixture.kind === 'water-tank' ? fixtureGhost.placement.fixture : null
+    const extra = [moving?.kind === 'water-tank' ? moving : null, ghost].filter((item) => item !== null)
+    if (!moving && extra.length === 0) return eaves.downpipes
+    const ground = document.building.floors.find((floor) => floor.index === 0)
+    if (!ground) return eaves.downpipes
+    const fixtures = (ground.fixtures ?? []).filter((item) => item.id !== moving?.id)
+    const draft = { ...document, building: { ...document.building, floors: document.building.floors.map((floor) => (floor.id === ground.id ? { ...ground, fixtures: [...fixtures, ...extra.map((item, i) => ({ ...item, id: `preview-${i}` }))] } : floor)) } }
+    return linkTanks(draft, eaves.downpipes)
+  })
+
+  // Gas bottles and rainwater tanks keep their own setup as they move.
+  function setupOf(fixture: Fixture) {
+    if (fixture.kind === 'gas-cylinder') return { bottles: fixture.bottles, bottleKg: fixture.bottleKg, cage: fixture.cage }
+    if (fixture.kind === 'water-tank') return { litres: fixture.litres }
+    return {}
+  }
+  // Gas pipes run round the outside of the ground floor; the chosen appliance or bottles pick out their own.
+  const gasLines = $derived.by(() => {
+    if (activeStoreyIndex !== 0) return []
+    const id = chosenFixture?.fixture.id
+    return gas.runs.map((run) => ({ id: run.item.fixture.id, path: run.path, chosen: id === run.item.fixture.id || id === run.cylinder.fixture.id }))
+  })
+
+  function swapChosenFixture(kind: FixtureKind) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    applyResult(documentStore.setFixtureKind(chosen.floorId, chosen.fixture.id, kind))
+  }
+
+  const wiring = $derived(electricalLayout(document))
+  const wiringProblems = $derived(electricalIssues(document))
+
+  const shownCircuits = $derived.by(() => {
+    const chosen = chosenFixture
+    if (!chosen) return []
+    if (chosen.fixture.kind === 'db-board') return wiring.circuits
+    return wiring.circuits.filter((circuit) => circuit.points.some((point) => point.fixture.id === chosen.fixture.id))
+  })
+
+  // Runs drawn square to the walls, as the cable goes across the ceiling.
+  function circuitLines(circuit: Circuit): SvgPoint[] {
+    const level = new Set(levelFloors.map((floor) => floor.id))
+    const points: SvgPoint[] = []
+    circuit.path.forEach((point, i) => {
+      if (!level.has(point.floorId)) return
+      const previous = circuit.path[i - 1]
+      if (previous && level.has(previous.floorId)) points.push([point.x, previous.z])
+      points.push([point.x, point.z])
+    })
+    return points
+  }
+
+  function fixtureAt(x: number, z: number): { floorId: string; id: string } | null {
+    for (const item of [...levelFixtures].reverse()) {
+      const ring = fixtureFootprint(item.fixture)
+      const spec = fixtureSize(item.fixture)
+      const hit = spec.width < 0.3 || spec.depth < 0.3
+        ? Math.hypot(item.fixture.x - x, item.fixture.z - z) < 0.2
+        : pointInRing(ring, x, z)
+      if (hit) return { floorId: item.floorId, id: item.fixture.id }
+    }
+    return null
+  }
+
+  const fixtureGhost = $derived.by(() => {
+    const pointer = pointerPlan
+    if (tool !== 'draw-fixture' || !pointer || !activeFloor) return null
+    const grid = highlightedDirection(activeFloor)
+    const length = grid ? Math.hypot(grid.dx, grid.dz) : 0
+    let preferred = grid && length > 1e-9 ? { x: grid.dx / length, z: grid.dz / length } : { x: 1, z: 0 }
+    for (let i = 0; i < ((fixtureTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
+    let best: { floorId: string; placement: FixturePlacement } | null = null
+    for (const floor of levelFloors) {
+      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { downpipes: downpipeSpots })
+      if (!best || (best.placement.problem && !placement.problem)) best = { floorId: floor.id, placement }
+    }
+    return best
+  })
+
+  function placeFixtureAt(plan: { x: number; z: number }) {
+    pointerPlan = plan
+    const ghost = fixtureGhost
+    if (!ghost) return
+    if (ghost.placement.problem) {
+      errorMessage = ghost.placement.problem
+      return
+    }
+    applyResult(documentStore.addFixture(ghost.floorId, ghost.placement.fixture))
+  }
+
+  function setChosenBottles(patch: Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    const next = reseat(chosen.fixture, { ...bottleSetupPatch(chosen.fixture), ...patch })
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, bottles: next.bottles, bottleKg: next.bottleKg, cage: next.cage }))
+  }
+
+  function setChosenTank(litres: TankLitres) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    const next = reseat(chosen.fixture, { litres })
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, litres }))
+  }
+
+  function bottleSetupPatch(fixture: Fixture): Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'> {
+    const setup = bottleSetup(fixture)
+    return { bottles: setup.count, bottleKg: setup.kg, cage: setup.cage }
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-fixture') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'r' && event.key !== 'R') return
+      if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      event.preventDefault()
+      fixtureTurn += 1
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  function removeChosenFixture() {
+    const chosen = chosenFixture
+    if (!chosen) return
+    if (applyResult(documentStore.removeFixture(chosen.floorId, chosen.fixture.id))) chooseSelection({})
+  }
+
+  function setChosenFixtureHeight(mm: number) {
+    const chosen = chosenFixture
+    if (!chosen || !Number.isFinite(mm)) return
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { y: fitFixtureY(chosen.fixture.kind, mm / 1000) }))
+  }
+
+  function suggestForSelectedRoom() {
+    const chosen = selectedRoom
+    if (!chosen?.resolved) return
+    const floor = floors.find((item) => item.id === chosen.floorId)
+    if (!floor) return
+    const cells = floorCells(floor)
+    const drafts = chosen.resolved.cells.flatMap((cell) => {
+      const own = cells.find((item) => roomKey(item.room.cornerIds) === roomKey(cell.room.cornerIds)) ?? cell
+      return suggestRoomFixtures(document, floor, own, chosen.resolved!.space.type, cells)
+    })
+    const ok = applyResult(documentStore.addFixtures(floor.id, drafts))
+    if (ok) errorMessage = null
+  }
+
+  const selectedRoomFixtures = $derived.by(() => {
+    const chosen = selectedRoom
+    if (!chosen?.resolved) return 0
+    return levelFixtures.filter(
+      (item) => item.floorId === chosen.floorId && chosen.resolved!.cells.some((cell) => pointInRing(cell.ring, item.fixture.x, item.fixture.z)),
+    ).length
+  })
+
   function patchChosenStair(patch: Partial<Pick<Stair, 'width' | 'x' | 'z' | 'dx' | 'dz'>>) {
     const chosen = chosenStair
     if (!chosen) return
@@ -1549,6 +1936,8 @@
   const deletable = $derived.by((): { label: string; run: () => void } | null => {
     if (roofFloor) return null
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
+    if (selectedService && selectedBend !== null) return { label: 'Delete bend', run: removeSelectedBend }
+    if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -1576,6 +1965,14 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-fixture') {
+      const ghost = fixtureGhost
+      const spec = fixtureSpec(fixtureKind)
+      if (!ghost) return `${spec.name}: ${spec.text}`
+      if (ghost.placement.problem) return `${spec.name}. ${ghost.placement.problem}`
+      const height = spec.mount === 'ceiling' ? '' : ` ${Math.round(ghost.placement.fixture.y * 1000)} mm up.`
+      return `${spec.name}.${height} Click to place; Esc when done.`
+    }
     if (tool === 'draw-stair') {
       const ghost = stairGhost
       if (!ghost) return 'Point inside a room to place a stair. It needs a storey above it.'
@@ -1648,6 +2045,10 @@
       }
       if (floating) return 'Nothing is enclosed on the storey below, so this storey has no floor to stand on.'
     }
+    const levelIds = new Set(levelFloors.map((floor) => floor.id))
+    const wiringProblem = wiringProblems.find((issue) => !issue.floorId || levelIds.has(issue.floorId))
+    if (wiringProblem && levelFixtures.length > 0) return wiringProblem.text
+    if (activeStoreyIndex === 0 && plumbing.issues[0]) return plumbing.issues[0].text
     if (activeStoreyIndex > 0 && unlandedWallIds.size > 0) {
       return 'A wall on this storey does not land on a wall below. A logical wall below can carry it.'
     }
@@ -1698,7 +2099,35 @@
       <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
         <Footprints /><span class="hidden sm:inline">Stair</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
+        <Plug /><span class="hidden sm:inline">Fittings</span>
+      </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if tool === 'draw-fixture'}
+      <Select.Root type="single" value={fixtureKind} onValueChange={(next) => (fixtureKind = next as FixtureKind)}>
+        <Select.Trigger size="sm" class="w-44" aria-label="Fitting">{fixtureSpec(fixtureKind).name}</Select.Trigger>
+        <Select.Content>
+          <Select.Group>
+            <Select.Label>Electrical</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'electrical') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+          <Select.Group>
+            <Select.Label>Plumbing</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'plumbing') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+          <Select.Group>
+            <Select.Label>Gas</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'gas') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+        </Select.Content>
+      </Select.Root>
+    {/if}
     {#if deletable}
       <Button
         variant="ghost"
@@ -2034,6 +2463,92 @@
             ])}
             class="stair-arrow"
           />
+        {/if}
+      </g>
+      <g class="circuits" pointer-events="none">
+        {#each shownCircuits as circuit (circuit.id)}
+          {@const points = circuitLines(circuit)}
+          {#if points.length > 1}
+            <polyline points={pointsAttr(points)} fill="none" stroke="#d97706" stroke-width={s(0.02)} stroke-dasharray={dash(0.15, 0.1)} />
+          {/if}
+        {/each}
+      </g>
+      <g class="downpipes" pointer-events="none">
+        {#each shownDownpipes as pipe, i (i)}
+          {#if pipe.tank}
+            <line x1={pipe.x} y1={pipe.z} x2={pipe.tank.x} y2={pipe.tank.z} class="downpipe-lead" stroke-width={s(0.05)} />
+          {/if}
+          <circle cx={pipe.x} cy={pipe.z} r={s(0.09)} class="downpipe" class:linked={pipe.tank} stroke-width={s(0.02)} />
+        {/each}
+      </g>
+      <g class="gas" pointer-events="none">
+        {#each gasLines as line (line.id)}
+          <polyline
+            points={pointsAttr(line.path.map((p) => [p.x, p.z] as SvgPoint))}
+            fill="none"
+            class="service-line gas"
+            class:chosen={line.chosen}
+            stroke-width={s(line.chosen ? 0.05 : 0.03)}
+          />
+        {/each}
+      </g>
+      {#if showServices}
+        <g class="services" pointer-events="none">
+          {#each [['water', waterPath], ['sewer', sewerPath]] as [kind, path] (kind)}
+            {@const points = path as { x: number; z: number }[]}
+            {@const chosen = selectedService === kind}
+            {#if points.length > 1 && (kind === 'water' || plumbing.drains.length > 0)}
+              <polyline
+                points={pointsAttr(points.map((p) => [p.x, p.z] as SvgPoint))}
+                fill="none"
+                class="service-line {kind}"
+                class:chosen
+                stroke-width={s(chosen ? 0.06 : 0.04)}
+              />
+              {@const end = points.at(-1)!}
+              {#if kind === 'sewer' && soakaway}
+                <line x1={end.x} y1={end.z} x2={soakaway.x} y2={soakaway.z} class="service-line sewer overflow" stroke-width={s(0.03)} />
+                <rect x={soakaway.x - 1.5} y={soakaway.z - 0.5} width={3} height={1} class="service-mark soakaway" stroke-width={s(0.03)} />
+                <rect x={end.x - 1.2} y={end.z - 0.7} width={2.4} height={1.4} rx={0.1} class="service-mark septic" stroke-width={s(0.03)} />
+              {:else if kind === 'sewer'}
+                <circle cx={end.x} cy={end.z} r={s(0.3)} class="service-mark sewer" stroke-width={s(0.03)} />
+              {:else}
+                <rect x={end.x - s(0.25)} y={end.z - s(0.25)} width={s(0.5)} height={s(0.5)} class="service-mark water" stroke-width={s(0.03)} />
+              {/if}
+              {#if chosen}
+                {#each points.slice(1, -1) as bend, i (i)}
+                  <circle cx={bend.x} cy={bend.z} r={s(0.14)} class="service-handle" class:active={selectedBend === i} stroke-width={s(0.025)} />
+                {/each}
+                {#each points.slice(1) as point, i (i)}
+                  {@const mid = { x: (points[i].x + point.x) / 2, z: (points[i].z + point.z) / 2 }}
+                  <g transform={upright(mid.x, mid.z)}>
+                    <circle r={s(0.11)} class="service-add" stroke-width={s(0.02)} />
+                    <line x1={-s(0.06)} x2={s(0.06)} stroke-width={s(0.02)} class="service-add-mark" />
+                    <line y1={-s(0.06)} y2={s(0.06)} stroke-width={s(0.02)} class="service-add-mark" />
+                  </g>
+                {/each}
+              {/if}
+            {/if}
+          {/each}
+          {#if plumbing.exit}
+            <circle cx={plumbing.exit.x} cy={plumbing.exit.z} r={s(0.1)} class="service-exit" />
+          {/if}
+          {#if selectedService === 'sewer' && sewerProfile}
+            {#each sewerProfile.points as point, i (i)}
+              <text transform={upright(point.x, point.z)} x={s(0.3)} y={-s(0.2)} font-size={s(0.32)} class="service-depth" class:short={i === sewerProfile.points.length - 1 && sewerProfile.shortBy > 0.005}>
+                {Math.round((point.ground - point.invert) * 1000)} deep
+              </text>
+            {/each}
+          {/if}
+        </g>
+      {/if}
+      <g class="fixtures" pointer-events="none">
+        {#each levelFixtures as item (item.fixture.id)}
+          {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+        {/each}
+        {#if fixtureGhost}
+          <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
         {/if}
       </g>
       <g class="room-labels" pointer-events="none">
@@ -2381,6 +2896,202 @@
         </div>
       </aside>
     {/if}
+    {#if selectedService && showServices && !roofFloor}
+      <aside class="inspector" aria-label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}>
+        {#if selectedService === 'sewer'}
+          <h2 class="font-semibold">{plumbing.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</h2>
+          <div class="grid gap-1.5">
+            <Label>Connects to</Label>
+            <Select.Root
+              type="single"
+              value={document.services?.sewerType ?? 'municipal'}
+              onValueChange={(next) => applyResult(documentStore.setSewerType(next as SewerType))}
+            >
+              <Select.Trigger class="w-full">{plumbing.septic ? 'Septic tank and soakaway' : 'Municipal sewer'}</Select.Trigger>
+              <Select.Content>
+                <Select.Item value="municipal" label="Municipal sewer" />
+                <Select.Item value="septic" label="Septic tank and soakaway" />
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if plumbing.septic}
+            <p>
+              A {plumbing.septic.litres.toLocaleString('en-ZA')} litre tank for {plumbing.septic.bedrooms}
+              {plumbing.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}, overflowing to a soakaway downhill. Drag either to move it.
+            </p>
+            <p class="text-xs text-muted-foreground">
+              Rules of thumb: the tank {SEPTIC_CLEAR_BUILDING_M} m from buildings, the soakaway {SOAKAWAY_CLEAR_BUILDING_M} m from
+              buildings and {SOAKAWAY_CLEAR_BOUNDARY_M} m from the boundary. Your municipality sets the real figures.
+            </p>
+          {/if}
+          {#if sewerProfile}
+            {@const last = sewerProfile.points.at(-1)!}
+            <p>
+              {checkFormat.format(sewerProfile.length)} m of 110 mm drain at 1 in {DRAIN_FALL[110]} or steeper, down to
+              {checkFormat.format(sewerProfile.deepest)} m at its deepest.
+            </p>
+            {#if sewerProfile.shortBy > 0.005}
+              <p class="text-amber-700">
+                It reaches the connection {Math.round(sewerProfile.shortBy * 1000)} mm too low. Drag the connection to lower
+                ground, bend the route over lower ground, or plan for a pump.
+              </p>
+            {:else}
+              <p class="text-muted-foreground">
+                It arrives {Math.round((last.ground - last.invert) * 1000)} mm below the ground, above the
+                {plumbing.septic ? 'tank inlet' : 'sewer'} at
+                {Math.round((plumbing.septic ? SEPTIC_INLET_DEPTH_M : (document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M)) * 1000)} mm.
+              </p>
+            {/if}
+          {:else}
+            <p class="text-muted-foreground">Place a toilet, basin, shower, bath or sink and the drain appears.</p>
+          {/if}
+          <div class="grid gap-1.5" hidden={plumbing.septic !== null}>
+            <Label for="sewer-depth">Sewer depth at the connection (mm)</Label>
+            <Input
+              id="sewer-depth"
+              type="number"
+              min="300"
+              step="50"
+              value={Math.round((document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M) * 1000)}
+              onchange={(event) => applyResult(documentStore.setSewerDepth(Number(event.currentTarget.value) / 1000))}
+            />
+          </div>
+        {:else}
+          <h2 class="font-semibold">Water main</h2>
+          <p>{checkFormat.format(plumbing.waterMain)} m of 22 mm pipe from the meter to the house, in a 450 mm trench.</p>
+        {/if}
+        <p class="text-xs text-muted-foreground">
+          Drag the {selectedService === 'sewer' ? 'connection' : 'meter'} along the boundary, drag a + to add a bend, and Delete removes a selected bend.
+        </p>
+        <Button variant="outline" onclick={straightenSelected}>Straighten the route</Button>
+      </aside>
+    {/if}
+    {#if chosenFixture && !roofFloor}
+      <aside class="inspector" aria-label="Fitting">
+        <h2 class="font-semibold">{chosenFixture.spec.name}</h2>
+        <p class="text-muted-foreground">{chosenFixture.spec.text}</p>
+        {#if chosenFixture.fixture.kind === 'db-board'}
+          <p>
+            Feeds {wiring.circuits.length} {wiring.circuits.length === 1 ? 'circuit' : 'circuits'}{wiring.boardSize
+              ? `; a ${wiring.boardSize}-way board.`
+              : '.'}
+          </p>
+        {:else if shownCircuits[0]}
+          {@const circuit = shownCircuits[0]}
+          <p>
+            On <span class="font-medium">{circuit.id}</span>, {circuit.name.toLowerCase()}: {circuit.breaker} A breaker,
+            {circuit.cable} mm² cable, {circuit.points.length}
+            {circuit.points.length === 1 ? 'point' : 'points'}, about {checkFormat.format(circuit.length)} m of cable.
+          </p>
+        {:else if chosenFixture.spec.trade === 'electrical' && chosenFixture.fixture.kind !== 'stove'}
+          <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
+        {/if}
+        {#if swapsFor(chosenFixture.fixture.kind).length > 0}
+          <div class="grid gap-1.5">
+            <Label for="fixture-kind">Type</Label>
+            <Select.Root type="single" value={chosenFixture.fixture.kind} onValueChange={(next) => next && swapChosenFixture(next as FixtureKind)}>
+              <Select.Trigger id="fixture-kind" size="sm" class="w-full">{chosenFixture.spec.name}</Select.Trigger>
+              <Select.Content>
+                {#each swapsFor(chosenFixture.fixture.kind) as kind (kind)}
+                  <Select.Item value={kind} label={fixtureSpec(kind).name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        {/if}
+        {#if chosenFixture.fixture.kind === 'water-tank'}
+          {@const feeds = eaves.downpipes.filter((pipe) => pipe.tank?.id === chosenFixture?.fixture.id).length}
+          <div class="grid gap-1.5">
+            <Label for="tank-size">Size</Label>
+            <Select.Root type="single" value={String(tankLitres(chosenFixture.fixture))} onValueChange={(next) => next && setChosenTank(Number(next) as TankLitres)}>
+              <Select.Trigger id="tank-size" size="sm" class="w-full">{TANKS[tankLitres(chosenFixture.fixture)].name}</Select.Trigger>
+              <Select.Content>
+                {#each TANK_SIZES as litres (litres)}
+                  <Select.Item value={String(litres)} label={TANKS[litres].name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if feeds > 0}
+            <p>Fed by {feeds} {feeds === 1 ? 'downpipe' : 'downpipes'} from the gutters, through a leaf trap and first-flush diverter.</p>
+          {:else}
+            <p class="text-amber-700">No downpipe reaches it. Drag it along the wall to stand under one.</p>
+          {/if}
+        {/if}
+        {#if chosenFixture.fixture.kind === 'gas-cylinder'}
+          {@const setup = bottleSetup(chosenFixture.fixture)}
+          {@const fed = gas.runs.filter((run) => run.cylinder.fixture.id === chosenFixture?.fixture.id)}
+          <div class="grid grid-cols-2 gap-2">
+            <div class="grid gap-1.5">
+              <Label for="bottle-count">Bottles</Label>
+              <Select.Root type="single" value={String(setup.count)} onValueChange={(next) => next && setChosenBottles({ bottles: Number(next) })}>
+                <Select.Trigger id="bottle-count" size="sm" class="w-full">{setup.count}</Select.Trigger>
+                <Select.Content>
+                  {#each Array.from({ length: MAX_BOTTLES }, (_, i) => i + 1) as count (count)}
+                    <Select.Item value={String(count)} label={String(count)} />
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="grid gap-1.5">
+              <Label for="bottle-size">Size</Label>
+              <Select.Root type="single" value={String(setup.kg)} onValueChange={(next) => next && setChosenBottles({ bottleKg: Number(next) as BottleSize })}>
+                <Select.Trigger id="bottle-size" size="sm" class="w-full">{BOTTLES[setup.kg].name}</Select.Trigger>
+                <Select.Content>
+                  {#each BOTTLE_SIZES as kg (kg)}
+                    <Select.Item value={String(kg)} label={BOTTLES[kg].name} />
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="col-span-2 grid gap-1.5">
+              <Label for="bottle-cage">Cage</Label>
+              <Select.Root type="single" value={setup.cage ? 'yes' : 'no'} onValueChange={(next) => next && setChosenBottles({ cage: next === 'yes' })}>
+                <Select.Trigger id="bottle-cage" size="sm" class="w-full">{setup.cage ? 'Locked steel cage' : 'No cage'}</Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="yes" label="Locked steel cage" />
+                  <Select.Item value="no" label="No cage" />
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+          <p>
+            Feeds {fed.length} {fed.length === 1 ? 'appliance' : 'appliances'}{fed.length > 0
+              ? `, through about ${checkFormat.format(fed.reduce((sum, run) => sum + run.length, 0))} m of 15 mm copper pipe.`
+              : '.'}
+          </p>
+        {:else if chosenFixture.spec.trade === 'gas'}
+          {@const run = gas.runs.find((item) => item.item.fixture.id === chosenFixture?.fixture.id)}
+          {#if run}
+            <p>
+              About {checkFormat.format(run.length)} m of 15 mm copper pipe from the gas bottles: {checkFormat.format(run.outside)} m along the
+              outside wall{run.inside > 0.05 ? `, ${checkFormat.format(run.inside)} m through and inside` : ''}.
+            </p>
+          {:else}
+            <p class="text-amber-700">No gas yet: place gas bottles against an outside wall.</p>
+          {/if}
+        {/if}
+        {#if chosenFixture.spec.mount !== 'ceiling'}
+          <div class="grid gap-1.5">
+            <Label for="fixture-height">{chosenFixture.spec.mount === 'wall' ? 'Height above floor (mm)' : 'Raised off the floor (mm)'}</Label>
+            <Input
+              id="fixture-height"
+              type="number"
+              min="0"
+              step="50"
+              value={Math.round(chosenFixture.fixture.y * 1000)}
+              onchange={(event) => setChosenFixtureHeight(Number(event.currentTarget.value))}
+            />
+          </div>
+        {/if}
+        <div class="grid gap-2">
+          {#if chosenFixture.onWall}
+            <Button variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
+          {/if}
+          <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
+        </div>
+      </aside>
+    {/if}
     {#if selectedRoom && !roofFloor}
       <aside class="inspector" aria-label="Room">
         {#if selectedRoom.resolved}
@@ -2452,6 +3163,14 @@
           {:else if !isHabitable(resolved.space.type)}
             <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
+          <div class="grid gap-1.5 border-t pt-3">
+            <Button variant="outline" onclick={suggestForSelectedRoom}><Plug />Suggest fittings</Button>
+            <p class="text-xs text-muted-foreground">
+              {selectedRoomFixtures > 0
+                ? `${selectedRoomFixtures} fittings in this room. Suggesting adds a fresh set.`
+                : `Lights, switches, sockets and plumbing for a ${roomTypeLabel(resolved.space.type).toLowerCase()}.`}
+            </p>
+          </div>
           <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
           <p>
@@ -2508,6 +3227,24 @@
                 {/each}
               </Select.Content>
             </Select.Root>
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Gutters</Label>
+            <Select.Root
+              type="single"
+              value={gutterOf(roof)}
+              onValueChange={(next) => roofFloor && floorRoof(roofFloor.id, { ...roof, gutter: next as GutterType })}
+            >
+              <Select.Trigger class="w-full">{GUTTERS[gutterOf(roof)].name}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(GUTTERS) as [id, spec] (id)}
+                  <Select.Item value={id} label={spec.name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+            <p class="text-xs text-muted-foreground">
+              Every eave gets one{roof.noGutter?.length ? `, except above ${roof.noGutter.length} ${roof.noGutter.length === 1 ? 'wall' : 'walls'}` : ''}. Take it off a wall in Focus.
+            </p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="grid gap-1.5">
@@ -2647,6 +3384,82 @@
   .room-area {
     fill: #52525b;
     font-family: system-ui, sans-serif;
+  }
+
+  .service-line {
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .service-line.sewer {
+    stroke: #7c4a1e;
+  }
+  .downpipe {
+    fill: #ffffff;
+    stroke: #57534e;
+  }
+  .downpipe.linked {
+    fill: #0284c7;
+    stroke: #0369a1;
+  }
+  .downpipe-lead {
+    stroke: #0284c7;
+    stroke-linecap: round;
+  }
+  .service-line.gas {
+    stroke: #a21caf;
+    stroke-dasharray: 0.12 0.08;
+  }
+  .service-line.gas.chosen {
+    stroke-dasharray: none;
+  }
+  .service-line.water {
+    stroke: #0284c7;
+    stroke-dasharray: 0.3 0.15;
+  }
+  .service-mark.sewer {
+    fill: #fef3c7;
+    stroke: #7c4a1e;
+  }
+  .service-mark.water {
+    fill: #e0f2fe;
+    stroke: #0284c7;
+  }
+  .service-line.overflow {
+    stroke-dasharray: 0.2 0.12;
+  }
+  .service-mark.septic {
+    fill: #e7e5e4;
+    stroke: #7c4a1e;
+  }
+  .service-mark.soakaway {
+    fill: #f5f5f4;
+    stroke: #7c4a1e;
+    stroke-dasharray: 0.2 0.12;
+  }
+  .service-handle {
+    fill: #ffffff;
+    stroke: #2563eb;
+  }
+  .service-handle.active {
+    fill: #2563eb;
+  }
+  .service-add {
+    fill: #ffffff;
+    stroke: #93c5fd;
+  }
+  .service-add-mark {
+    stroke: #2563eb;
+  }
+  .service-exit {
+    fill: #7c4a1e;
+  }
+  .service-depth {
+    fill: #7c4a1e;
+    font-family: system-ui, sans-serif;
+  }
+  .service-depth.short {
+    fill: #b91c1c;
+    font-weight: 600;
   }
 
   .stair-flight {

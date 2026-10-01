@@ -11,8 +11,10 @@
   import OpeningFields from '$lib/components/project/OpeningFields.svelte'
   import RoofPicker from '$lib/components/project/RoofPicker.svelte'
   import WallPicker from '$lib/components/project/WallPicker.svelte'
+  import TrimPicker from '$lib/components/project/TrimPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
+  import { DEFAULT_RAINFALL_MM } from '$lib/geometry/plumbing'
   import type { ProjectDefaults, WallSystemId } from '$lib/model/types'
 
   const plot = $derived(documentStore.document.plot)
@@ -125,9 +127,9 @@
     <Card.Root>
       <Card.Header>
         <Card.Title>Location</Card.Title>
-        <Card.Description>Used for the sun path in Review.</Card.Description>
+        <Card.Description>Used for the sun path in Review, and the rainfall for sizing rainwater tanks.</Card.Description>
       </Card.Header>
-      <Card.Content class="grid gap-4 sm:grid-cols-3">
+      <Card.Content class="grid gap-4 sm:grid-cols-4">
         <div class="grid gap-1.5">
           <Label for="latitude">Latitude</Label>
           <Input
@@ -163,6 +165,20 @@
                 plot.longitude,
                 !Number.isFinite(value) || value < -180 || value > 180 ? 'Longitude must be between −180 and 180.' : '',
               )
+            }}
+          />
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="rainfall">Annual rainfall (mm)</Label>
+          <Input
+            id="rainfall"
+            type="number"
+            min="50"
+            step="10"
+            value={documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM}
+            onchange={(event) => {
+              const result = documentStore.setRainfall(Number(event.currentTarget.value))
+              if (!result.ok) event.currentTarget.value = String(documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM)
             }}
           />
         </div>
@@ -247,6 +263,18 @@
           bind:windowHeight={() => defaults.windowHeight, (next) => setDefault('windowHeight', next)}
           bind:sill={() => defaults.sill, (next) => setDefault('sill', next)}
           bind:doorHeight={() => defaults.doorHeight, (next) => setDefault('doorHeight', next)}
+        />
+      </Card.Content>
+    </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Skirting and cornice</Card.Title>
+        <Card.Description>Round every room unless a wall has its own choice in Focus.</Card.Description>
+      </Card.Header>
+      <Card.Content>
+        <TrimPicker
+          bind:skirting={() => defaults.skirting, (next) => setDefault('skirting', next)}
+          bind:cornice={() => defaults.cornice, (next) => setDefault('cornice', next)}
         />
       </Card.Content>
     </Card.Root>

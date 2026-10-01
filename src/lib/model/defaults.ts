@@ -18,6 +18,8 @@ export const BASE_DEFAULTS: ProjectDefaults = {
   windowHeight: DEFAULT_WINDOW_HEIGHT,
   sill: DEFAULT_SILL,
   doorHeight: DEFAULT_DOOR_HEIGHT,
+  skirting: 'rounded',
+  cornice: 'rounded',
 }
 
 export function projectDefaults(document: Pick<Document, 'building'>): ProjectDefaults {
@@ -32,5 +34,7 @@ export function defaultsProblem(defaults: ProjectDefaults): string | null {
   if (defaults.doorHeight > WALL_HEAD + 1e-9) return 'door head is above the wall head'
   if (!(defaults.roofPitchDeg > 0 && defaults.roofPitchDeg < 90)) return 'pitch out of range'
   if (!(defaults.roofEaves >= 0)) return 'eaves out of range'
+  if (!['rounded', 'square', 'angled', 'none'].includes(defaults.skirting)) return 'unknown skirting'
+  if (!['rounded', 'coral', 'none'].includes(defaults.cornice)) return 'unknown cornice'
   return null
 }

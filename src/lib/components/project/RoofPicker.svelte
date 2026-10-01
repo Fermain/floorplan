@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
-  import { COVERINGS } from '$lib/geometry/coverings'
+  import { COVERINGS, fitPitch } from '$lib/geometry/coverings'
   import type { RoofCovering, RoofForm } from '$lib/model/types'
   import { cn } from '$lib/utils'
   import CoveringSwatch from './CoveringSwatch.svelte'
@@ -12,7 +12,8 @@
     covering = $bindable(),
     pitchDeg = $bindable(),
     eaves = $bindable(),
-  }: { form: RoofForm; covering: RoofCovering; pitchDeg: number; eaves: number } = $props()
+    onchoose,
+  }: { form: RoofForm; covering: RoofCovering; pitchDeg: number; eaves: number; onchoose?: () => void } = $props()
 
   const FORMS: { id: RoofForm; name: string; text: string }[] = [
     { id: 'hip', name: 'Hip', text: 'Slopes on every side. Sheds wind well and needs no gable walls.' },
@@ -26,6 +27,13 @@
     if (next === 'mono' && form !== 'mono') pitchDeg = 10
     if (next !== 'mono' && form === 'mono') pitchDeg = 30
     form = next
+    pitchDeg = fitPitch(pitchDeg, covering)
+  }
+
+  function chooseCovering(next: RoofCovering) {
+    const previous = covering
+    covering = next
+    pitchDeg = fitPitch(pitchDeg, next, previous)
   }
 </script>
 
@@ -43,6 +51,10 @@
             form === item.id && 'border-primary ring-2 ring-primary/20',
           )}
           onclick={() => chooseForm(item.id)}
+          ondblclick={() => {
+            chooseForm(item.id)
+            onchoose?.()
+          }}
         >
           <RoofGlyph class="h-16 w-full" form={item.id} />
           <div class="font-medium">{item.name}</div>
@@ -63,7 +75,11 @@
             'flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/50',
             covering === item.id && 'border-primary ring-2 ring-primary/20',
           )}
-          onclick={() => (covering = item.id)}
+          onclick={() => chooseCovering(item.id)}
+          ondblclick={() => {
+            chooseCovering(item.id)
+            onchoose?.()
+          }}
         >
           <CoveringSwatch class="h-14 w-full rounded-md" spec={item} />
           <div class="font-medium">{item.name}</div>
