@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addCorner, addWall, addWallRing, joinCell, leaveCell, moveCorners, nameCell, updateSpace } from '../model/mutations'
 import type { Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { layoutSpaces } from './spaces'
+import { defaultWallSide, layoutSpaces, wallFaces } from './spaces'
 
 function house(systemId: 'clay-cavity' | 'block-140' = 'clay-cavity'): Document {
   const d = fixtureDocument()
@@ -128,5 +128,33 @@ describe('rooms', () => {
     doc = addWall(doc, fid, a.id, b.id, 'double').document
     expect(layoutSpaces(doc.building.floors[0])).toEqual({ spaces: [], loose: [] })
     expect(nameCell(doc, fid, 6, 5, 'Nowhere', 'other').ok).toBe(false)
+  })
+})
+
+describe('wall faces', () => {
+  function wallAt(doc: Document, x0: number, z0: number, x1: number, z1: number) {
+    const floor = doc.building.floors[0]
+    return floor.walls.find((wall) => {
+      const a = floor.corners.find((c) => c.id === wall.startCornerId)!
+      const b = floor.corners.find((c) => c.id === wall.endCornerId)!
+      const forward = a.x === x0 && a.z === z0 && b.x === x1 && b.z === z1
+      const back = a.x === x1 && a.z === z1 && b.x === x0 && b.z === z0
+      return forward || back
+    })!
+  }
+
+  it('names the room on each side and opens an outside wall from outside', () => {
+    let doc = divided(house())
+    const floor = doc.building.floors[0]
+    doc = nameCell(doc, floor.id, 5, 6, 'Kitchen', 'kitchen').document
+    doc = nameCell(doc, floor.id, 9, 6, 'Bathroom', 'bathroom').document
+    const partition = wallFaces(doc.building.floors[0], wallAt(doc, 7, 4, 7, 8).id)!
+    expect(partition.map((face) => face.label).sort()).toEqual(['Bathroom', 'Kitchen'])
+    expect(defaultWallSide(partition)).toBe(1)
+
+    const outer = wallFaces(doc.building.floors[0], wallAt(doc, 7, 4, 10, 4).id)!
+    expect(outer.map((face) => face.label).sort()).toEqual(['Bathroom', 'Outside'])
+    const opened = outer.find((face) => face.side === defaultWallSide(outer))!
+    expect(opened.outside).toBe(true)
   })
 })

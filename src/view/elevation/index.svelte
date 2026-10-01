@@ -30,7 +30,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { WALL_HEAD } from '../../lib/plot/fixture'
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
-  import { computeWallElevationFrame } from './wallFrame'
+  import { computeWallElevationFrame, flipFrame } from './wallFrame'
+  import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
+  import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import {
     DEFAULT_FENCE_HEIGHT_M,
@@ -127,6 +129,40 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
     return computeWallElevationFrame(floor, wall)
   })
+
+  const faces = $derived(floor && wall ? wallFaces(floor, wall.id) : null)
+  let sideChoice = $state<{ wallId: string; side: WallSide } | null>(null)
+  const side = $derived<WallSide>(
+    sideChoice && sideChoice.wallId === wall?.id ? sideChoice.side : defaultWallSide(faces),
+  )
+  const viewFrame = $derived(frame && side === -1 ? flipFrame(frame) : frame)
+  const viewFace = $derived(faces?.find((face) => face.side === side) ?? null)
+  const farFace = $derived(faces?.find((face) => face.side !== side) ?? null)
+
+  function flipSide() {
+    if (!wall) return
+    sideChoice = { wallId: wall.id, side: side === 1 ? -1 : 1 }
+  }
+
+  $effect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'f' && event.key !== 'F') return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      event.preventDefault()
+      flipSide()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  // Openings as seen from the current face: measured from the left of the view.
+  function shownOpenings(openings: Opening[]): Opening[] {
+    if (side === 1 || !frame) return openings
+    const length = frame.length
+    return openings.map((opening) => ({ ...opening, u: length - opening.u - opening.width }))
+  }
 
   const fenceParts = $derived.by((): FencePart[] => {
     if (!floor || !wall || !fence) return []
@@ -324,21 +360,23 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   function uvFromEvent(event: PointerEvent): { u: number; v: number } | null {
-    if (!locked || !orthoCamera || !frame) return null
+    if (!locked || !orthoCamera || !frame || !viewFrame) return null
     const picked = canvasFromTarget(event.currentTarget)
     if (!picked) return null
     const offsetX = event.clientX - picked.rect.left
     const offsetY = event.clientY - picked.rect.top
     if (picked.rect.width <= 0 || picked.rect.height <= 0) return null
-    configureOrthoCamera(orthoCamera, picked.rect.width / picked.rect.height, frame)
-    return pointerToWallUv(
+    configureOrthoCamera(orthoCamera, picked.rect.width / picked.rect.height, viewFrame)
+    const uv = pointerToWallUv(
       orthoCamera,
       offsetX,
       offsetY,
       picked.rect.width,
       picked.rect.height,
-      frame,
+      viewFrame,
     )
+    if (!uv || side === 1) return uv
+    return { u: frame.length - uv.u, v: uv.v }
   }
 
   function onViewportPointerDown(event: PointerEvent) {
@@ -456,7 +494,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return { text: `This wall is too short for ${noun}.`, error: true }
     }
     if (readout) {
-      const parts = [`u ${mm(readout.u)} mm`, `v ${mm(readout.v)} mm`]
+      const shownU = side === -1 && frame ? frame.length - readout.u : readout.u
+      const parts = [`u ${mm(shownU)} mm`, `v ${mm(readout.v)} mm`]
       if (selectedOpening) {
         parts.push(
           `width ${mm(selectedOpening.width)} mm`,
@@ -679,9 +718,25 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     </div>
     {/if}
     <div class="scene">
-      <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
-        {locked ? 'Perspective' : 'Fixed view'}
-      </Button>
+      <div class="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" class="shadow-xs" onclick={() => (locked = !locked)}>
+          {locked ? 'Perspective' : 'Fixed view'}
+        </Button>
+        {#if viewFace && farFace}
+          <Button
+            variant="outline"
+            size="sm"
+            class="shadow-xs"
+            title="Look at the other face of this wall (F)"
+            onclick={flipSide}
+          >
+            <span class="text-muted-foreground">From</span>
+            {viewFace.label}
+            <ArrowLeftRight class="text-muted-foreground" />
+            <span class="text-muted-foreground">{farFace.label}</span>
+          </Button>
+        {/if}
+      </div>
       <div
         class="viewport"
         class:elevation={locked}
@@ -693,7 +748,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       >
       <ElevationScene
         {locked}
-        {frame}
+        frame={viewFrame ?? frame}
         wallGeometries={wallModel.blocks}
         courseGeometries={wallModel.courses}
         lintelGeometry={wallModel.lintel}
@@ -709,7 +764,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           length={frame.length}
           height={frame.height}
           head={logical ? Math.max(fence?.height ?? 0, support ? SUPPORT_HEIGHT_M : 0) : WALL_HEAD}
-          openings={logical ? [] : displayWall.openings}
+          openings={logical ? [] : shownOpenings(displayWall.openings)}
           selectedId={selectedOpeningId}
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
         />

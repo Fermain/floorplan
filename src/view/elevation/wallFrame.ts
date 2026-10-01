@@ -54,3 +54,13 @@ export function wallCenterWorld(frame: WallElevationFrame): Vector3 {
     .addScaledVector(frame.axisX, frame.length / 2)
     .addScaledVector(frame.axisY, frame.height / 2)
 }
+
+// The same wall seen from its other face: anchored at the far end and facing the other way.
+export function flipFrame(frame: WallElevationFrame): WallElevationFrame {
+  return {
+    ...frame,
+    origin: frame.origin.clone().addScaledVector(frame.axisX, frame.length),
+    axisX: frame.axisX.clone().negate(),
+    axisZ: frame.axisZ.clone().negate(),
+  }
+}
