@@ -55,7 +55,7 @@
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
   import { isUnlandedWall } from '../../lib/geometry/support'
-  import { connectedCornerIds, groundPad } from '../../lib/geometry/pad'
+  import { connectedCornerIds } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'

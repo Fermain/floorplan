@@ -172,7 +172,6 @@
   }
 
   $effect(() => {
-    const heightfield = doc.heightfield
     const floors = doc.building.floors
     const pad = groundPad(doc)
     const displayField = siteField(doc)

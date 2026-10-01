@@ -74,8 +74,7 @@ describe('rainwater tanks', () => {
       if (Math.hypot(pos.getX(i) - linked[0].tank!.x, pos.getZ(i) - linked[0].tank!.z) < 0.1) low = Math.min(low, pos.getY(i))
     }
     const lid = -3 + linked[0].tank!.stand + linked[0].tank!.height
-    expect(low).toBeLessThan(Infinity)
-    expect(Math.abs(low - lid)).toBeLessThan(0.5)
+    expect(low).toBeCloseTo(lid, 2)
     expect(plumbingLayout(doc).issues.map((issue) => issue.id.split(':')[0])).not.toContain('tank-unfed')
   })
 

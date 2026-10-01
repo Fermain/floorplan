@@ -68,7 +68,8 @@
     {/if}
   {:else if fixture.kind === 'water-tank'}
     {@const slab = tankSlabSide(w)}
-    <rect x={-slab / 2} y={-slab / 2} width={slab} height={slab} class="fill" />
+    <!-- The pad's back is flush with the wall, like the tank's, and it reaches further into the yard. -->
+    <rect x={-slab / 2} y={-d / 2} width={slab} height={slab} class="fill" />
     <circle r={w / 2} />
     <circle r={w / 2 - 0.12} />
   {:else if fixture.kind === 'stove' || fixture.kind === 'gas-stove'}
