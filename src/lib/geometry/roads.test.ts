@@ -85,3 +85,18 @@ describe('ground and road in Review', () => {
     expect(buildRoadParts(square, slope)).toEqual([])
   })
 })
+
+describe('ground colour', () => {
+  it('tints each point of the ground when asked, and leaves it plain otherwise', async () => {
+    const { buildGroundGeometry } = await import('./terrain')
+    const field = samplePlot('level-suburban').heightfield
+    const plain = buildGroundGeometry(field)
+    expect(plain.getAttribute('color')).toBeUndefined()
+    const tinted = buildGroundGeometry(field, (x) => (x < 5 ? [1, 0, 0] : [0, 1, 0]))
+    const colour = tinted.getAttribute('color')
+    expect(colour.count).toBe(field.cols * field.rows)
+    expect([colour.getX(0), colour.getY(0)]).toEqual([1, 0])
+    plain.dispose()
+    tinted.dispose()
+  })
+})

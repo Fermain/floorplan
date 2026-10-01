@@ -3,6 +3,7 @@
   import { OrbitControls } from '@threlte/extras'
   import {
     BufferGeometry,
+    Color,
     DoubleSide,
     ExtrudeGeometry,
     Float32BufferAttribute,
@@ -15,6 +16,7 @@
     floorWorldDatum,
     groundPad,
     pointInRing,
+    ringDistance,
     SURFACE_BED_THICKNESS_M,
     SURFACE_BED_TOP_ABOVE_DATUM_M,
     wallDatum,
@@ -55,6 +57,7 @@
   import type { OrbitControls as OrbitControlsInstance } from 'three/examples/jsm/controls/OrbitControls.js'
   import type { Ring } from '../../lib/geometry/pad'
   import { liftAboveGround } from './ground-limit'
+  import ReviewSky from './ReviewSky.svelte'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
   import { Button } from '$lib/components/ui/button'
 
@@ -95,7 +98,9 @@
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
   // How far the ground carries on past the survey.
-  const SURROUNDINGS_M = 80
+  const SURROUNDINGS_M = 120
+  const LAWN = '#6a8f5c'
+  const VELD = '#8f9468'
   let contourMinor = $state<BufferGeometry | null>(null)
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
@@ -150,10 +155,20 @@
     ),
   )
 
+  // The sun fades as it sets: no light, and no shadows thrown upwards, from below the horizon.
+  const sunStrength = $derived(1.25 * Math.min(1, Math.max(0, (sun.y + 0.02) / 0.15)))
+
+  // The shadows cover the whole plot, however big it is.
+  const shadowReach = $derived.by(() => {
+    let reach = 0
+    for (const [x, z] of doc.plot.ring) reach = Math.max(reach, Math.hypot(x - plotCenter.x, z - plotCenter.z))
+    return Math.max(24, reach + 6)
+  })
+
   const lightPosition = $derived([
-    plotCenter.x + sun.x * 40,
-    plotCenter.y + sun.y * 40,
-    plotCenter.z + sun.z * 40,
+    plotCenter.x + sun.x * (20 + shadowReach),
+    plotCenter.y + sun.y * (20 + shadowReach),
+    plotCenter.z + sun.z * (20 + shadowReach),
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
@@ -181,7 +196,16 @@
     const displayField = siteField(doc)
     // The ground runs on past the survey to the horizon; contours stay on the surveyed part.
     const surroundings = padField(displayField, SURROUNDINGS_M)
-    const ground = buildGroundGeometry(surroundings)
+    // Kept lawn inside the boundary, fading to dry veld beyond it.
+    const ring = doc.plot.ring.map(([x, z]) => ({ x, z }))
+    const lawn = new Color(LAWN)
+    const veld = new Color(VELD)
+    const tint = new Color()
+    const ground = buildGroundGeometry(surroundings, (x, z) => {
+      const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
+      tint.copy(lawn).lerp(veld, out)
+      return [tint.r, tint.g, tint.b]
+    })
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
@@ -495,8 +519,10 @@
     light.target.position.set(plotCenter.x, plotCenter.y, plotCenter.z)
     light.shadow.mapSize.set(2048, 2048)
     light.shadow.camera.near = 1
-    light.shadow.camera.far = 120
-    const extent = 24
+    light.shadow.camera.far = 40 + shadowReach * 2
+    light.shadow.bias = -0.0004
+    light.shadow.normalBias = 0.02
+    const extent = shadowReach
     light.shadow.camera.left = -extent
     light.shadow.camera.right = extent
     light.shadow.camera.top = extent
@@ -538,10 +564,11 @@
       />
     </T.PerspectiveCamera>
 
-    <T.AmbientLight intensity={0.35} />
+    <ReviewSky {sun} centre={plotCenter} />
+    <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}
-      intensity={1.15}
+      intensity={sunStrength}
       castShadow
       oncreate={(ref) => {
         configureSunLight(ref)
@@ -550,7 +577,7 @@
 
     {#if groundGeometry}
       <T.Mesh geometry={groundGeometry} receiveShadow>
-        <T.MeshStandardMaterial color="#6b8f71" />
+        <T.MeshStandardMaterial vertexColors roughness={0.95} />
       </T.Mesh>
     {/if}
     {#each roadMeshes as part (part.geometry.uuid)}

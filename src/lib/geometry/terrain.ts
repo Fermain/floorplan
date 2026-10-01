@@ -39,8 +39,10 @@ export function bilinearHeight(
   return h0 * (1 - fv) + h1 * fv
 }
 
-export function buildGroundGeometry(field: Heightfield): BufferGeometry {
+// The ground as a mesh; colourAt, if given, tints each point (as linear RGB, 0 to 1).
+export function buildGroundGeometry(field: Heightfield, colourAt?: (x: number, z: number) => [number, number, number]): BufferGeometry {
   const positions: number[] = []
+  const colours: number[] = []
   const indices: number[] = []
   for (let r = 0; r < field.rows; r++) {
     for (let c = 0; c < field.cols; c++) {
@@ -48,6 +50,7 @@ export function buildGroundGeometry(field: Heightfield): BufferGeometry {
       const z = field.originZ + r * field.cellSize
       const y = heightAtCell(field, c, r)
       positions.push(x, y, z)
+      if (colourAt) colours.push(...colourAt(x, z))
     }
   }
   const cols = field.cols
@@ -63,6 +66,7 @@ export function buildGroundGeometry(field: Heightfield): BufferGeometry {
   const geometry = new BufferGeometry()
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
   geometry.setIndex(new Uint32BufferAttribute(indices, 1))
+  if (colourAt) geometry.setAttribute('color', new Float32BufferAttribute(colours, 3))
   geometry.computeVertexNormals()
   return geometry
 }
