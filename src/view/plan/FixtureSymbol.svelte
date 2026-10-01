@@ -1,5 +1,6 @@
 <script lang="ts">
   import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
+  import { tankSlabSide } from '../../lib/geometry/fixtures'
   import type { Fixture } from '../../lib/model/types'
 
   let {
@@ -66,7 +67,10 @@
       {/each}
     {/if}
   {:else if fixture.kind === 'water-tank'}
-    <circle r={w / 2} class="fill" />
+    {@const slab = tankSlabSide(w)}
+    <!-- The pad's back is flush with the wall, like the tank's, and it reaches further into the yard. -->
+    <rect x={-slab / 2} y={-d / 2} width={slab} height={slab} class="fill" />
+    <circle r={w / 2} />
     <circle r={w / 2 - 0.12} />
   {:else if fixture.kind === 'stove' || fixture.kind === 'gas-stove'}
     <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />

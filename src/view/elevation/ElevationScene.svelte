@@ -131,7 +131,10 @@
         opacity={part.opacity}
         depthWrite={part.opacity >= 1}
         side={DoubleSide}
-        roughness={0.8}
+        roughness={part.roughness ?? 0.8}
+        metalness={part.metalness ?? 0}
+        emissive={part.emissive ?? '#000000'}
+        emissiveIntensity={part.emissiveIntensity ?? 0}
       />
     </T.Mesh>
   {/each}

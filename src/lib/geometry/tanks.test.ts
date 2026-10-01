@@ -61,18 +61,20 @@ describe('rainwater tanks', () => {
     const linked = layout.downpipes.filter((item) => item.tank)
     expect(linked).toHaveLength(1)
     expect(linked[0].tank!.height).toBeCloseTo(fixtureSpec('water-tank').height)
+    expect(Number.isFinite(linked[0].tank!.stand)).toBe(true)
     const bare = roofed()
     const before = gutterLengths(gutterLayout(bare), bare).downpipe['round-pvc']
     const after = gutterLengths(layout, doc).downpipe['round-pvc']
     expect(after).toBeLessThan(before)
-    // The pipe's lowest point is just above the tank.
+    // The pipe's lowest point at the tank is at the lid (stand + height above the ground datum).
     const [part] = buildGutterParts(layout, linked[0].roofFloorId, 'round-pvc', () => -3, -3)
     const pos = part.geometry.getAttribute('position')
     let low = Infinity
     for (let i = 0; i < pos.count; i++) {
       if (Math.hypot(pos.getX(i) - linked[0].tank!.x, pos.getZ(i) - linked[0].tank!.z) < 0.1) low = Math.min(low, pos.getY(i))
     }
-    expect(low).toBeCloseTo(-3 + linked[0].tank!.height, 1)
+    const lid = -3 + linked[0].tank!.stand + linked[0].tank!.height
+    expect(low).toBeCloseTo(lid, 2)
     expect(plumbingLayout(doc).issues.map((issue) => issue.id.split(':')[0])).not.toContain('tank-unfed')
   })
 
@@ -116,5 +118,43 @@ describe('gas pipe and doors', () => {
     const gas = gasLayout(doc)
     expect(doorCrossed(doc.building.floors[0], gas.runs[0].path)).toBe(true)
     expect(gas.issues.map((issue) => issue.id.split(':')[0])).toContain('gas-door')
+  })
+})
+
+describe('fitting setup, shared by Plan and Focus', () => {
+  it('changes a tank or bottles in place, keeping the back against the wall, and refuses what does not apply', async () => {
+    const { setFixtureSetup } = await import('../model/mutations')
+    const doc = withFixtures(roofed(), [{ kind: 'water-tank', x: 12 + 0.131 + 0.9, z: 7, dx: 1, dz: 0, y: 0 }, { kind: 'socket', x: 11.8, z: 7, dx: -1, dz: 0, y: 0.3 }])
+    const floor = doc.building.floors[0]
+    const [tank, socket] = floor.fixtures!
+    const bigger = setFixtureSetup(doc, floor.id, tank.id, { litres: 10000 })
+    expect(bigger.ok).toBe(true)
+    const after = bigger.document.building.floors[0].fixtures![0]
+    expect(after.litres).toBe(10000)
+    expect(after.x - fixtureSize(after).depth / 2).toBeCloseTo(tank.x - fixtureSize(tank).depth / 2)
+    expect(setFixtureSetup(doc, floor.id, tank.id, { bottles: 2 }).ok).toBe(false)
+    expect(setFixtureSetup(doc, floor.id, socket.id, { litres: 1000 }).ok).toBe(false)
+    expect(setFixtureSetup(doc, floor.id, tank.id, { litres: 3000 as never }).ok).toBe(false)
+  })
+
+  it('steps sizes up and down, stopping at the ends', async () => {
+    const { sizeName, stepSize } = await import('../model/fixtures')
+    expect(sizeName('water-tank')).toBe('5,000 L')
+    expect(stepSize('water-tank', {}, 1)).toEqual({ litres: 10000 })
+    expect(stepSize('water-tank', { litres: 10000 }, 1)).toEqual({ litres: 10000 })
+    expect(stepSize('gas-cylinder', {}, -1)).toEqual({ bottleKg: 19 })
+    expect(stepSize('gas-cylinder', { bottleKg: 9 }, -1)).toEqual({ bottleKg: 9 })
+    expect(sizeName('socket')).toBeNull()
+  })
+
+  it('places a fitting at the size chosen before placing it, indoors and out', () => {
+    const doc = roofed()
+    const floor = doc.building.floors[0]
+    const tank = placeFixture(floor, { x: 13, z: 7 }, 'water-tank', { x: 1, z: 0 }, { setup: { litres: 1000 } })
+    expect(tank.fixture.litres).toBe(1000)
+    expect(tank.fixture.x - fixtureSize(tank.fixture).depth / 2).toBeCloseTo(12 + wallReach(floor.walls[0]), 2)
+    // Indoors the bottles keep the indoor setup (one, no cage) under the chosen size.
+    const inside = placeFixture(floor, { x: 11.6, z: 7 }, 'gas-cylinder', { x: -1, z: 0 }, { setup: { bottleKg: 19 } })
+    expect(inside.fixture).toMatchObject({ bottles: 1, bottleKg: 19, cage: false })
   })
 })

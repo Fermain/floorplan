@@ -26,6 +26,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { Separator } from '$lib/components/ui/separator'
   import ElevationScene from './ElevationScene.svelte'
   import ElevationDimensions from './ElevationDimensions.svelte'
+  import ContextPanel from '../shared/ContextPanel.svelte'
+  import FittingSetup from '../shared/FittingSetup.svelte'
+  import { Label } from '$lib/components/ui/label'
   import { SURFACE_BED_TOP_ABOVE_DATUM_M } from '../../lib/geometry/pad'
   import { WALL_HEAD } from '../../lib/plot/fixture'
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
@@ -56,7 +59,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
   import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
-  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureOnFace, fixtureStandAboveDatum, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
     evenPositions,
@@ -206,7 +209,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   })
 
   const fittingParts = $derived.by((): FixturePart[] =>
-    floor ? buildFixtureParts(shownFittings, floor.datumHeight + ffl) : [],
+    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture)) : [],
   )
 
   $effect(() => {
@@ -234,12 +237,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       const moving = fixtureDrag?.id === item.fixture.id ? fixtureDrag : null
       const u = moving ? moving.u : item.u
       const y = moving ? moving.y : item.fixture.y
+      const stand = floor ? fixtureStandAboveDatum(doc, floor, item.fixture) : ffl
       return {
         id: item.fixture.id,
         u: viewU(u),
         width: fixtureSize(item.fixture).width,
-        bottom: ffl + y,
-        top: ffl + y + fixtureSize(item.fixture).height,
+        bottom: stand + y,
+        top: stand + y + fixtureSize(item.fixture).height,
         selected: item.fixture.id === selectedFixtureId,
         label: spec.name,
       }
@@ -250,7 +254,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     for (const item of faceFittings) {
       const size = fixtureSize(item.fixture)
       const pad = 0.04
-      const bottom = ffl + item.fixture.y
+      const bottom = (floor ? fixtureStandAboveDatum(doc, floor, item.fixture) : ffl) + item.fixture.y
       if (Math.abs(u - item.u) <= size.width / 2 + pad && v >= bottom - pad && v <= bottom + size.height + pad) return item
     }
     return null
@@ -368,7 +372,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     const across = (at: { x: number; z: number }) => (at.x - p.x) * n.x + (at.z - p.z) * n.z
     const along = (at: { x: number; z: number }) => (at.x - p.x) * t.x + (at.z - p.z) * t.z
     const onFace = (at: { x: number; z: number }) => Math.abs(across(at) - reach) < 0.12 && along(at) > -0.2 && along(at) < length + 0.2
-    const level = ffl + GAS_RUN_Y
+    const level = (viewFace?.outside ? 0 : ffl) + GAS_RUN_Y
     const here = (fixtureId: string) => faceFittings.find((item) => item.fixture.id === fixtureId)
     for (const run of gas.runs) {
       if (viewFace?.outside) {
@@ -381,7 +385,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           if (Math.abs(ua - ub) > 1e-3) runs.push({ kind: 'gas', points: [[ua, level], [ub, level]] })
         }
         const bottles = here(run.cylinder.fixture.id)
-        if (bottles) runs.push({ kind: 'gas', points: [[viewU(bottles.u), ffl + regulatorY(bottles.fixture)], [viewU(Math.min(length, Math.max(0, along(run.path[0])))), level]] })
+        if (bottles) {
+          const stand = fixtureStandAboveDatum(doc, floor, bottles.fixture)
+          runs.push({ kind: 'gas', points: [[viewU(bottles.u), stand + regulatorY(bottles.fixture)], [viewU(Math.min(length, Math.max(0, along(run.path[0])))), level]] })
+        }
         const end = run.path[run.path.length - 1]
         const heater = here(run.item.fixture.id)
         const port = (PORTS[run.item.fixture.kind] ?? []).find((item) => item.kind === 'gas')
@@ -416,10 +423,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     selectedFixtureId = null
   }
 
-  function setSelectedFittingHeight(mm: number) {
-    if (!floor || !selectedFitting || !Number.isFinite(mm)) return
-    documentStore.updateFixture(floor.id, selectedFitting.fixture.id, { y: fitFixtureY(selectedFitting.fixture.kind, mm / 1000) })
-  }
 
   $effect(() => {
     if (!selectedFixtureId) return
@@ -498,8 +501,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
     const offset = floor.datumHeight + WALL_HEAD
     const ground = doc.building.floors.find((item) => item.index === 0)
-    const groundLevel = ground ? ground.datumHeight + finishedFloor(ground) - offset : undefined
-    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset, groundLevel).map((part) => ({
+    const groundDatum = ground ? ground.datumHeight - offset : undefined
+    return buildGutterParts(own, roofAbove.id, gutterOf(roofAbove.roof), () => -offset, groundDatum).map((part) => ({
       geometry: part.geometry.translate(0, offset, 0),
       colour: part.colour,
       opacity: 1,
@@ -762,7 +765,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       fixtureDrag = {
         id: fitting.fixture.id,
         grabU: uv.u - fitting.u,
-        grabV: uv.v - (ffl + fitting.fixture.y),
+        grabV: uv.v - (fixtureStandAboveDatum(doc, floor, fitting.fixture) + fitting.fixture.y),
         u: fitting.u,
         y: fitting.fixture.y,
         moved: false,
@@ -1167,29 +1170,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </Select.Content>
         </Select.Root>
       </div>
-      {#if selectedFitting}
-        {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
-        <Separator orientation="vertical" class="hidden h-5 sm:block" />
-        <span class="font-medium">{spec.name}</span>
-        {#if spec.mount !== 'ceiling'}
-          <label class="flex items-center gap-2">
-            <span class="text-muted-foreground">{spec.mount === 'wall' ? 'Height' : 'Raised'}</span>
-            <Input
-              class="h-7 w-20"
-              type="number"
-              min="0"
-              step="50"
-              value={mm(selectedFitting.fixture.y)}
-              onchange={(event) => setSelectedFittingHeight(Number(event.currentTarget.value))}
-            />
-            <span class="text-muted-foreground">mm</span>
-          </label>
-        {/if}
-        <Button variant="destructive" size="sm" onclick={removeSelectedFitting}>Remove fitting</Button>
-      {:else if widthLimits && widthAllowed && (editingOpening || (mode === 'place' && !insertFixture))}
+      {#if !selectedFitting && widthLimits && widthAllowed && mode === 'place' && !insertFixture}
         <Separator orientation="vertical" class="hidden h-5 sm:block" />
         <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-          <span class="shrink-0 text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
+          <span class="shrink-0 text-muted-foreground">New width</span>
           <input
             class="min-w-0 flex-1 accent-primary sm:w-32 sm:flex-none"
             type="range"
@@ -1215,9 +1199,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           />
           <span class="text-muted-foreground">mm</span>
         </label>
-      {/if}
-      {#if editingOpening}
-        <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
       {#if faceTrimNow}
         <div class="flex items-center gap-2 sm:ml-auto">
@@ -1346,6 +1327,50 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         />
       {/if}
       </div>
+      {#if selectedFitting && floor}
+        {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
+        <ContextPanel label="Fitting" title={spec.name} description={spec.text} onclose={() => chooseFitting(null)}>
+          <FittingSetup floorId={floor.id} fixture={selectedFitting.fixture} />
+          <Button variant="destructive" onclick={removeSelectedFitting}>Remove</Button>
+        </ContextPanel>
+      {:else if editingOpening}
+        <ContextPanel
+          label="Opening"
+          title={insertChoices.find((choice) => choice.kind === editingOpening.kind)?.label ?? 'Opening'}
+          onclose={() => onSelectOpening?.(null)}
+        >
+          {#if widthLimits && widthAllowed}
+            <div class="grid gap-1.5">
+              <Label for="opening-width">Width (mm)</Label>
+              <input
+                class="w-full accent-primary"
+                type="range"
+                aria-label="Width"
+                min={widthLimits.min}
+                max={widthLimits.max}
+                step="0.01"
+                value={shownWidth}
+                oninput={(event) => onWidthInput(Number(event.currentTarget.value))}
+                onchange={(event) => commitWidth(Number(event.currentTarget.value))}
+              />
+              <Input
+                id="opening-width"
+                type="number"
+                min={mm(widthLimits.min)}
+                max={mm(widthLimits.max)}
+                step="10"
+                value={mm(shownWidth)}
+                onchange={(event) => {
+                  const next = Number(event.currentTarget.value) / 1000
+                  onWidthInput(next)
+                  commitWidth(next)
+                }}
+              />
+            </div>
+          {/if}
+          <Button variant="destructive" onclick={removeSelected}>Remove opening</Button>
+        </ContextPanel>
+      {/if}
     </div>
   {/if}
 </div>

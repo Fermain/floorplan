@@ -1,12 +1,13 @@
-import { BoxGeometry, BufferGeometry, CylinderGeometry, Matrix4 } from 'three'
+import { BoxGeometry, BufferGeometry, CylinderGeometry, LatheGeometry, Matrix4, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { cornerById } from '../model/geom'
 import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
-import type { Fixture, FixtureKind, Floor, Wall } from '../model/types'
+import type { Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
 import { wallReach } from './outline'
-import { pointInRing } from './pad'
+import { floorWorldDatum, groundPad, levelField, padBleed, pointInRing, ringDistance, wallDatum, type LevelPad, type Ring } from './pad'
 import { floorCells, ringLabelPoint, type WallSide } from './spaces'
 import { stairBase } from './stairs'
+import { bilinearHeight } from './terrain'
 
 type Point = { x: number; z: number }
 
@@ -23,6 +24,123 @@ function dot(a: Point, b: Point): number {
 // The finished floor of a storey sits above its datum by the surface bed on the ground floor.
 export function finishedFloor(floor: Floor): number {
   return stairBase(floor.index)
+}
+
+// Floor-standing fittings outside stand on the ground, not on the indoor slab.
+export function standsOnGrade(floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z'>): boolean {
+  if (floor.index !== 0) return false
+  const spec = fixtureSpec(fixture.kind)
+  if (spec.mount !== 'floor') return false
+  if (spec.outside) return true
+  if (!EITHER_SIDE.includes(fixture.kind)) return false
+  return !floorCells(floor).some((cell) => pointInRing(cell.ring, fixture.x, fixture.z))
+}
+
+function floorSupportDatum(doc: Document, floor: Floor): number {
+  const pad = groundPad(doc)
+  if (!pad) return 0
+  for (const wall of floor.walls) {
+    const datum = wallDatum(floor, wall, pad)
+    if (datum !== null) return datum
+  }
+  return pad.structures[0]?.datum ?? 0
+}
+
+// The level patch of ground a floor-standing outdoor fitting needs, in plan.
+export function fixturePadRing(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): Ring {
+  if (fixture.kind === 'water-tank') {
+    const depth = fixtureSize(fixture).depth
+    const { side } = tankSlab(fixtureSize(fixture).width)
+    const along = { x: fixture.dz, z: -fixture.dx }
+    const out = { x: fixture.dx, z: fixture.dz }
+    const back = { x: fixture.x - out.x * (depth / 2), z: fixture.z - out.z * (depth / 2) }
+    const mid = { x: back.x + out.x * (side / 2), z: back.z + out.z * (side / 2) }
+    const half = side / 2
+    return [
+      { x: mid.x - along.x * half - out.x * half, z: mid.z - along.z * half - out.z * half },
+      { x: mid.x + along.x * half - out.x * half, z: mid.z + along.z * half - out.z * half },
+      { x: mid.x + along.x * half + out.x * half, z: mid.z + along.z * half + out.z * half },
+      { x: mid.x - along.x * half + out.x * half, z: mid.z - along.z * half + out.z * half },
+    ]
+  }
+  return fixtureFootprint(fixture)
+}
+
+function maxGradeInRing(field: Document['heightfield'], ring: Ring): number {
+  let max = -Infinity
+  const sample = (x: number, z: number) => {
+    max = Math.max(max, bilinearHeight(field, x, z))
+  }
+  for (const point of ring) sample(point.x, point.z)
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    sample((a.x + b.x) / 2, (a.z + b.z) / 2)
+  }
+  const cx = ring.reduce((sum, point) => sum + point.x, 0) / ring.length
+  const cz = ring.reduce((sum, point) => sum + point.z, 0) / ring.length
+  sample(cx, cz)
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const point of ring) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  const step = Math.max(field.cellSize / 2, 0.2)
+  for (let x = minX; x <= maxX + 1e-9; x += step) {
+    for (let z = minZ; z <= maxZ + 1e-9; z += step) {
+      if (pointInRing(ring, x, z)) sample(x, z)
+    }
+  }
+  return max
+}
+
+// World height of the leveled pad under an outdoor floor fitting: the high point of the natural ground
+// under its footprint, and at least the building pad when it stands beside a leveled wall.
+export function fixturePadWorldDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+  const ring = fixturePadRing(fixture)
+  const natural = maxGradeInRing(doc.heightfield, ring)
+  const pad = groundPad(doc)
+  if (!pad) return natural
+  const reach = padBleed(doc.heightfield) + (fixture.kind === 'water-tank' ? tankSlab(fixtureSize(fixture).width).side : fixtureSize(fixture).depth)
+  let beside: number | null = null
+  for (const structure of pad.structures) {
+    for (const room of structure.rings) {
+      if (ringDistance(room, fixture.x, fixture.z) <= reach) {
+        beside = beside === null ? structure.datum : Math.max(beside, structure.datum)
+      }
+    }
+  }
+  // Beside the house, keep the pad on the building platform (cut or fill). Away from it, take the high point of the ground.
+  return beside !== null ? beside : natural
+}
+
+// Pads to flatten into the site heightfield so outdoor fittings sit on level ground.
+export function fixturePads(doc: Document): LevelPad[] {
+  const ground = doc.building.floors.find((floor) => floor.index === 0)
+  if (!ground) return []
+  return (ground.fixtures ?? [])
+    .filter((fixture) => standsOnGrade(ground, fixture))
+    .map((fixture) => ({
+      datum: fixturePadWorldDatum(doc, ground, fixture),
+      rings: [fixturePadRing(fixture)],
+    }))
+}
+
+// How far above the ground floor's structural datum the underside of a fitting stands.
+export function fixtureStandAboveDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+  if (!standsOnGrade(floor, fixture)) return finishedFloor(floor)
+  return fixturePadWorldDatum(doc, floor, fixture) - floorWorldDatum(floor.datumHeight, floorSupportDatum(doc, floor))
+}
+
+// Site ground with building pads and outdoor fitting pads leveled.
+export function siteField(doc: Document): Document['heightfield'] {
+  const pad = groundPad(doc)
+  return levelField(doc.heightfield, pad?.structures ?? [], fixturePads(doc))
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
@@ -71,8 +189,8 @@ export function placeFixture(
   const either = EITHER_SIDE.includes(kind)
   if (!spec.outside && !cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
   if (cell && (!spec.outside || either)) {
-    // A fitting being moved keeps its setup; a new one indoors starts with the indoor setup.
-    const setup = options.setup ?? INDOOR_SETUP[kind] ?? {}
+    // A new fitting indoors starts with the indoor setup, under any size chosen for it; one being moved keeps its own.
+    const setup = { ...INDOOR_SETUP[kind], ...options.setup }
     const size = fixtureSize({ kind, ...setup })
     const ring = cell.net
     for (let i = 0; i < ring.length; i++) {
@@ -205,29 +323,107 @@ export function fixtureOnFace(
   return against({ x: a.x + t.x * at + n.x * reach, z: a.z + t.z * at + n.z * reach }, n, kind, y, setup)
 }
 
-export type FixturePart = { geometry: BufferGeometry; colour: string }
-
-const CERAMIC = '#f4f4f2'
-const PLATE = '#ededea'
-const METAL = '#8d9399'
-const COUNTER = '#d6d0c4'
-const GLOW = '#fff7d6'
-// A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
-const FLOOR_CLEAR_M = 0.003
-const TANK = '#2f5d3a'
-const CONCRETE = '#a8a29e'
-const HOB = '#2b2b2b'
-const BOTTLE = '#b4b8bd'
-const CAGE = '#9aa3a8'
-
-type Piece = { geometry: BufferGeometry; along: number; out: number; y: number; colour: string }
-
-function box(w: number, d: number, h: number, along: number, out: number, y: number, colour: string): Piece {
-  return { geometry: new BoxGeometry(w, h, d), along, out, y: y + h / 2, colour }
+export type FixturePart = {
+  geometry: BufferGeometry
+  colour: string
+  roughness: number
+  metalness: number
+  emissive?: string
+  emissiveIntensity?: number
 }
 
-function puck(r: number, h: number, along: number, out: number, y: number, colour: string): Piece {
-  return { geometry: new CylinderGeometry(r, r, h, 20), along, out, y: y + h / 2, colour }
+type Finish = {
+  colour: string
+  roughness: number
+  metalness: number
+  emissive?: string
+  emissiveIntensity?: number
+}
+
+const CERAMIC: Finish = { colour: '#f2f1ee', roughness: 0.22, metalness: 0.04 }
+const CERAMIC_LID: Finish = { colour: '#eae9e4', roughness: 0.28, metalness: 0.04 }
+const PLATE: Finish = { colour: '#ecece8', roughness: 0.55, metalness: 0.05 }
+const CHROME: Finish = { colour: '#9aa3ab', roughness: 0.28, metalness: 0.85 }
+const BRUSHED: Finish = { colour: '#8a9198', roughness: 0.45, metalness: 0.65 }
+const COUNTER: Finish = { colour: '#d2cbbd', roughness: 0.55, metalness: 0.02 }
+const CABINET: Finish = { colour: '#e8e4dc', roughness: 0.65, metalness: 0.02 }
+const GLOW: Finish = { colour: '#fff4cc', roughness: 0.4, metalness: 0, emissive: '#ffe9a8', emissiveIntensity: 0.55 }
+const TANK: Finish = { colour: '#2f6b3c', roughness: 0.55, metalness: 0.08 }
+const TANK_RIM: Finish = { colour: '#274f32', roughness: 0.5, metalness: 0.1 }
+const CONCRETE: Finish = { colour: '#a8a29e', roughness: 0.92, metalness: 0.02 }
+const HOB: Finish = { colour: '#1f1f22', roughness: 0.35, metalness: 0.4 }
+const RING: Finish = { colour: '#3f3f46', roughness: 0.4, metalness: 0.5 }
+const BOTTLE: Finish = { colour: '#c0c5cb', roughness: 0.35, metalness: 0.55 }
+const CAGE: Finish = { colour: '#9aa3a8', roughness: 0.4, metalness: 0.7 }
+const APPLIANCE: Finish = { colour: '#f4f4f2', roughness: 0.35, metalness: 0.25 }
+const APPLIANCE_DARK: Finish = { colour: '#2a2a2e', roughness: 0.45, metalness: 0.35 }
+const GLASS: Finish = { colour: '#9eb0bc', roughness: 0.15, metalness: 0.1 }
+const WATER: Finish = { colour: '#b7c9d4', roughness: 0.2, metalness: 0.05 }
+const PLASTIC: Finish = { colour: '#d8dde2', roughness: 0.5, metalness: 0.05 }
+const DB: Finish = { colour: '#6b7280', roughness: 0.45, metalness: 0.55 }
+const DB_FACE: Finish = { colour: '#4b5563', roughness: 0.5, metalness: 0.45 }
+
+// A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
+const FLOOR_CLEAR_M = 0.003
+
+// Square concrete pad under a rainwater tank: side and thickness grow with the tank.
+export function tankSlab(diameter: number): { side: number; thick: number } {
+  const over = Math.max(0.1, Math.round(diameter * 0.1 * 20) / 20)
+  const thick = Math.max(0.1, Math.round(diameter * 0.075 * 20) / 20)
+  return { side: diameter + 2 * over, thick }
+}
+
+export function tankSlabSide(diameter: number): number {
+  return tankSlab(diameter).side
+}
+
+type Piece = { geometry: BufferGeometry; along: number; out: number; y: number; finish: Finish }
+
+function centreAtOrigin(geometry: BufferGeometry): BufferGeometry {
+  geometry.computeBoundingBox()
+  const mid = geometry.boundingBox!.getCenter(new Vector3())
+  geometry.translate(-mid.x, -mid.y, -mid.z)
+  return geometry
+}
+
+function box(w: number, d: number, h: number, along: number, out: number, y: number, finish: Finish): Piece {
+  return { geometry: new BoxGeometry(w, h, d), along, out, y: y + h / 2, finish }
+}
+
+function puck(r: number, h: number, along: number, out: number, y: number, finish: Finish, segments = 20): Piece {
+  return { geometry: new CylinderGeometry(r, r, h, segments), along, out, y: y + h / 2, finish }
+}
+
+function drum(r0: number, r1: number, h: number, along: number, out: number, y: number, finish: Finish, segments = 20): Piece {
+  return { geometry: new CylinderGeometry(r1, r0, h, segments), along, out, y: y + h / 2, finish }
+}
+
+function finishKey(finish: Finish): string {
+  return `${finish.colour}|${finish.roughness}|${finish.metalness}|${finish.emissive ?? ''}|${finish.emissiveIntensity ?? 0}`
+}
+
+// A basin or sink bowl: lathed cup, rim at the top, sitting on y.
+function bowl(rim: number, depth: number, along: number, out: number, y: number, finish: Finish): Piece {
+  const profile = [
+    new Vector2(0.008, 0),
+    new Vector2(rim * 0.35, depth * 0.08),
+    new Vector2(rim * 0.72, depth * 0.45),
+    new Vector2(rim * 0.95, depth * 0.88),
+    new Vector2(rim, depth),
+    new Vector2(rim * 0.88, depth),
+    new Vector2(rim * 0.55, depth * 0.55),
+    new Vector2(rim * 0.2, depth * 0.2),
+    new Vector2(0.008, depth * 0.12),
+  ]
+  return { geometry: centreAtOrigin(new LatheGeometry(profile, 28)), along, out, y: y + depth / 2, finish }
+}
+
+function mixer(along: number, out: number, y: number): Piece[] {
+  return [
+    puck(0.018, 0.06, along, out, y, CHROME, 12),
+    box(0.09, 0.018, 0.018, along, out + 0.04, y + 0.05, CHROME),
+    puck(0.012, 0.04, along, out + 0.08, y + 0.03, CHROME, 10),
+  ]
 }
 
 // Pieces in the fixture's own frame: along the wall, out from its back, and up from its underside.
@@ -235,31 +431,148 @@ function pieces(fixture: Fixture): Piece[] {
   const kind = fixture.kind
   const { width: w, depth: d, height: h } = fixtureSize(fixture)
   switch (kind) {
-    case 'wc':
-      return [box(0.36, 0.18, 0.4, 0, 0.09, 0.38, CERAMIC), box(0.34, 0.5, 0.4, 0, 0.43, 0, CERAMIC)]
-    case 'basin':
-      return [box(w, d, h, 0, d / 2, 0, CERAMIC), puck(0.03, 0.6, 0, 0.12, -0.6, METAL)]
-    case 'shower':
-      return [box(w, d, h, 0, d / 2, 0, CERAMIC), puck(0.07, 0.02, 0, 0.12, 1.9, METAL)]
-    case 'bath':
-      return [box(w, d, h, 0, d / 2, 0, CERAMIC)]
-    case 'sink':
-      return [box(w, d - 0.04, h - 0.04, 0, d / 2, 0, CERAMIC), box(w, d, 0.04, 0, d / 2, h - 0.04, COUNTER)]
-    case 'water-tank':
-      return [puck(w / 2, h - 0.1, 0, d / 2, 0.1, TANK), puck(w / 2 + 0.05, 0.1, 0, d / 2, 0, CONCRETE)]
-    case 'washing-machine':
-      return [box(w, d, h, 0, d / 2, 0, CERAMIC)]
+    case 'wc': {
+      const cistern = [
+        box(0.36, 0.17, 0.38, 0, 0.085, 0.4, CERAMIC),
+        box(0.38, 0.19, 0.03, 0, 0.085, 0.78, CERAMIC_LID),
+        puck(0.02, 0.015, 0, 0.085, 0.81, CHROME, 10),
+      ]
+      const bowlBody = centreAtOrigin(new SphereGeometry(0.2, 20, 14)).scale(0.9, 0.55, 1.15)
+      const bowl: Piece = { geometry: bowlBody, along: 0, out: 0.42, y: 0.28, finish: CERAMIC }
+      const rim = centreAtOrigin(new TorusGeometry(0.17, 0.025, 10, 24)).rotateX(Math.PI / 2)
+      const seat: Piece = { geometry: rim, along: 0, out: 0.42, y: 0.4, finish: CERAMIC_LID }
+      const base = [drum(0.12, 0.16, 0.18, 0, 0.4, 0, CERAMIC, 16), puck(0.11, 0.04, 0, 0.4, 0, CERAMIC, 16)]
+      return [...cistern, bowl, seat, ...base]
+    }
+    case 'basin': {
+      const deck = box(w, d, 0.05, 0, d / 2, h - 0.05, CERAMIC)
+      const apron = box(w * 0.92, d * 0.7, h - 0.08, 0, d * 0.45, 0, CERAMIC)
+      const cup = bowl(Math.min(w, d) * 0.32, 0.12, 0, d * 0.48, h - 0.16, CERAMIC)
+      const bracket = box(0.08, 0.04, 0.12, 0, 0.02, 0.5, BRUSHED)
+      return [deck, apron, cup, bracket, ...mixer(0, d * 0.22, h - 0.02)]
+    }
+    case 'shower': {
+      const lip = 0.04
+      const tray = [
+        box(w, d, 0.03, 0, d / 2, 0, CERAMIC),
+        box(w, lip, h, 0, lip / 2, 0, CERAMIC),
+        box(w, lip, h, 0, d - lip / 2, 0, CERAMIC),
+        box(lip, d, h, -w / 2 + lip / 2, d / 2, 0, CERAMIC),
+        box(lip, d, h, w / 2 - lip / 2, d / 2, 0, CERAMIC),
+      ]
+      const drain = puck(0.04, 0.008, 0, d / 2, 0.03, CHROME, 12)
+      const riser = puck(0.015, 1.85, 0, 0.06, 0.05, CHROME, 10)
+      const arm = box(0.02, 0.22, 0.02, 0, 0.16, 1.88, CHROME)
+      const rose = puck(0.08, 0.02, 0, 0.28, 1.86, CHROME, 16)
+      const face = puck(0.07, 0.008, 0, 0.29, 1.85, BRUSHED, 16)
+      return [...tray, drain, riser, arm, rose, face]
+    }
+    case 'bath': {
+      const wall = 0.055
+      const floor = 0.07
+      const shell = [
+        box(w - 2 * wall, d - 2 * wall, floor, 0, d / 2, 0, CERAMIC),
+        box(w, wall, h, 0, wall / 2, 0, CERAMIC),
+        box(w, wall, h, 0, d - wall / 2, 0, CERAMIC),
+        box(wall, d, h, -w / 2 + wall / 2, d / 2, 0, CERAMIC),
+        box(wall, d, h, w / 2 - wall / 2, d / 2, 0, CERAMIC),
+        box(w, d, 0.03, 0, d / 2, h - 0.03, CERAMIC_LID),
+      ]
+      const water = box(w - 2 * wall - 0.04, d - 2 * wall - 0.04, 0.01, 0, d / 2, h * 0.42, WATER)
+      const taps = mixer(-w / 2 + 0.18, d * 0.22, h - 0.02)
+      return [...shell, water, ...taps]
+    }
+    case 'sink': {
+      const carcass = [
+        box(w, d - 0.02, h - 0.06, 0, d / 2, 0, CABINET),
+        box(w, d, 0.045, 0, d / 2, h - 0.045, COUNTER),
+        box(0.012, 0.01, h - 0.12, 0, d - 0.03, 0.06, BRUSHED),
+        box(w * 0.42, 0.01, h * 0.55, -w * 0.22, d - 0.03, 0.12, CERAMIC_LID),
+        box(w * 0.42, 0.01, h * 0.55, w * 0.22, d - 0.03, 0.12, CERAMIC_LID),
+      ]
+      const cups = [
+        bowl(0.16, 0.12, -0.22, d * 0.48, h - 0.15, CERAMIC),
+        bowl(0.12, 0.1, 0.2, d * 0.48, h - 0.14, CERAMIC),
+      ]
+      return [...carcass, ...cups, ...mixer(-0.05, d * 0.2, h - 0.01)]
+    }
+    case 'water-tank': {
+      const { side: slab, thick } = tankSlab(w)
+      // Pad back flush with the wall face; the overhang falls into the yard and along the wall.
+      const slabOut = slab / 2
+      const bodyH = h - thick - 0.12
+      return [
+        box(slab, slab, thick, 0, slabOut, 0, CONCRETE),
+        puck(w / 2, bodyH, 0, d / 2, thick, TANK, 28),
+        drum(w / 2, (w / 2) * 0.55, 0.12, 0, d / 2, thick + bodyH, TANK_RIM, 24),
+        puck(w / 2 * 0.5, 0.04, 0, d / 2, h - 0.04, TANK_RIM, 20),
+        puck(0.04, 0.08, 0, d / 2, h - 0.02, CHROME, 10),
+      ]
+    }
+    case 'washing-machine': {
+      const door = centreAtOrigin(new CylinderGeometry(0.2, 0.2, 0.04, 28)).rotateX(Math.PI / 2)
+      return [
+        box(w, d, h, 0, d / 2, 0, APPLIANCE),
+        box(w - 0.04, 0.02, 0.08, 0, 0.02, h - 0.1, APPLIANCE_DARK),
+        { geometry: door, along: 0, out: 0.02, y: h * 0.45, finish: GLASS },
+        puck(0.22, 0.02, 0, 0.035, h * 0.45 - 0.01, BRUSHED, 24),
+        puck(0.015, 0.03, w * 0.28, 0.03, h - 0.07, CHROME, 8),
+        box(0.04, 0.04, 0.03, -w / 2 + 0.05, 0.05, 0, APPLIANCE_DARK),
+        box(0.04, 0.04, 0.03, w / 2 - 0.05, 0.05, 0, APPLIANCE_DARK),
+        box(0.04, 0.04, 0.03, -w / 2 + 0.05, d - 0.05, 0, APPLIANCE_DARK),
+        box(0.04, 0.04, 0.03, w / 2 - 0.05, d - 0.05, 0, APPLIANCE_DARK),
+      ]
+    }
     case 'geyser':
-    case 'solar-geyser':
-      return [{ geometry: new CylinderGeometry(d / 2, d / 2, w, 24).rotateZ(Math.PI / 2), along: 0, out: d / 2, y: h / 2, colour: CERAMIC }]
+    case 'solar-geyser': {
+      const tank = centreAtOrigin(new CylinderGeometry(d / 2, d / 2, w, 28)).rotateZ(Math.PI / 2)
+      const parts: Piece[] = [
+        { geometry: tank, along: 0, out: d / 2, y: h / 2, finish: APPLIANCE },
+        puck(d / 2 + 0.01, 0.04, -w / 2 + 0.02, d / 2, h / 2 - 0.02, BRUSHED, 16),
+        puck(d / 2 + 0.01, 0.04, w / 2 - 0.02, d / 2, h / 2 - 0.02, BRUSHED, 16),
+        puck(0.03, 0.1, -w / 4, d / 2, 0, CHROME, 10),
+        puck(0.03, 0.1, w / 4, d / 2, 0, CHROME, 10),
+      ]
+      if (kind === 'solar-geyser') {
+        parts.push(box(w * 0.5, 0.04, 0.04, 0, d / 2, h / 2 + d / 2 + 0.02, { colour: '#1e2a44', roughness: 0.35, metalness: 0.4 }))
+      }
+      return parts
+    }
     case 'stove':
     case 'gas-stove': {
-      const body = [box(w, d, h - 0.04, 0, d / 2, 0, CERAMIC), box(w - 0.04, d - 0.06, 0.02, 0, d / 2 + 0.02, h - 0.04, HOB), box(w, 0.04, 0.1, 0, 0.02, h - 0.04, CERAMIC)]
-      const rings = [-0.14, 0.14].flatMap((x) => [0.2, 0.42].map((out) => puck(kind === 'gas-stove' ? 0.06 : 0.08, 0.02, x, out, h - 0.025, kind === 'gas-stove' ? METAL : '#3f3f46')))
-      return [...body, ...rings]
+      const gas = kind === 'gas-stove'
+      const body = [
+        box(w, d, h - 0.05, 0, d / 2, 0, APPLIANCE),
+        box(w - 0.05, d - 0.08, 0.025, 0, d / 2 + 0.02, h - 0.05, HOB),
+        box(w, 0.04, 0.1, 0, 0.02, h - 0.05, APPLIANCE),
+        box(w * 0.7, 0.02, h * 0.45, 0, 0.03, 0.12, APPLIANCE_DARK),
+        box(w * 0.55, 0.015, 0.03, 0, 0.04, 0.35, BRUSHED),
+      ]
+      const knobs = [-0.2, -0.07, 0.07, 0.2].map((x) => puck(0.015, 0.02, x, 0.05, h - 0.02, CHROME, 10))
+      const burners = [-0.14, 0.14].flatMap((x) =>
+        [0.2, 0.42].flatMap((out) => {
+          const r = gas ? 0.055 : 0.075
+          const ring = puck(r, 0.015, x, out, h - 0.03, gas ? CHROME : RING, 16)
+          if (!gas) return [ring]
+          return [
+            ring,
+            box(r * 1.6, 0.008, 0.008, x, out, h - 0.018, BRUSHED),
+            box(0.008, r * 1.6, 0.008, x, out, h - 0.018, BRUSHED),
+          ]
+        }),
+      )
+      return [...body, ...knobs, ...burners]
     }
-    case 'gas-geyser':
-      return [box(w, d, h, 0, d / 2, 0, CERAMIC), puck(0.05, 0.12, 0, d / 2, h, METAL)]
+    case 'gas-geyser': {
+      return [
+        box(w, d, h, 0, d / 2, 0, APPLIANCE),
+        box(w - 0.04, 0.01, h * 0.35, 0, 0.02, h * 0.35, BRUSHED),
+        puck(0.045, 0.14, 0, d / 2, h, CHROME, 14),
+        puck(0.018, 0.08, -0.08, d / 2, 0.08, CHROME, 8),
+        puck(0.018, 0.08, 0, d / 2, 0.08, CHROME, 8),
+        puck(0.018, 0.08, 0.08, d / 2, 0.08, CHROME, 8),
+      ]
+    }
     case 'gas-cylinder': {
       const { count, kg, cage } = bottleSetup(fixture)
       const bottle = BOTTLES[kg]
@@ -267,10 +580,14 @@ function pieces(fixture: Fixture): Piece[] {
       const out: Piece[] = []
       for (let i = 0; i < count; i++) {
         const x = -w / 2 + wrap + bottle.dia / 2 + i * (bottle.dia + BOTTLE_GAP_M)
-        out.push(puck(bottle.dia / 2, bottle.height - 0.12, x, d / 2, 0, BOTTLE), puck(0.07, 0.12, x, d / 2, bottle.height - 0.12, METAL))
+        const bodyH = bottle.height - 0.16
+        out.push(
+          puck(bottle.dia / 2, bodyH, x, d / 2, 0, BOTTLE, 22),
+          drum(bottle.dia / 2, bottle.dia / 2 * 0.45, 0.08, x, d / 2, bodyH, BOTTLE, 18),
+          puck(0.045, 0.08, x, d / 2, bodyH + 0.08, CHROME, 12),
+        )
       }
       if (cage) {
-        // A galvanised frame: corner posts, rails round the top and bottom, and a mesh panel behind.
         const bar = 0.025
         for (const x of [-w / 2 + bar / 2, w / 2 - bar / 2]) {
           for (const z of [bar / 2, d - bar / 2]) out.push(box(bar, bar, h, x, z, 0, CAGE))
@@ -285,21 +602,70 @@ function pieces(fixture: Fixture): Piece[] {
       return out
     }
     case 'light':
-      return [puck(0.15, h, 0, 0, 0, GLOW)]
+      return [
+        puck(0.04, 0.02, 0, 0, h - 0.02, BRUSHED, 12),
+        puck(0.15, h - 0.02, 0, 0, 0, GLOW, 24),
+      ]
+    case 'outdoor-light':
+      return [
+        box(0.04, 0.08, 0.04, 0, 0.04, h * 0.55, BRUSHED),
+        box(w * 0.7, d * 0.5, h * 0.55, 0, d * 0.55, h * 0.2, BRUSHED),
+        box(w * 0.55, d * 0.35, h * 0.35, 0, d * 0.55, h * 0.28, GLOW),
+      ]
     case 'db-board':
-      return [box(w, d, h, 0, d / 2, 0, METAL)]
+      return [
+        box(w, d, h, 0, d / 2, 0, DB),
+        box(w - 0.04, 0.01, h - 0.06, 0, 0.02, 0.03, DB_FACE),
+        box(0.02, 0.015, h * 0.35, w * 0.35, 0.03, h * 0.35, CHROME),
+        box(w * 0.7, 0.008, 0.015, 0, 0.03, h * 0.2, BRUSHED),
+        box(w * 0.7, 0.008, 0.015, 0, 0.03, h * 0.45, BRUSHED),
+        box(w * 0.7, 0.008, 0.015, 0, 0.03, h * 0.7, BRUSHED),
+      ]
+    case 'extractor':
+      return [
+        box(w, d, h, 0, d / 2, 0, PLASTIC),
+        puck(0.08, 0.02, 0, d / 2, h / 2 - 0.01, BRUSHED, 16),
+        box(w * 0.7, 0.01, 0.01, 0, 0.02, h * 0.35, BRUSHED),
+        box(w * 0.7, 0.01, 0.01, 0, 0.02, h * 0.5, BRUSHED),
+        box(w * 0.7, 0.01, 0.01, 0, 0.02, h * 0.65, BRUSHED),
+      ]
     case 'outside-tap':
-      return [puck(0.02, 0.1, 0, 0.05, 0, METAL)]
+      return [
+        puck(0.018, 0.06, 0, 0.03, 0.01, CHROME, 10),
+        box(0.06, 0.018, 0.018, 0, 0.06, 0.04, CHROME),
+        puck(0.012, 0.035, 0, 0.09, 0.02, CHROME, 8),
+        box(0.04, 0.01, 0.01, 0.03, 0.05, 0.055, CHROME),
+      ]
+    case 'socket':
+      return [
+        box(w, d, h, 0, d / 2, 0, PLATE),
+        box(0.012, 0.01, 0.035, -0.035, 0.02, h * 0.25, APPLIANCE_DARK),
+        box(0.012, 0.01, 0.035, 0.035, 0.02, h * 0.25, APPLIANCE_DARK),
+        box(0.012, 0.01, 0.035, -0.035, 0.02, h * 0.55, APPLIANCE_DARK),
+        box(0.012, 0.01, 0.035, 0.035, 0.02, h * 0.55, APPLIANCE_DARK),
+      ]
+    case 'switch':
+      return [
+        box(w, d, h, 0, d / 2, 0, PLATE),
+        box(0.035, 0.015, 0.045, 0, 0.025, h * 0.28, CERAMIC_LID),
+      ]
+    case 'stove-isolator':
+      return [
+        box(w, d, h, 0, d / 2, 0, PLATE),
+        box(0.04, 0.015, 0.055, 0, 0.025, h * 0.35, CERAMIC_LID),
+        puck(0.012, 0.02, 0, 0.03, h * 0.75, CHROME, 8),
+      ]
     default:
       return [box(w, d, h, 0, d / 2, 0, PLATE)]
   }
 }
 
-// One merged geometry per colour for a set of fixtures, standing on a finished floor at baseY.
-export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePart[] {
-  const byColour = new Map<string, BufferGeometry[]>()
+// One merged geometry per finish for a set of fixtures. baseY is the underside of each fitting, or a function of it.
+export function buildFixtureParts(fixtures: Fixture[], baseY: number | ((fixture: Fixture) => number)): FixturePart[] {
+  const byFinish = new Map<string, { finish: Finish; list: BufferGeometry[] }>()
   const basis = new Matrix4()
   const move = new Matrix4()
+  const baseOf = typeof baseY === 'function' ? baseY : () => baseY
   for (const fixture of fixtures) {
     const spec = fixtureSpec(fixture.kind)
     const out = spec.mount === 'ceiling' ? 0 : fixtureSize(fixture).depth / 2
@@ -308,23 +674,35 @@ export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePa
     const along = { x: fixture.dz, z: -fixture.dx }
     for (const piece of pieces(fixture)) {
       basis.set(along.x, 0, fixture.dx, 0, 0, 1, 0, 0, along.z, 0, fixture.dz, 0, 0, 0, 0, 1)
+      // A tank's pad sits on the ground; other fittings lift a hair to avoid z-fighting the slab.
+      const clear = fixture.kind === 'water-tank' ? 0 : FLOOR_CLEAR_M
       move.makeTranslation(
         back.x + along.x * piece.along + fixture.dx * piece.out,
-        baseY + fixture.y + piece.y + FLOOR_CLEAR_M,
+        baseOf(fixture) + fixture.y + piece.y + clear,
         back.z + along.z * piece.along + fixture.dz * piece.out,
       )
       const geometry = (piece.geometry.index ? piece.geometry.toNonIndexed() : piece.geometry).applyMatrix4(move.multiply(basis))
       if (piece.geometry !== geometry) piece.geometry.dispose()
-      const list = byColour.get(piece.colour) ?? []
-      list.push(geometry)
-      byColour.set(piece.colour, list)
+      const key = finishKey(piece.finish)
+      const bucket = byFinish.get(key) ?? { finish: piece.finish, list: [] }
+      bucket.list.push(geometry)
+      byFinish.set(key, bucket)
     }
   }
   const out: FixturePart[] = []
-  for (const [colour, list] of byColour) {
+  for (const { finish, list } of byFinish.values()) {
     const merged = mergeGeometries(list, false)
     for (const geometry of list) geometry.dispose()
-    if (merged) out.push({ geometry: merged, colour })
+    if (merged) {
+      out.push({
+        geometry: merged,
+        colour: finish.colour,
+        roughness: finish.roughness,
+        metalness: finish.metalness,
+        emissive: finish.emissive,
+        emissiveIntensity: finish.emissiveIntensity,
+      })
+    }
   }
   return out
 }

@@ -13,23 +13,18 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Plug from '@lucide/svelte/icons/plug'
   import FixtureSymbol from './FixtureSymbol.svelte'
+  import ContextPanel from '../shared/ContextPanel.svelte'
+  import FittingSetup from '../shared/FittingSetup.svelte'
   import {
-    BOTTLE_SIZES,
-    BOTTLES,
-    bottleSetup,
     FIXTURES,
-    fitFixtureY,
     fixtureFootprint,
+    sizeName,
+    stepSize,
+    type SizeSetup,
     fixtureSize,
     fixtureSpec,
-    MAX_BOTTLES,
-    reseat,
-    swapsFor,
-    TANK_SIZES,
-    TANKS,
-    tankLitres,
   } from '../../lib/model/fixtures'
-  import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
+  import { fixtureWall, placeFixture, siteField, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
@@ -55,7 +50,7 @@
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
   import { storeyHasLongSolidWall } from '../../lib/geometry/limits'
   import { isUnlandedWall } from '../../lib/geometry/support'
-  import { connectedCornerIds, groundPad, levelField } from '../../lib/geometry/pad'
+  import { connectedCornerIds } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
@@ -72,7 +67,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { BottleSize, Fixture, FixtureKind, TankLitres, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { Fixture, FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -187,6 +182,8 @@
   let newRoomType = $state<RoomType>('bedroom')
   let stairTurn = $state(0)
   let fixtureKind = $state<FixtureKind>('socket')
+  // Sizes chosen for fittings that come in sizes, before they are placed: − and + step through them.
+  let placeSizes = $state<Partial<Record<FixtureKind, SizeSetup>>>({})
   let fixtureTurn = $state(0)
   let selectedFixture = $state<{ floorId: string; id: string } | null>(null)
   let selectedService = $state<ServiceKind | null>(null)
@@ -563,11 +560,7 @@
   const showUnlandedWarning = $derived(
     tool === 'select' || tool === 'draw-double' || tool === 'draw-logical' || tool === 'draw-rect',
   )
-  const contours = $derived.by(() => {
-    const pad = groundPad(document)
-    const field = pad ? levelField(document.heightfield, pad.structures) : document.heightfield
-    return contourPlanPaths(field)
-  })
+  const contours = $derived.by(() => contourPlanPaths(siteField(document)))
 
   function plateFill(floorId: string, ring: number): string {
     const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
@@ -1777,11 +1770,6 @@
     return gas.runs.map((run) => ({ id: run.item.fixture.id, path: run.path, chosen: id === run.item.fixture.id || id === run.cylinder.fixture.id }))
   })
 
-  function swapChosenFixture(kind: FixtureKind) {
-    const chosen = chosenFixture
-    if (!chosen) return
-    applyResult(documentStore.setFixtureKind(chosen.floorId, chosen.fixture.id, kind))
-  }
 
   const wiring = $derived(electricalLayout(document))
   const wiringProblems = $derived(electricalIssues(document))
@@ -1827,11 +1815,25 @@
     for (let i = 0; i < ((fixtureTurn % 4) + 4) % 4; i++) preferred = { x: -preferred.z, z: preferred.x }
     let best: { floorId: string; placement: FixturePlacement } | null = null
     for (const floor of levelFloors) {
-      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { downpipes: downpipeSpots })
+      const placement = placeFixture(floor, pointer, fixtureKind, preferred, { setup: placeSizes[fixtureKind], downpipes: downpipeSpots })
       if (!best || (best.placement.problem && !placement.problem)) best = { floorId: floor.id, placement }
     }
     return best
   })
+
+  // The size the next fitting will have: what the ghost shows, which may be the indoor default.
+  const placeSize = $derived.by(() => {
+    const shown = fixtureGhost?.placement.fixture
+    const setup = shown ? { bottleKg: shown.bottleKg, litres: shown.litres, ...placeSizes[fixtureKind] } : placeSizes[fixtureKind]
+    const name = sizeName(fixtureKind, setup)
+    return name ? { name, setup: setup ?? {} } : null
+  })
+
+  function stepPlaceSize(by: 1 | -1) {
+    const size = placeSize
+    if (!size) return
+    placeSizes = { ...placeSizes, [fixtureKind]: stepSize(fixtureKind, size.setup, by) }
+  }
 
   function placeFixtureAt(plan: { x: number; z: number }) {
     pointerPlan = plan
@@ -1844,30 +1846,20 @@
     applyResult(documentStore.addFixture(ghost.floorId, ghost.placement.fixture))
   }
 
-  function setChosenBottles(patch: Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>) {
-    const chosen = chosenFixture
-    if (!chosen) return
-    const next = reseat(chosen.fixture, { ...bottleSetupPatch(chosen.fixture), ...patch })
-    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, bottles: next.bottles, bottleKg: next.bottleKg, cage: next.cage }))
-  }
 
-  function setChosenTank(litres: TankLitres) {
-    const chosen = chosenFixture
-    if (!chosen) return
-    const next = reseat(chosen.fixture, { litres })
-    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, litres }))
-  }
 
-  function bottleSetupPatch(fixture: Fixture): Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'> {
-    const setup = bottleSetup(fixture)
-    return { bottles: setup.count, bottleKg: setup.kg, cage: setup.cage }
-  }
 
   $effect(() => {
     if (tool !== 'draw-fixture') return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'r' && event.key !== 'R') return
       if (event.metaKey || event.ctrlKey || event.altKey || typingTarget(event)) return
+      if (event.key === '-' || event.key === '_' || event.key === '+' || event.key === '=') {
+        if (!placeSize) return
+        event.preventDefault()
+        stepPlaceSize(event.key === '-' || event.key === '_' ? -1 : 1)
+        return
+      }
+      if (event.key !== 'r' && event.key !== 'R') return
       event.preventDefault()
       fixtureTurn += 1
     }
@@ -1881,11 +1873,6 @@
     if (applyResult(documentStore.removeFixture(chosen.floorId, chosen.fixture.id))) chooseSelection({})
   }
 
-  function setChosenFixtureHeight(mm: number) {
-    const chosen = chosenFixture
-    if (!chosen || !Number.isFinite(mm)) return
-    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { y: fitFixtureY(chosen.fixture.kind, mm / 1000) }))
-  }
 
   function suggestForSelectedRoom() {
     const chosen = selectedRoom
@@ -2127,6 +2114,13 @@
           </Select.Group>
         </Select.Content>
       </Select.Root>
+      {#if placeSize}
+        <div class="flex items-center gap-1" role="group" aria-label="Size">
+          <Button variant="outline" size="icon-sm" title="Smaller (−)" aria-label="Smaller" onclick={() => stepPlaceSize(-1)}><Minus /></Button>
+          <span class="min-w-16 text-center text-sm tabular-nums">{placeSize.name}</span>
+          <Button variant="outline" size="icon-sm" title="Bigger (+)" aria-label="Bigger" onclick={() => stepPlaceSize(1)}><Plus /></Button>
+        </div>
+      {/if}
     {/if}
     {#if deletable}
       <Button
@@ -2866,8 +2860,7 @@
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
-      <aside class="inspector" aria-label="Stair">
-        <h2 class="font-semibold">Stair</h2>
+      <ContextPanel label="Stair" title="Stair" onclose={() => chooseSelection({})}>
         <p>
           {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
             .treads} goings of {Math.round(chosenStair.layout.going * 1000)} mm, {checkFormat.format(
@@ -2894,10 +2887,10 @@
           <Button variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
           <Button variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
         </div>
-      </aside>
+      </ContextPanel>
     {/if}
     {#if selectedService && showServices && !roofFloor}
-      <aside class="inspector" aria-label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}>
+      <ContextPanel label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'} onclose={() => chooseSelection({})}>
         {#if selectedService === 'sewer'}
           <h2 class="font-semibold">{plumbing.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</h2>
           <div class="grid gap-1.5">
@@ -2964,12 +2957,10 @@
           Drag the {selectedService === 'sewer' ? 'connection' : 'meter'} along the boundary, drag a + to add a bend, and Delete removes a selected bend.
         </p>
         <Button variant="outline" onclick={straightenSelected}>Straighten the route</Button>
-      </aside>
+      </ContextPanel>
     {/if}
     {#if chosenFixture && !roofFloor}
-      <aside class="inspector" aria-label="Fitting">
-        <h2 class="font-semibold">{chosenFixture.spec.name}</h2>
-        <p class="text-muted-foreground">{chosenFixture.spec.text}</p>
+      <ContextPanel label="Fitting" title={chosenFixture.spec.name} description={chosenFixture.spec.text} onclose={() => chooseSelection({})}>
         {#if chosenFixture.fixture.kind === 'db-board'}
           <p>
             Feeds {wiring.circuits.length} {wiring.circuits.length === 1 ? 'circuit' : 'circuits'}{wiring.boardSize
@@ -2986,114 +2977,17 @@
         {:else if chosenFixture.spec.trade === 'electrical' && chosenFixture.fixture.kind !== 'stove'}
           <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
         {/if}
-        {#if swapsFor(chosenFixture.fixture.kind).length > 0}
-          <div class="grid gap-1.5">
-            <Label for="fixture-kind">Type</Label>
-            <Select.Root type="single" value={chosenFixture.fixture.kind} onValueChange={(next) => next && swapChosenFixture(next as FixtureKind)}>
-              <Select.Trigger id="fixture-kind" size="sm" class="w-full">{chosenFixture.spec.name}</Select.Trigger>
-              <Select.Content>
-                {#each swapsFor(chosenFixture.fixture.kind) as kind (kind)}
-                  <Select.Item value={kind} label={fixtureSpec(kind).name} />
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-        {/if}
-        {#if chosenFixture.fixture.kind === 'water-tank'}
-          {@const feeds = eaves.downpipes.filter((pipe) => pipe.tank?.id === chosenFixture?.fixture.id).length}
-          <div class="grid gap-1.5">
-            <Label for="tank-size">Size</Label>
-            <Select.Root type="single" value={String(tankLitres(chosenFixture.fixture))} onValueChange={(next) => next && setChosenTank(Number(next) as TankLitres)}>
-              <Select.Trigger id="tank-size" size="sm" class="w-full">{TANKS[tankLitres(chosenFixture.fixture)].name}</Select.Trigger>
-              <Select.Content>
-                {#each TANK_SIZES as litres (litres)}
-                  <Select.Item value={String(litres)} label={TANKS[litres].name} />
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-          {#if feeds > 0}
-            <p>Fed by {feeds} {feeds === 1 ? 'downpipe' : 'downpipes'} from the gutters, through a leaf trap and first-flush diverter.</p>
-          {:else}
-            <p class="text-amber-700">No downpipe reaches it. Drag it along the wall to stand under one.</p>
-          {/if}
-        {/if}
-        {#if chosenFixture.fixture.kind === 'gas-cylinder'}
-          {@const setup = bottleSetup(chosenFixture.fixture)}
-          {@const fed = gas.runs.filter((run) => run.cylinder.fixture.id === chosenFixture?.fixture.id)}
-          <div class="grid grid-cols-2 gap-2">
-            <div class="grid gap-1.5">
-              <Label for="bottle-count">Bottles</Label>
-              <Select.Root type="single" value={String(setup.count)} onValueChange={(next) => next && setChosenBottles({ bottles: Number(next) })}>
-                <Select.Trigger id="bottle-count" size="sm" class="w-full">{setup.count}</Select.Trigger>
-                <Select.Content>
-                  {#each Array.from({ length: MAX_BOTTLES }, (_, i) => i + 1) as count (count)}
-                    <Select.Item value={String(count)} label={String(count)} />
-                  {/each}
-                </Select.Content>
-              </Select.Root>
-            </div>
-            <div class="grid gap-1.5">
-              <Label for="bottle-size">Size</Label>
-              <Select.Root type="single" value={String(setup.kg)} onValueChange={(next) => next && setChosenBottles({ bottleKg: Number(next) as BottleSize })}>
-                <Select.Trigger id="bottle-size" size="sm" class="w-full">{BOTTLES[setup.kg].name}</Select.Trigger>
-                <Select.Content>
-                  {#each BOTTLE_SIZES as kg (kg)}
-                    <Select.Item value={String(kg)} label={BOTTLES[kg].name} />
-                  {/each}
-                </Select.Content>
-              </Select.Root>
-            </div>
-            <div class="col-span-2 grid gap-1.5">
-              <Label for="bottle-cage">Cage</Label>
-              <Select.Root type="single" value={setup.cage ? 'yes' : 'no'} onValueChange={(next) => next && setChosenBottles({ cage: next === 'yes' })}>
-                <Select.Trigger id="bottle-cage" size="sm" class="w-full">{setup.cage ? 'Locked steel cage' : 'No cage'}</Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="yes" label="Locked steel cage" />
-                  <Select.Item value="no" label="No cage" />
-                </Select.Content>
-              </Select.Root>
-            </div>
-          </div>
-          <p>
-            Feeds {fed.length} {fed.length === 1 ? 'appliance' : 'appliances'}{fed.length > 0
-              ? `, through about ${checkFormat.format(fed.reduce((sum, run) => sum + run.length, 0))} m of 15 mm copper pipe.`
-              : '.'}
-          </p>
-        {:else if chosenFixture.spec.trade === 'gas'}
-          {@const run = gas.runs.find((item) => item.item.fixture.id === chosenFixture?.fixture.id)}
-          {#if run}
-            <p>
-              About {checkFormat.format(run.length)} m of 15 mm copper pipe from the gas bottles: {checkFormat.format(run.outside)} m along the
-              outside wall{run.inside > 0.05 ? `, ${checkFormat.format(run.inside)} m through and inside` : ''}.
-            </p>
-          {:else}
-            <p class="text-amber-700">No gas yet: place gas bottles against an outside wall.</p>
-          {/if}
-        {/if}
-        {#if chosenFixture.spec.mount !== 'ceiling'}
-          <div class="grid gap-1.5">
-            <Label for="fixture-height">{chosenFixture.spec.mount === 'wall' ? 'Height above floor (mm)' : 'Raised off the floor (mm)'}</Label>
-            <Input
-              id="fixture-height"
-              type="number"
-              min="0"
-              step="50"
-              value={Math.round(chosenFixture.fixture.y * 1000)}
-              onchange={(event) => setChosenFixtureHeight(Number(event.currentTarget.value))}
-            />
-          </div>
-        {/if}
+        <FittingSetup floorId={chosenFixture.floorId} fixture={chosenFixture.fixture} onresult={applyResult} />
         <div class="grid gap-2">
           {#if chosenFixture.onWall}
             <Button variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
           {/if}
           <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
         </div>
-      </aside>
+      </ContextPanel>
     {/if}
     {#if selectedRoom && !roofFloor}
-      <aside class="inspector" aria-label="Room">
+      <ContextPanel label="Room" onclose={() => chooseSelection({})}>
         {#if selectedRoom.resolved}
           {@const resolved = selectedRoom.resolved}
           <div class="grid gap-1.5">
@@ -3190,11 +3084,10 @@
           </div>
           <Button onclick={nameSelectedRoom}>Name this room</Button>
         {/if}
-      </aside>
+      </ContextPanel>
     {/if}
     {#if roofFloor}
-      <aside class="inspector" aria-label="Roof">
-        <h2 class="font-semibold">Roof</h2>
+      <ContextPanel label="Roof" title="Roof">
         {#if roofFloor.roof}
           {@const roof = roofFloor.roof}
           <div class="grid gap-1.5">
@@ -3282,7 +3175,7 @@
           <p class="text-muted-foreground">This storey is an empty plate on the walls below.</p>
           <Button onclick={addRoof}>Add roof</Button>
         {/if}
-      </aside>
+      </ContextPanel>
     {/if}
   </div>
 </div>
@@ -3319,22 +3212,6 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .inspector {
-    position: absolute;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    overflow-y: auto;
-    background: var(--background);
-    padding: 1rem;
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-    font-size: 0.875rem;
-    inset: auto 0 0 0;
-    max-height: min(24rem, 62%);
-    width: 100%;
-    border-top: 1px solid var(--border);
-  }
 
   @media (min-width: 768px) {
     .stage {
@@ -3352,14 +3229,6 @@
       border-right: 1px solid var(--border);
     }
 
-    .inspector {
-      inset: 0 0 0 auto;
-      max-height: none;
-      width: 16rem;
-      border-top: none;
-      border-left: 1px solid var(--border);
-      padding-bottom: 1rem;
-    }
   }
 
   .canvas {

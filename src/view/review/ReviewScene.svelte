@@ -14,7 +14,6 @@
   import {
     floorWorldDatum,
     groundPad,
-    levelField,
     pointInRing,
     SURFACE_BED_THICKNESS_M,
     SURFACE_BED_TOP_ABOVE_DATUM_M,
@@ -40,7 +39,7 @@
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
-  import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, fixtureStandAboveDatum, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
   import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
@@ -173,10 +172,9 @@
   }
 
   $effect(() => {
-    const heightfield = doc.heightfield
     const floors = doc.building.floors
     const pad = groundPad(doc)
-    const displayField = pad ? levelField(heightfield, pad.structures) : heightfield
+    const displayField = siteField(doc)
     const ground = buildGroundGeometry(displayField)
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const minor = lineGeometry(contours.minor)
@@ -241,10 +239,13 @@
     }))
     const fittings = floors
       .filter((floor) => (floor.fixtures ?? []).length > 0)
-      .map((floor) => ({
-        key: floor.id,
-        parts: buildFixtureParts(floor.fixtures ?? [], floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) + finishedFloor(floor)),
-      }))
+      .map((floor) => {
+        const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
+        return {
+          key: floor.id,
+          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
+        }
+      })
     groundGeometry = ground
     contourMinor = minor
     contourMajor = major
@@ -313,11 +314,11 @@
   function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
     const solar = powerLayout(doc)
     const eaves = gutterLayout(doc)
-    const field = pad ? levelField(doc.heightfield, pad.structures) : doc.heightfield
+    const field = siteField(doc)
     const meshes: RoofMesh[] = []
-    // Rainwater tanks stand on the ground floor's level; downpipes into them stop there.
+    // Rainwater tanks stand on exterior grade above the ground-floor datum; downpipes into them stop there.
     const ground = doc.building.floors.find((item) => item.index === 0)
-    const groundLevel = ground ? floorWorldDatum(ground.datumHeight, supportGrade(ground, pad)) + finishedFloor(ground) : undefined
+    const groundDatum = ground ? floorWorldDatum(ground.datumHeight, supportGrade(ground, pad)) : undefined
     for (const floor of doc.building.floors) {
       const roof = floor.roof
       if (!roof || floor.index === 0) continue
@@ -343,7 +344,7 @@
           floor.id,
           gutterOf(roof),
           (x, z) => bilinearHeight(field, x, z) - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
-          groundLevel === undefined ? undefined : groundLevel - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
+          groundDatum === undefined ? undefined : groundDatum - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M),
         ),
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
@@ -495,9 +496,7 @@
   }
 
   function keepCameraAboveGround(controls: OrbitControlsInstance) {
-    const field = doc.heightfield
-    const pad = groundPad(doc)
-    const displayField = pad ? levelField(field, pad.structures) : field
+    const displayField = siteField(doc)
     const camera = controls.object
     const lifted = liftAboveGround(
       camera.position.y,
@@ -580,7 +579,13 @@
     {#each fixtureMeshes as fitting (fitting.key)}
       {#each fitting.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow receiveShadow>
-          <T.MeshStandardMaterial color={part.colour} roughness={0.5} />
+          <T.MeshStandardMaterial
+            color={part.colour}
+            roughness={part.roughness}
+            metalness={part.metalness}
+            emissive={part.emissive ?? '#000000'}
+            emissiveIntensity={part.emissiveIntensity ?? 0}
+          />
         </T.Mesh>
       {/each}
     {/each}
