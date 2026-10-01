@@ -15,6 +15,7 @@ import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 import { FIXTURES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
+import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import {
   floorSupports,
   pierCourses,
@@ -468,6 +469,19 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: 1,
       rateKey: 'earth-leakage',
     })
+  }
+
+  const power = powerLayout(doc)
+  if (power.inverterKva) {
+    drafts.push({ id: `inverter:${power.inverterKva}`, group: 'Electrical', label: `Inverter ${power.inverterKva} kVA`, note: `Peak essential load about ${round(power.peak / 1000, 1)} kW`, unit: 'each', quantity: 1, rateKey: `inverter:${power.inverterKva}` })
+    drafts.push({ id: 'essentials-board', group: 'Electrical', label: 'Essentials board and changeover', note: `${power.essential.length} circuits kept on in load shedding`, unit: 'each', quantity: 1, rateKey: 'essentials-board' })
+  }
+  if (power.batteryModules > 0) {
+    drafts.push({ id: 'battery', group: 'Electrical', label: `Lithium battery ${BATTERY_MODULE_KWH} kWh`, note: `${round(power.batteryKwh, 1)} kWh for ${power.hours} hours of the essentials`, unit: 'each', quantity: power.batteryModules, rateKey: 'battery' })
+  }
+  if (power.panels > 0) {
+    drafts.push({ id: 'solar-panel', group: 'Electrical', label: `Solar panel ${PANEL_W} W`, note: `${round(power.kwp, 2)} kWp, about ${Math.round(power.yearly).toLocaleString('en-ZA')} kWh a year`, unit: 'each', quantity: power.panels, rateKey: 'solar-panel' })
+    drafts.push({ id: 'panel-mounting', group: 'Electrical', label: 'Panel mounting', note: 'Rails and roof hooks for each panel', unit: 'each', quantity: power.panels, rateKey: 'panel-mounting' })
   }
 
   const pipes = plumbingLayout(doc)

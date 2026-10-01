@@ -8,6 +8,7 @@
   import { layoutSpaces, roomTypeLabel } from '$lib/geometry/spaces'
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
+  import { BATTERY_MODULE_KWH, powerLayout, suggestedPanels } from '$lib/geometry/power'
   import { planHref } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
@@ -18,6 +19,7 @@
   const electrical = $derived(electricalLayout(doc))
   const electricalProblems = $derived(electricalIssues(doc))
   const pipes = $derived(plumbingLayout(doc))
+  const power = $derived(powerLayout(doc))
   const longestHot = $derived(pipes.hot.reduce((most, run) => Math.max(most, run.length), 0))
   const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
@@ -238,6 +240,107 @@
           {/each}
         </Card.Content>
       </Card.Root>
+    {/if}
+
+    {#if electrical.circuits.length > 0}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold">Load shedding and solar</h2>
+        <p class="text-sm text-muted-foreground">
+          Tick the circuits to keep on when the power goes off. The inverter and battery are sized from rough loads for
+          each kind of circuit; a solar installer sizes the real system.
+        </p>
+      </div>
+      <Card.Root>
+        <Card.Content class="grid gap-4 py-4 text-sm">
+          <div class="flex flex-wrap gap-x-6 gap-y-2">
+            {#each electrical.circuits as circuit (circuit.id)}
+              <label class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  class="size-4 accent-primary"
+                  checked={(doc.services?.essential ?? []).includes(circuit.id)}
+                  onchange={(event) => documentStore.setEssential(circuit.id, event.currentTarget.checked)}
+                />
+                <span class="font-medium">{circuit.id}</span>
+                <span class="text-muted-foreground">{circuit.name}</span>
+              </label>
+            {/each}
+          </div>
+          <div class="flex flex-wrap items-end gap-4">
+            <div class="grid gap-1.5">
+              <label for="backup-hours" class="text-xs text-muted-foreground">Hours of backup</label>
+              <input
+                id="backup-hours"
+                type="number"
+                min="1"
+                max="24"
+                class="h-8 w-24 rounded-md border bg-background px-2"
+                value={power.hours}
+                onchange={(event) => documentStore.setBackupHours(Number(event.currentTarget.value))}
+              />
+            </div>
+            <div class="grid gap-1.5">
+              <label for="solar-panels" class="text-xs text-muted-foreground">Solar panels (up to {power.capacity})</label>
+              <input
+                id="solar-panels"
+                type="number"
+                min="0"
+                max={power.capacity}
+                class="h-8 w-24 rounded-md border bg-background px-2"
+                value={doc.services?.solarPanels ?? 0}
+                onchange={(event) => documentStore.setSolarPanels(Math.max(0, Math.round(Number(event.currentTarget.value))))}
+              />
+            </div>
+            {#if power.essential.length > 0 && power.capacity > 0}
+              <Button variant="outline" size="sm" onclick={() => documentStore.setSolarPanels(suggestedPanels(power))}>
+                Suggest panels ({suggestedPanels(power)})
+              </Button>
+            {/if}
+          </div>
+        </Card.Content>
+      </Card.Root>
+      {#if power.essential.length > 0 || power.panels > 0}
+        <div class="grid gap-4 sm:grid-cols-3">
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Inverter</Card.Description>
+              <Card.Title class="text-2xl">{power.inverterKva ? `${power.inverterKva} kVA` : '–'}</Card.Title>
+              <Card.Description>Peak essential load about {number.format(power.peak / 1000)} kW</Card.Description>
+            </Card.Header>
+          </Card.Root>
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Battery</Card.Description>
+              <Card.Title class="text-2xl">{number.format(power.batteryModules * BATTERY_MODULE_KWH)} kWh</Card.Title>
+              <Card.Description>
+                {power.batteryModules} × {BATTERY_MODULE_KWH} kWh for {power.hours} hours at about {Math.round(power.running)} W
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Solar</Card.Description>
+              <Card.Title class="text-2xl">{number.format(power.kwp)} kWp</Card.Title>
+              <Card.Description>
+                {power.panels > 0
+                  ? `${power.panels} panels, about ${Math.round(power.yearly).toLocaleString('en-ZA')} kWh a year`
+                  : power.capacity > 0
+                    ? `Room for ${power.capacity} panels on the sunnier roof faces`
+                    : 'Add a roof to lay out panels'}
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        </div>
+      {/if}
+      {#if power.warnings.length > 0}
+        <Card.Root>
+          <Card.Content class="grid gap-2 py-4 text-sm">
+            {#each power.warnings as warning (warning.id)}
+              <span class="text-amber-700">{warning.text}</span>
+            {/each}
+          </Card.Content>
+        </Card.Root>
+      {/if}
     {/if}
 
     <div class="mt-4">

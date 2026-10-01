@@ -41,6 +41,7 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
+  import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
@@ -80,6 +81,7 @@
     texture: CanvasTexture | null
     colour: string
     gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
+    panels: BufferGeometry | null
     y: number
   }
   type StairMesh = { key: string; geometry: BufferGeometry; y: number }
@@ -266,6 +268,7 @@
         roof.meshes.under?.dispose()
         roof.meshes.edges?.dispose()
         roof.gable.body?.dispose()
+        roof.panels?.dispose()
         roof.gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
@@ -284,7 +287,20 @@
     return above ? FLOOR_TO_FLOOR : undefined
   }
 
+  function panelGeometry(spots: PanelSpot[]): BufferGeometry | null {
+    if (spots.length === 0) return null
+    const positions: number[] = []
+    for (const { corners: [a, b, c, d] } of spots) {
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z)
+    }
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    geometry.computeVertexNormals()
+    return geometry
+  }
+
   function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
+    const solar = powerLayout(doc)
     const meshes: RoofMesh[] = []
     for (const floor of doc.building.floors) {
       const roof = floor.roof
@@ -305,6 +321,7 @@
         texture: coveringTexture(spec),
         colour: spec.colour,
         gable,
+        panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }
@@ -583,6 +600,11 @@
       {#if roof.meshes.edges}
         <T.Mesh geometry={roof.meshes.edges} position.y={roof.y} castShadow>
           <T.MeshStandardMaterial color="#e7e5e4" roughness={0.7} side={DoubleSide} />
+        </T.Mesh>
+      {/if}
+      {#if roof.panels}
+        <T.Mesh geometry={roof.panels} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color="#1e2a44" metalness={0.4} roughness={0.25} side={DoubleSide} />
         </T.Mesh>
       {/if}
       {#if roof.gable.body}

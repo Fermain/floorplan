@@ -198,6 +198,10 @@ export type SiteServices = {
   sewerType?: SewerType
   soakaway?: PlanPoint
   rainfallMm?: number
+  // Load shedding: circuits kept on by the inverter, hours of backup, and solar panels on the roof.
+  essential?: string[]
+  backupHours?: number
+  solarPanels?: number
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
 }
 

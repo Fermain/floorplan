@@ -505,6 +505,23 @@ export function setRainfall(document: Document, millimetres: number): MutationRe
   return ok({ ...document, services: { ...(document.services ?? {}), rainfallMm: millimetres } })
 }
 
+export function setEssential(document: Document, circuitId: string, essential: boolean): MutationResult {
+  const current = new Set(document.services?.essential ?? [])
+  if (essential) current.add(circuitId)
+  else current.delete(circuitId)
+  return ok({ ...document, services: { ...(document.services ?? {}), essential: [...current].sort() } })
+}
+
+export function setBackupHours(document: Document, hours: number): MutationResult {
+  if (!(hours >= 1 && hours <= 24)) return fail(document, 'backup hours out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), backupHours: hours } })
+}
+
+export function setSolarPanels(document: Document, panels: number): MutationResult {
+  if (!Number.isInteger(panels) || panels < 0 || panels > 200) return fail(document, 'panel count out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), solarPanels: panels } })
+}
+
 export function setSewerDepth(document: Document, depth: number): MutationResult {
   if (!(depth >= 0.3 && depth <= 4)) return fail(document, 'sewer depth out of range')
   return ok({ ...document, services: { ...(document.services ?? {}), sewerDepth: depth } })
