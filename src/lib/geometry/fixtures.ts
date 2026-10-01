@@ -166,6 +166,8 @@ const PLATE = '#ededea'
 const METAL = '#8d9399'
 const COUNTER = '#d6d0c4'
 const GLOW = '#fff7d6'
+const TANK = '#2f5d3a'
+const CONCRETE = '#a8a29e'
 
 type Piece = { geometry: BufferGeometry; along: number; out: number; y: number; colour: string }
 
@@ -192,6 +194,8 @@ function pieces(kind: FixtureKind): Piece[] {
       return [box(w, d, h, 0, d / 2, 0, CERAMIC)]
     case 'sink':
       return [box(w, d - 0.04, h - 0.04, 0, d / 2, 0, CERAMIC), box(w, d, 0.04, 0, d / 2, h - 0.04, COUNTER)]
+    case 'water-tank':
+      return [puck(w / 2, h - 0.1, 0, d / 2, 0.1, TANK), puck(w / 2 + 0.05, 0.1, 0, d / 2, 0, CONCRETE)]
     case 'washing-machine':
       return [box(w, d, h, 0, d / 2, 0, CERAMIC)]
     case 'geyser':

@@ -258,7 +258,7 @@
       <div class="grid gap-4 sm:grid-cols-3">
         <Card.Root>
           <Card.Header>
-            <Card.Description>Drain to the sewer</Card.Description>
+            <Card.Description>{pipes.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</Card.Description>
             <Card.Title class="text-2xl {pipes.profile && pipes.profile.shortBy > 0.005 ? 'text-amber-700' : ''}">
               {pipes.profile ? `${number.format(pipes.profile.length)} m` : '–'}
             </Card.Title>
@@ -266,7 +266,7 @@
               {pipes.profile
                 ? pipes.profile.shortBy > 0.005
                   ? `Arrives ${Math.round(pipes.profile.shortBy * 1000)} mm below the sewer`
-                  : `Falls into the sewer; ${number.format(pipes.profile.deepest)} m at its deepest`
+                  : `Falls into the ${pipes.septic ? 'tank' : 'sewer'}; ${number.format(pipes.profile.deepest)} m at its deepest`
                 : 'No drains yet'}
             </Card.Description>
           </Card.Header>
@@ -285,6 +285,37 @@
             <Card.Description>From the geyser to the furthest hot tap</Card.Description>
           </Card.Header>
         </Card.Root>
+      </div>
+    {/if}
+
+    {#if pipes.septic || pipes.rain}
+      <div class="grid gap-4 sm:grid-cols-2">
+        {#if pipes.septic}
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Septic tank</Card.Description>
+              <Card.Title class="text-2xl">{pipes.septic.litres.toLocaleString('en-ZA')} litres</Card.Title>
+              <Card.Description>
+                For {pipes.septic.bedrooms} {pipes.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}, overflowing to a soakaway.
+                The local authority approves the size and position.
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        {/if}
+        {#if pipes.rain}
+          <Card.Root>
+            <Card.Header>
+              <Card.Description>Rainwater off the roof</Card.Description>
+              <Card.Title class="text-2xl">{Math.round(pipes.rain.yearly / 1000).toLocaleString('en-ZA')} kL a year</Card.Title>
+              <Card.Description>
+                {number.format(pipes.rain.catchment)} m² of roof at {pipes.rain.rainfall} mm of rain.
+                {pipes.rain.tanks > 0
+                  ? `${pipes.rain.tanks} × 5,000 L ${pipes.rain.tanks === 1 ? 'tank fills' : 'tanks; one fills'} from ${number.format(pipes.rain.fillMm)} mm of rain.`
+                  : `${pipes.rain.suggested} × 5,000 L ${pipes.rain.suggested === 1 ? 'tank' : 'tanks'} would hold a ${25} mm storm. Add one with the Fittings tool.`}
+              </Card.Description>
+            </Card.Header>
+          </Card.Root>
+        {/if}
       </div>
     {/if}
 

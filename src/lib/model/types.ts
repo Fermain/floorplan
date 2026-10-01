@@ -112,6 +112,7 @@ export type FixtureKind =
   | 'geyser'
   | 'solar-geyser'
   | 'outside-tap'
+  | 'water-tank'
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -187,10 +188,16 @@ export type ServiceKind = 'sewer' | 'water'
 export type PlanPoint = { x: number; z: number }
 
 // Where the plot's services connect on the boundary, and the bends in the pipes run to them outside.
+export type SewerType = 'municipal' | 'septic'
+
 export type SiteServices = {
   sewer?: PlanPoint
   water?: PlanPoint
   sewerDepth?: number
+  // Off the municipal sewer the drain ends in a septic tank, which overflows to a soakaway.
+  sewerType?: SewerType
+  soakaway?: PlanPoint
+  rainfallMm?: number
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
 }
 

@@ -496,6 +496,18 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: pipes.profile.points.length,
       rateKey: 'inspection-eye',
     })
+    if (pipes.septic) {
+      drafts.push({
+        id: 'septic-tank',
+        group: 'Plumbing',
+        label: `Septic tank ${pipes.septic.litres.toLocaleString('en-ZA')} litres`,
+        note: `Sized for ${pipes.septic.bedrooms} ${pipes.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`,
+        unit: 'each',
+        quantity: 1,
+        rateKey: 'septic-tank',
+      })
+      drafts.push({ id: 'soakaway', group: 'Plumbing', label: 'Soakaway', note: 'Stone-filled pit or trench for the tank overflow', unit: 'each', quantity: 1, rateKey: 'soakaway' })
+    }
     drafts.push({ id: 'gully', group: 'Plumbing', label: 'Gully', note: 'Where the wastes leave the house', unit: 'each', quantity: 1, rateKey: 'gully' })
     const trench = pipes.profile.trench + waterTrench(pipes.waterMain)
     drafts.push({

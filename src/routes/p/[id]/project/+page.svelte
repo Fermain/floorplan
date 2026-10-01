@@ -13,6 +13,7 @@
   import WallPicker from '$lib/components/project/WallPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
+  import { DEFAULT_RAINFALL_MM } from '$lib/geometry/plumbing'
   import type { ProjectDefaults, WallSystemId } from '$lib/model/types'
 
   const plot = $derived(documentStore.document.plot)
@@ -125,9 +126,9 @@
     <Card.Root>
       <Card.Header>
         <Card.Title>Location</Card.Title>
-        <Card.Description>Used for the sun path in Review.</Card.Description>
+        <Card.Description>Used for the sun path in Review, and the rainfall for sizing rainwater tanks.</Card.Description>
       </Card.Header>
-      <Card.Content class="grid gap-4 sm:grid-cols-3">
+      <Card.Content class="grid gap-4 sm:grid-cols-4">
         <div class="grid gap-1.5">
           <Label for="latitude">Latitude</Label>
           <Input
@@ -163,6 +164,20 @@
                 plot.longitude,
                 !Number.isFinite(value) || value < -180 || value > 180 ? 'Longitude must be between −180 and 180.' : '',
               )
+            }}
+          />
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="rainfall">Annual rainfall (mm)</Label>
+          <Input
+            id="rainfall"
+            type="number"
+            min="50"
+            step="10"
+            value={documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM}
+            onchange={(event) => {
+              const result = documentStore.setRainfall(Number(event.currentTarget.value))
+              if (!result.ok) event.currentTarget.value = String(documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM)
             }}
           />
         </div>

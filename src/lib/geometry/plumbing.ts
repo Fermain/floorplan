@@ -4,12 +4,24 @@ import { finishedFloor } from './fixtures'
 import { groundPad, levelField, pointInRing, structureRings, type GroundPad } from './pad'
 import { bilinearHeight } from './terrain'
 import { wallReach } from './outline'
+import { masonryReach, roofPlan } from './roof'
+import { signedPolygonArea } from '../model/geom'
+import { supportingFloor } from '../model/stories'
 
 // Rules of thumb for an indicative layout, to be confirmed against SANS 10400-P and SANS 10252.
 export const DRAIN_FALL: Record<number, number> = { 110: 60, 50: 40 }
 export const MIN_COVER_M = 0.3
 export const DEFAULT_SEWER_DEPTH_M = 1
 export const LONG_HOT_RUN_M = 12
+export const SEPTIC_INLET_DEPTH_M = 0.5
+export const SEPTIC_CLEAR_BUILDING_M = 3
+export const SOAKAWAY_CLEAR_BUILDING_M = 5
+export const SOAKAWAY_CLEAR_BOUNDARY_M = 3
+export const SOAKAWAY_DEFAULT_M = 6
+export const DEFAULT_RAINFALL_MM = 650
+export const RUNOFF = 0.8
+export const TANK_LITRES = 5000
+const STORM_MM = 25
 const OUTLET_BELOW_FLOOR_M = 0.2
 const TRENCH_WIDTH_M = 0.45
 const WATER_TRENCH_DEPTH_M = 0.45
@@ -34,6 +46,10 @@ export type DrainProfile = {
   trench: number
 }
 
+export type Septic = { tank: PlanPoint; soakaway: PlanPoint; litres: number; bedrooms: number }
+
+export type Rainwater = { catchment: number; rainfall: number; yearly: number; tanks: number; fillMm: number; suggested: number }
+
 export type PlumbingLayout = {
   exit: PlanPoint | null
   sewer: PlanPoint
@@ -44,7 +60,83 @@ export type PlumbingLayout = {
   waterMain: number
   cold: number
   hot: { item: Placed; length: number }[]
+  septic: Septic | null
+  rain: Rainwater | null
   issues: { id: string; text: string }[]
+}
+
+// Rule of thumb: 2,500 litres serves two bedrooms, and each further bedroom adds 500.
+export function septicLitres(bedrooms: number): number {
+  return 2500 + Math.max(0, bedrooms - 2) * 500
+}
+
+// How far a point is from a building: nothing if it is inside it.
+function distanceToRing(ring: PlanPoint[], at: PlanPoint): number {
+  if (pointInRing(ring, at.x, at.z)) return 0
+  return distanceToEdge(ring, at)
+}
+
+// How far a point is from the line of a ring, such as the plot boundary, from either side.
+function distanceToEdge(ring: PlanPoint[], at: PlanPoint): number {
+  const near = nearestOnRing(ring, at)
+  return Math.hypot(near.x - at.x, near.z - at.z)
+}
+
+// The soakaway goes to the lowest spot within a few metres of the tank that clears the boundary and the buildings.
+export function soakawayPoint(doc: Document, tank: PlanPoint, exit: PlanPoint | null): PlanPoint {
+  const placed = doc.services?.soakaway
+  if (placed) return placed
+  const ring = plotPoints(doc)
+  const ground = doc.building.floors.find((floor) => floor.index === 0)
+  const buildings = ground ? structureRings(ground) : []
+  const height = (p: PlanPoint) => bilinearHeight(doc.heightfield, p.x, p.z)
+  let best: { point: PlanPoint; score: number } | null = null
+  for (let reach = SOAKAWAY_DEFAULT_M; reach >= 3; reach -= 1) {
+    for (let k = 0; k < 16; k++) {
+      const angle = (k / 16) * Math.PI * 2
+      const p = { x: tank.x + Math.cos(angle) * reach, z: tank.z + Math.sin(angle) * reach }
+      if (!pointInRing(ring, p.x, p.z) || distanceToEdge(ring, p) < SOAKAWAY_CLEAR_BOUNDARY_M) continue
+      if (buildings.some((building) => distanceToRing(building, p) < SOAKAWAY_CLEAR_BUILDING_M)) continue
+      const away = exit ? Math.hypot(p.x - exit.x, p.z - exit.z) * 0.001 : 0
+      const score = height(p) - away
+      if (!best || score < best.score) best = { point: p, score }
+    }
+    if (best) return best.point
+  }
+  // Nowhere clears everything: take the lowest spot on the plot, and let the checks say what it is too close to.
+  let fallback: { point: PlanPoint; score: number } | null = null
+  for (let reach = SOAKAWAY_DEFAULT_M; reach >= 2; reach -= 1) {
+    for (let k = 0; k < 16; k++) {
+      const angle = (k / 16) * Math.PI * 2
+      const p = { x: tank.x + Math.cos(angle) * reach, z: tank.z + Math.sin(angle) * reach }
+      if (!pointInRing(ring, p.x, p.z) || distanceToEdge(ring, p) < 0.5) continue
+      if (buildings.some((building) => pointInRing(building, p.x, p.z))) continue
+      const score = height(p)
+      if (!fallback || score < fallback.score) fallback = { point: p, score }
+    }
+  }
+  return fallback?.point ?? tank
+}
+
+function rainwater(doc: Document, tanks: number): Rainwater | null {
+  let catchment = 0
+  for (const floor of doc.building.floors) {
+    if (!floor.roof || floor.index === 0) continue
+    const below = supportingFloor(doc, floor)
+    for (const footprint of roofPlan(floor, floor.roof, masonryReach(below?.walls ?? [])).footprints) {
+      catchment += Math.abs(signedPolygonArea(footprint.outer)) - footprint.holes.reduce((sum, hole) => sum + Math.abs(signedPolygonArea(hole)), 0)
+    }
+  }
+  if (catchment <= 0) return null
+  const rainfall = doc.services?.rainfallMm ?? DEFAULT_RAINFALL_MM
+  return {
+    catchment,
+    rainfall,
+    yearly: catchment * rainfall * RUNOFF,
+    tanks,
+    fillMm: TANK_LITRES / (catchment * RUNOFF),
+    suggested: Math.max(1, Math.ceil((catchment * STORM_MM * RUNOFF) / TANK_LITRES)),
+  }
 }
 
 function manhattan(a: PlanPoint, b: PlanPoint): number {
@@ -141,17 +233,30 @@ export function connectionPoint(doc: Document, kind: ServiceKind, exit: PlanPoin
       const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 1))
       return Array.from({ length: steps }, (_, k) => ({ x: a.x + ((b.x - a.x) * k) / steps, z: a.z + ((b.z - a.z) * k) / steps }))
     })
-    return inset(ring, samples.reduce((low, p) => (height(p) < height(low) - 1e-6 ? p : low), samples[0]))
+    const low = samples.reduce((best, p) => (height(p) < height(best) - 1e-6 ? p : best), samples[0])
+    if (doc.services?.sewerType !== 'septic' || !exit) return inset(ring, low, 0.5)
+    // A septic tank sits partway down towards the low corner, leaving the lowest ground for its soakaway.
+    const bottom = inset(ring, low, 3)
+    const run = Math.hypot(bottom.x - exit.x, bottom.z - exit.z)
+    if (run < 8) return bottom
+    const ground = doc.building.floors.find((floor) => floor.index === 0)
+    const buildings = ground ? structureRings(ground) : []
+    for (let along = SEPTIC_CLEAR_BUILDING_M; along <= run - 3; along += 0.25) {
+      const p = { x: exit.x + ((bottom.x - exit.x) * along) / run, z: exit.z + ((bottom.z - exit.z) * along) / run }
+      if (buildings.every((building) => distanceToRing(building, p) >= SEPTIC_CLEAR_BUILDING_M)) return p
+    }
+    return bottom
   }
   return inset(ring, nearestOnRing(ring, exit ?? ring[0]))
 }
 
-// Half a metre in from the boundary, so the connection sits on the plot.
-function inset(ring: PlanPoint[], point: PlanPoint): PlanPoint {
+// A little way in from the boundary, towards the middle of the plot.
+function inset(ring: PlanPoint[], point: PlanPoint, by = 0.5): PlanPoint {
   const cx = ring.reduce((sum, p) => sum + p.x, 0) / ring.length
   const cz = ring.reduce((sum, p) => sum + p.z, 0) / ring.length
   const d = Math.hypot(cx - point.x, cz - point.z) || 1
-  return { x: point.x + ((cx - point.x) / d) * 0.5, z: point.z + ((cz - point.z) / d) * 0.5 }
+  const reach = Math.min(by, d * 0.5)
+  return { x: point.x + ((cx - point.x) / d) * reach, z: point.z + ((cz - point.z) / d) * reach }
 }
 
 export function servicePath(doc: Document, kind: ServiceKind, exit: PlanPoint, end: PlanPoint): PlanPoint[] {
@@ -203,7 +308,10 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
   const sewer = connectionPoint(doc, 'sewer', exit)
   const water = connectionPoint(doc, 'water', exit)
   const issues: PlumbingLayout['issues'] = []
-  if (!exit) return { exit, sewer, water, drains: [], stack: 0, profile: null, waterMain: 0, cold: 0, hot: [], issues }
+  if (!exit) {
+    const tanks = placed.filter((item) => item.fixture.kind === 'water-tank').length
+    return { exit, sewer, water, drains: [], stack: 0, profile: null, waterMain: 0, cold: 0, hot: [], septic: null, rain: rainwater(doc, tanks), issues }
+  }
 
   const drains = placed
     .filter((item) => DRAINS[item.fixture.kind])
@@ -220,19 +328,40 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
       stack = Math.max(stack, level - ground(exit.x, exit.z) + MIN_COVER_M)
     }
   }
-  const profile = drains.length > 0
-    ? drainProfile(servicePath(doc, 'sewer', exit, sewer), startInvert, ground, doc.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M)
-    : null
+  const septicTank = doc.services?.sewerType === 'septic'
+  const depth = septicTank ? SEPTIC_INLET_DEPTH_M : (doc.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M)
+  const profile = drains.length > 0 ? drainProfile(servicePath(doc, 'sewer', exit, sewer), startInvert, ground, depth) : null
   if (profile && profile.shortBy > 0.005) {
     issues.push({
       id: 'sewer-high',
-      text: `The drain reaches the sewer connection ${Math.round(profile.shortBy * 1000)} mm too low to fall into it. Move the connection lower, route the drain over lower ground, or plan for a pump.`,
+      text: septicTank
+        ? `The drain reaches the septic tank ${Math.round(profile.shortBy * 1000)} mm below its inlet. Set the tank lower down the slope, or route the drain over lower ground.`
+        : `The drain reaches the sewer connection ${Math.round(profile.shortBy * 1000)} mm too low to fall into it. Move the connection lower, route the drain over lower ground, or plan for a pump.`,
     })
+  }
+  const groundFloor = doc.building.floors.find((floor) => floor.index === 0)
+  const rings = groundFloor ? structureRings(groundFloor) : []
+  let septic: Septic | null = null
+  if (septicTank) {
+    const bedrooms = doc.building.floors.reduce((sum, floor) => sum + (floor.spaces ?? []).filter((space) => space.type === 'bedroom').length, 0)
+    const soakaway = soakawayPoint(doc, sewer, exit)
+    septic = { tank: sewer, soakaway, litres: septicLitres(bedrooms), bedrooms }
+    const clear = (at: PlanPoint) => Math.min(Infinity, ...rings.map((ring) => distanceToRing(ring, at)))
+    if (clear(sewer) < SEPTIC_CLEAR_BUILDING_M) {
+      issues.push({ id: 'septic-close', text: `The septic tank is closer than ${SEPTIC_CLEAR_BUILDING_M} m to a building. Move it further out.` })
+    }
+    if (clear(soakaway) < SOAKAWAY_CLEAR_BUILDING_M) {
+      issues.push({ id: 'soakaway-close', text: `The soakaway is closer than ${SOAKAWAY_CLEAR_BUILDING_M} m to a building; the water it lets out can undermine foundations.` })
+    }
+    if (distanceToEdge(plotPoints(doc), soakaway) < SOAKAWAY_CLEAR_BOUNDARY_M) {
+      issues.push({ id: 'soakaway-boundary', text: `The soakaway is closer than ${SOAKAWAY_CLEAR_BOUNDARY_M} m to the boundary.` })
+    }
+    if (ground(soakaway.x, soakaway.z) > ground(sewer.x, sewer.z) - 0.05) {
+      issues.push({ id: 'soakaway-uphill', text: 'The soakaway is not below the septic tank; the overflow needs to run downhill to it.' })
+    }
   }
 
   // Pipes outside should stay out from under buildings, where they cannot be reached.
-  const groundFloor = doc.building.floors.find((floor) => floor.index === 0)
-  const rings = groundFloor ? structureRings(groundFloor) : []
   const underBuilding = (path: PlanPoint[]) => {
     for (let i = 1; i < path.length; i++) {
       const a = path[i - 1]
@@ -285,7 +414,9 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
       text: `The ${fixtureSpec(longest.item.fixture.kind).name.toLowerCase()} is about ${Math.round(longest.length)} m of pipe from the geyser; you would run off a lot of cold water before it gets hot. Move the geyser or the fitting closer.`,
     })
   }
-  return { exit, sewer, water, drains, stack, profile, waterMain, cold, hot, issues }
+  const tanks = placed.filter((item) => item.fixture.kind === 'water-tank').length
+  const rain = rainwater(doc, tanks)
+  return { exit, sewer, water, drains, stack, profile, waterMain, cold, hot, septic, rain, issues }
 }
 
 export function waterTrench(length: number): number {

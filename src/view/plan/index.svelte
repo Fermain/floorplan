@@ -17,7 +17,16 @@
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
-  import { DEFAULT_SEWER_DEPTH_M, DRAIN_FALL, plumbingLayout } from '../../lib/geometry/plumbing'
+  import {
+    DEFAULT_SEWER_DEPTH_M,
+    DRAIN_FALL,
+    plumbingLayout,
+    SEPTIC_CLEAR_BUILDING_M,
+    SEPTIC_INLET_DEPTH_M,
+    SOAKAWAY_CLEAR_BOUNDARY_M,
+    SOAKAWAY_CLEAR_BUILDING_M,
+    soakawayPoint,
+  } from '../../lib/geometry/plumbing'
   import Triangle from '@lucide/svelte/icons/triangle'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
@@ -47,7 +56,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { FixtureKind, ServiceKind, Stair } from '../../lib/model/types'
+  import type { FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -166,7 +175,7 @@
   let selectedService = $state<ServiceKind | null>(null)
   let selectedBend = $state<number | null>(null)
   // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
-  let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
+  let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
   let hoverNodeId = $state<string | null>(null)
 
@@ -1001,6 +1010,7 @@
       serviceDrag = null
       if (dragging.moved) {
         if (dragging.target === 'end') applyResult(documentStore.setServicePoint(dragging.kind, dragging.point))
+        else if (dragging.target === 'soakaway') applyResult(documentStore.setSoakaway(dragging.point))
         else applyResult(documentStore.setServiceBends(dragging.kind, bendsWith(dragging.kind, dragging.target, dragging.point)))
       }
       return
@@ -1599,6 +1609,7 @@
     const drag = serviceDrag
     if (drag && drag.kind === kind) {
       if (drag.target === 'end') return [exit, ...bends, drag.point]
+      if (drag.target === 'soakaway') return [exit, ...bends, end]
       bends[drag.target] = drag.point
     }
     return [exit, ...bends, end]
@@ -1613,6 +1624,14 @@
     const end = sewerPath.at(-1)!
     const draft = { ...document, services: { ...(document.services ?? {}), sewer: end, bends: { ...(document.services?.bends ?? {}), sewer: bends } } }
     return plumbingLayout(draft).profile
+  })
+
+  const soakaway = $derived.by(() => {
+    if (!showServices || !plumbing.septic) return null
+    const drag = serviceDrag
+    if (drag?.target === 'soakaway') return drag.point
+    if (drag?.target === 'end') return soakawayPoint({ ...document, services: { ...(document.services ?? {}), sewer: drag.point } }, drag.point, plumbing.exit)
+    return plumbing.septic.soakaway
   })
 
   function nearSegment(path: { x: number; z: number }[], x: number, z: number, reach: number): number | null {
@@ -1634,13 +1653,15 @@
       const path = kind === 'sewer' ? sewerPath : waterPath
       if (path.length < 2) continue
       const end = path.at(-1)!
-      const start = (target: 'end' | number, point: { x: number; z: number }) => {
+      const start = (target: 'end' | 'soakaway' | number, point: { x: number; z: number }) => {
         chooseSelection({ service: kind, bend: typeof target === 'number' ? target : null })
         serviceDrag = { kind, target, point, moved: false }
         svgEl?.setPointerCapture(event.pointerId)
         return true
       }
       if (Math.hypot(end.x - plan.x, end.z - plan.z) < grab) return start('end', end)
+      const pit = soakaway
+      if (kind === 'sewer' && pit && Math.hypot(pit.x - plan.x, pit.z - plan.z) < Math.max(grab, 1.2)) return start('soakaway', pit)
       if (selectedService === kind) {
         for (let i = 1; i < path.length - 1; i++) {
           if (Math.hypot(path[i].x - plan.x, path[i].z - plan.z) < grab) return start(i - 1, path[i])
@@ -2357,7 +2378,11 @@
                 stroke-width={s(chosen ? 0.06 : 0.04)}
               />
               {@const end = points.at(-1)!}
-              {#if kind === 'sewer'}
+              {#if kind === 'sewer' && soakaway}
+                <line x1={end.x} y1={end.z} x2={soakaway.x} y2={soakaway.z} class="service-line sewer overflow" stroke-width={s(0.03)} />
+                <rect x={soakaway.x - 1.5} y={soakaway.z - 0.5} width={3} height={1} class="service-mark soakaway" stroke-width={s(0.03)} />
+                <rect x={end.x - 1.2} y={end.z - 0.7} width={2.4} height={1.4} rx={0.1} class="service-mark septic" stroke-width={s(0.03)} />
+              {:else if kind === 'sewer'}
                 <circle cx={end.x} cy={end.z} r={s(0.3)} class="service-mark sewer" stroke-width={s(0.03)} />
               {:else}
                 <rect x={end.x - s(0.25)} y={end.z - s(0.25)} width={s(0.5)} height={s(0.5)} class="service-mark water" stroke-width={s(0.03)} />
@@ -2745,7 +2770,31 @@
     {#if selectedService && showServices && !roofFloor}
       <aside class="inspector" aria-label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}>
         {#if selectedService === 'sewer'}
-          <h2 class="font-semibold">Drain to the sewer</h2>
+          <h2 class="font-semibold">{plumbing.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</h2>
+          <div class="grid gap-1.5">
+            <Label>Connects to</Label>
+            <Select.Root
+              type="single"
+              value={document.services?.sewerType ?? 'municipal'}
+              onValueChange={(next) => applyResult(documentStore.setSewerType(next as SewerType))}
+            >
+              <Select.Trigger class="w-full">{plumbing.septic ? 'Septic tank and soakaway' : 'Municipal sewer'}</Select.Trigger>
+              <Select.Content>
+                <Select.Item value="municipal" label="Municipal sewer" />
+                <Select.Item value="septic" label="Septic tank and soakaway" />
+              </Select.Content>
+            </Select.Root>
+          </div>
+          {#if plumbing.septic}
+            <p>
+              A {plumbing.septic.litres.toLocaleString('en-ZA')} litre tank for {plumbing.septic.bedrooms}
+              {plumbing.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}, overflowing to a soakaway downhill. Drag either to move it.
+            </p>
+            <p class="text-xs text-muted-foreground">
+              Rules of thumb: the tank {SEPTIC_CLEAR_BUILDING_M} m from buildings, the soakaway {SOAKAWAY_CLEAR_BUILDING_M} m from
+              buildings and {SOAKAWAY_CLEAR_BOUNDARY_M} m from the boundary. Your municipality sets the real figures.
+            </p>
+          {/if}
           {#if sewerProfile}
             {@const last = sewerProfile.points.at(-1)!}
             <p>
@@ -2759,14 +2808,15 @@
               </p>
             {:else}
               <p class="text-muted-foreground">
-                It arrives {Math.round((last.ground - last.invert) * 1000)} mm below the ground, above the sewer at
-                {Math.round((document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M) * 1000)} mm.
+                It arrives {Math.round((last.ground - last.invert) * 1000)} mm below the ground, above the
+                {plumbing.septic ? 'tank inlet' : 'sewer'} at
+                {Math.round((plumbing.septic ? SEPTIC_INLET_DEPTH_M : (document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M)) * 1000)} mm.
               </p>
             {/if}
           {:else}
             <p class="text-muted-foreground">Place a toilet, basin, shower, bath or sink and the drain appears.</p>
           {/if}
-          <div class="grid gap-1.5">
+          <div class="grid gap-1.5" hidden={plumbing.septic !== null}>
             <Label for="sewer-depth">Sewer depth at the connection (mm)</Label>
             <Input
               id="sewer-depth"
@@ -3122,6 +3172,18 @@
   .service-mark.water {
     fill: #e0f2fe;
     stroke: #0284c7;
+  }
+  .service-line.overflow {
+    stroke-dasharray: 0.2 0.12;
+  }
+  .service-mark.septic {
+    fill: #e7e5e4;
+    stroke: #7c4a1e;
+  }
+  .service-mark.soakaway {
+    fill: #f5f5f4;
+    stroke: #7c4a1e;
+    stroke-dasharray: 0.2 0.12;
   }
   .service-handle {
     fill: #ffffff;

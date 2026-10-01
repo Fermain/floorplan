@@ -63,6 +63,9 @@
         <line x1={0.11} y1={0} x2={0.16} y2={0} transform="rotate({angle})" />
       {/each}
     {/if}
+  {:else if fixture.kind === 'water-tank'}
+    <circle r={w / 2} class="fill" />
+    <circle r={w / 2 - 0.12} />
   {:else if fixture.kind === 'outside-tap'}
     <circle r={0.05} class="solid" />
   {/if}

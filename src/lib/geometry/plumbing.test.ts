@@ -87,3 +87,55 @@ describe('routes under buildings', () => {
     expect(crossing).toContain('drain-under')
   })
 })
+
+describe('septic tanks', () => {
+  it('sizes the tank by bedrooms and checks its clearances', async () => {
+    const { nameCell, setSewerType, setSoakaway } = await import('../model/mutations')
+    let doc = house(bathroom)
+    doc = nameCell(doc, doc.building.floors[0].id, 7, 6, 'Bedroom', 'bedroom').document
+    doc = setSewerType(doc, 'septic').document
+    doc = setServicePoint(doc, 'sewer', { x: 7, z: 9 }).document
+    const close = plumbingLayout(doc)
+    expect(close.septic).toMatchObject({ litres: 2500, bedrooms: 1 })
+    expect(close.issues.map((i) => i.id)).toContain('septic-close')
+    doc = setSoakaway(doc, { x: 7, z: 8.6 }).document
+    expect(plumbingLayout(doc).issues.map((i) => i.id)).toContain('soakaway-close')
+    const ids = takeoff(doc).map((line) => line.id)
+    expect(ids).toContain('septic-tank')
+    expect(ids).toContain('soakaway')
+  })
+})
+
+describe('rainwater', () => {
+  it('works out the harvest from the roof and how quickly a tank fills', async () => {
+    const { addStorey, setRoof, setRainfall } = await import('../model/mutations')
+    const { placeFixture } = await import('./fixtures')
+    let doc = house([])
+    const ground = doc.building.floors[0]
+    doc = addStorey(doc, ground.id, ground.corners[0].id).document
+    const plate = doc.building.floors.find((floor) => floor.index === 1)!
+    doc = setRoof(doc, plate.id, { pitchDeg: 30, eaves: 0.5, form: 'hip' }).document
+    doc = setRainfall(doc, 700).document
+    const tank = placeFixture(doc.building.floors[0], { x: 7, z: 2.8 }, 'water-tank', { x: 1, z: 0 })
+    expect(tank.problem).toBeNull()
+    doc = addFixtures(doc, doc.building.floors[0].id, [tank.fixture]).document
+    const rain = plumbingLayout(doc).rain!
+    expect(rain.catchment).toBeGreaterThan(24)
+    expect(rain.yearly).toBeCloseTo(rain.catchment * 700 * 0.8, 3)
+    expect(rain.tanks).toBe(1)
+    expect(rain.fillMm).toBeCloseTo(5000 / (rain.catchment * 0.8), 6)
+  })
+})
+
+describe('default soakaway', () => {
+  it('finds a spot on the plot away from the tank', async () => {
+    const { setSewerType } = await import('../model/mutations')
+    let doc = setSewerType(house(bathroom), 'septic').document
+    const { septic } = plumbingLayout(doc)
+    expect(septic!.soakaway).not.toEqual(septic!.tank)
+    const ring = doc.plot.ring.map(([x, z]) => ({ x, z }))
+    expect(pointInRing(ring, septic!.soakaway.x, septic!.soakaway.z)).toBe(true)
+    doc = setServicePoint(doc, 'sewer', septic!.tank).document
+    expect(plumbingLayout(doc).septic!.soakaway).toEqual(septic!.soakaway)
+  })
+})

@@ -35,6 +35,7 @@ import type {
   Fixture,
   PlanPoint,
   ServiceKind,
+  SewerType,
   Support,
   Floor,
   Heightfield,
@@ -487,6 +488,21 @@ export function setServiceBends(document: Document, kind: ServiceKind, bends: Pl
   if (bends.some((point) => !pointInPlot(document.plot, point.x, point.z))) return fail(document, 'bend outside plot')
   const services = document.services ?? {}
   return ok({ ...document, services: { ...services, bends: { ...(services.bends ?? {}), [kind]: bends.map((p) => ({ x: p.x, z: p.z })) } } })
+}
+
+export function setSewerType(document: Document, type: SewerType): MutationResult {
+  if (type !== 'municipal' && type !== 'septic') return fail(document, 'unknown sewer type')
+  return ok({ ...document, services: { ...(document.services ?? {}), sewerType: type } })
+}
+
+export function setSoakaway(document: Document, point: PlanPoint): MutationResult {
+  if (!pointInPlot(document.plot, point.x, point.z)) return fail(document, 'soakaway outside plot')
+  return ok({ ...document, services: { ...(document.services ?? {}), soakaway: { x: point.x, z: point.z } } })
+}
+
+export function setRainfall(document: Document, millimetres: number): MutationResult {
+  if (!(millimetres >= 50 && millimetres <= 3000)) return fail(document, 'rainfall out of range')
+  return ok({ ...document, services: { ...(document.services ?? {}), rainfallMm: millimetres } })
 }
 
 export function setSewerDepth(document: Document, depth: number): MutationResult {
