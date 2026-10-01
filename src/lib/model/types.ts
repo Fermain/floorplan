@@ -3,6 +3,8 @@ export type Plot = {
   northBearingDeg: number
   latitude: number
   longitude: number
+  // The sides of the plot on a road, by edge: edge i runs from ring[i] to ring[i + 1].
+  roads?: number[]
 }
 
 export type Heightfield = {

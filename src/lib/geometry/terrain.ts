@@ -91,3 +91,17 @@ export function bottomSamplesAlong(
   }
   return samples
 }
+
+// The ground carried on past the survey by its edge heights, so the site sits in a landscape rather than on a tile.
+export function padField(field: Heightfield, margin: number): Heightfield {
+  const extra = Math.ceil(margin / field.cellSize)
+  const cols = field.cols + extra * 2
+  const rows = field.rows + extra * 2
+  const originX = field.originX - extra * field.cellSize
+  const originZ = field.originZ - extra * field.cellSize
+  const heights: number[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) heights.push(bilinearHeight(field, originX + c * field.cellSize, originZ + r * field.cellSize))
+  }
+  return { originX, originZ, cellSize: field.cellSize, cols, rows, heights }
+}

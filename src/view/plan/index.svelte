@@ -28,6 +28,7 @@
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
+  import { plotSide, roadReach, roadStrips } from '../../lib/geometry/roads'
   import {
     DEFAULT_SEWER_DEPTH_M,
     DRAIN_FALL,
@@ -332,7 +333,9 @@
     applyResult(documentStore.updateSpace(chosen.floorId, chosen.resolved.space.id, patch))
   }
 
-  const bounds = $derived(plotBounds(plotRing, PLOT_MARGIN_M))
+  // The roads beside the plot, and the view widened to take in their far kerbs.
+  const roads = $derived(roadStrips(document.plot))
+  const bounds = $derived(plotBounds([...plotRing, ...roadReach(document.plot)], PLOT_MARGIN_M))
 
   let turn = $state(0)
   let zoom = $state(1)
@@ -2231,6 +2234,13 @@
       fill="transparent"
       pointer-events="all"
     />
+    <g class="roads" pointer-events="none">
+      {#each roads as strip (strip.edge)}
+        <polygon points={pointsAttr(strip.verge.map((p) => [p.x, p.z] as SvgPoint))} class="verge" />
+        <polygon points={pointsAttr(strip.road.map((p) => [p.x, p.z] as SvgPoint))} class="carriageway" />
+        <line x1={strip.centre[0].x} y1={strip.centre[0].z} x2={strip.centre[1].x} y2={strip.centre[1].z} class="centre-line" stroke-width={s(0.1)} stroke-dasharray="{s(1)} {s(0.8)}" />
+      {/each}
+    </g>
     <polygon
       points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
       fill="#e7e5e4"
@@ -2986,6 +2996,38 @@
         </div>
       </ContextPanel>
     {/if}
+    {#if selectedEdge !== null && !roofFloor}
+      {@const side = plotSide(document.plot, selectedEdge)}
+      {#if side}
+        {@const onRoad = (document.plot.roads ?? []).includes(selectedEdge)}
+        <ContextPanel
+          label="Side of the plot"
+          title="Side of the plot"
+          description="{checkFormat.format(side.length)} m along the boundary, facing {side.facing}."
+          onclose={() => chooseSelection({})}
+        >
+          <div class="grid gap-1.5">
+            <Label for="plot-road">Road access</Label>
+            <Select.Root
+              type="single"
+              value={onRoad ? 'road' : 'none'}
+              onValueChange={(next) => next && selectedEdge !== null && applyResult(documentStore.setPlotRoad(selectedEdge, next === 'road'))}
+            >
+              <Select.Trigger id="plot-road" size="sm" class="w-full">{onRoad ? 'On a road' : 'No road'}</Select.Trigger>
+              <Select.Content>
+                <Select.Item value="road" label="On a road" />
+                <Select.Item value="none" label="No road" />
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <p class="text-muted-foreground">
+            {onRoad
+              ? 'A street runs along this side: a grass verge, then the road. It is drawn for context; it is not costed.'
+              : 'Mark the sides of the plot that are on a street. A corner plot has two.'}
+          </p>
+        </ContextPanel>
+      {/if}
+    {/if}
     {#if selectedRoom && !roofFloor}
       <ContextPanel label="Room" onclose={() => chooseSelection({})}>
         {#if selectedRoom.resolved}
@@ -3261,6 +3303,15 @@
   }
   .service-line.sewer {
     stroke: #7c4a1e;
+  }
+  .verge {
+    fill: #d6e2c4;
+  }
+  .carriageway {
+    fill: #6b6b70;
+  }
+  .centre-line {
+    stroke: #f5f5f4;
   }
   .downpipe {
     fill: #ffffff;

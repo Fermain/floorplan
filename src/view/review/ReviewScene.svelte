@@ -39,6 +39,7 @@
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
+  import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildFixtureParts, fixtureStandAboveDatum, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
@@ -47,7 +48,7 @@
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
-  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong, padField } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
   import type { Floor, Wall } from '../../lib/model/types'
@@ -92,6 +93,9 @@
 
   let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
+  let roadMeshes = $state<RoadPart[]>([])
+  // How far the ground carries on past the survey.
+  const SURROUNDINGS_M = 80
   let contourMinor = $state<BufferGeometry | null>(null)
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
@@ -175,8 +179,11 @@
     const floors = doc.building.floors
     const pad = groundPad(doc)
     const displayField = siteField(doc)
-    const ground = buildGroundGeometry(displayField)
+    // The ground runs on past the survey to the horizon; contours stay on the surveyed part.
+    const surroundings = padField(displayField, SURROUNDINGS_M)
+    const ground = buildGroundGeometry(surroundings)
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
+    const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -247,6 +254,7 @@
         }
       })
     groundGeometry = ground
+    roadMeshes = roadParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -263,6 +271,7 @@
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
+      for (const part of roadParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -544,6 +553,11 @@
         <T.MeshStandardMaterial color="#6b8f71" />
       </T.Mesh>
     {/if}
+    {#each roadMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} receiveShadow>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
     {#if contourMinor}
       <T.LineSegments geometry={contourMinor}>
         <T.LineBasicMaterial color="#3f3428" />

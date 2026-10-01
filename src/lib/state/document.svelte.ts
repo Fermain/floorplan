@@ -101,6 +101,7 @@ export const documentStore = {
   addFixtures: bind(mutations.addFixtures),
   updateFixture: bind(mutations.updateFixture),
   setFixtureKind: bind(mutations.setFixtureKind),
+  setPlotRoad: bind(mutations.setPlotRoad),
   setFixtureSetup: bind(mutations.setFixtureSetup),
   removeFixture: bind(mutations.removeFixture),
   setRate: bind(mutations.setRate),

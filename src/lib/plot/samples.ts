@@ -71,13 +71,14 @@ function sample(
   location: { latitude: number; longitude: number },
   slope: Slope,
   ripple = 0.04,
+  roads: number[] = [0],
 ): SamplePlot {
   return {
     id,
     name,
     place,
     description,
-    plot: { ring, northBearingDeg: 0, ...location },
+    plot: { ring, northBearingDeg: 0, ...location, roads },
     heightfield: sloped(ring, slope, ripple),
   }
 }
@@ -135,6 +136,9 @@ export const SAMPLE_PLOTS: readonly SamplePlot[] = [
     ],
     { latitude: -29.8587, longitude: 31.0218 },
     { towards: 'east', gradient: 1 / 25 },
+    0.04,
+    // The two streets and the splay between them.
+    [0, 1, 2],
   ),
   sample(
     'narrow-infill',
