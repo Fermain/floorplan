@@ -42,6 +42,7 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
+  import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
@@ -82,6 +83,7 @@
     colour: string
     gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
     panels: BufferGeometry | null
+    gutters: GutterPart[]
     y: number
   }
   type StairMesh = { key: string; geometry: BufferGeometry; y: number }
@@ -269,6 +271,7 @@
         roof.meshes.edges?.dispose()
         roof.gable.body?.dispose()
         roof.panels?.dispose()
+        for (const part of roof.gutters) part.geometry.dispose()
         roof.gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
@@ -301,6 +304,8 @@
 
   function roofsFor(pad: ReturnType<typeof groundPad>): RoofMesh[] {
     const solar = powerLayout(doc)
+    const eaves = gutterLayout(doc)
+    const field = pad ? levelField(doc.heightfield, pad.structures) : doc.heightfield
     const meshes: RoofMesh[] = []
     for (const floor of doc.building.floors) {
       const roof = floor.roof
@@ -322,6 +327,7 @@
         colour: spec.colour,
         gable,
         panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
+        gutters: buildGutterParts(eaves, floor.id, gutterOf(roof), (x, z) => bilinearHeight(field, x, z) - (floorWorldDatum(supportDatum, grade) + WALL_HEAD_M)),
         y: floorWorldDatum(supportDatum, grade) + WALL_HEAD_M,
       })
     }
@@ -602,6 +608,11 @@
           <T.MeshStandardMaterial color="#e7e5e4" roughness={0.7} side={DoubleSide} />
         </T.Mesh>
       {/if}
+      {#each roof.gutters as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} position.y={roof.y} castShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.5} metalness={0.2} />
+        </T.Mesh>
+      {/each}
       {#if roof.panels}
         <T.Mesh geometry={roof.panels} position.y={roof.y} castShadow>
           <T.MeshStandardMaterial color="#1e2a44" metalness={0.4} roughness={0.25} side={DoubleSide} />

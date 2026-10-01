@@ -43,7 +43,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { FenceType, FixtureKind, SupportType } from '../../lib/model/types'
+  import type { FenceType, FixtureKind, GutterType, SupportType } from '../../lib/model/types'
+  import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
+  import { supportingFloor } from '../../lib/model/stories'
   import { FIXTURES, fixtureSpec } from '../../lib/model/fixtures'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, type FixturePart } from '../../lib/geometry/fixtures'
   import {
@@ -271,6 +273,49 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   $effect(() => {
     if (selectedOpeningId) selectedFixtureId = null
+  })
+
+  // The roof whose eave runs above this wall, and the gutter along it.
+  const roofAbove = $derived(
+    floor && wall
+      ? (doc.building.floors.find((item) => item.roof && supportingFloor(doc, item)?.walls.some((w) => w.id === wall.id)) ?? null)
+      : null,
+  )
+  const eaveLayout = $derived(roofAbove ? gutterLayout(doc) : null)
+  const wallGutter = $derived(
+    roofAbove && eaveLayout && wall ? eaveLayout.pieces.filter((piece) => piece.roofFloorId === roofAbove.id && piece.wallId === wall.id) : [],
+  )
+  const gutterValue = $derived(
+    wallGutter.length === 0 || !roofAbove?.roof ? null : wallGutter.some((piece) => piece.on) ? gutterOf(roofAbove.roof) : 'none',
+  )
+
+  function chooseGutter(next: string) {
+    if (!roofAbove?.roof || !wall) return
+    const others = (roofAbove.roof.noGutter ?? []).filter((id) => id !== wall.id)
+    const without = next === 'none' ? [...others, wall.id].sort() : others
+    const { noGutter: _old, ...rest } = roofAbove.roof
+    documentStore.setRoof(roofAbove.id, {
+      ...rest,
+      ...(next === 'none' ? {} : { gutter: next as GutterType }),
+      ...(without.length > 0 ? { noGutter: without } : {}),
+    })
+  }
+
+  const gutterParts = $derived.by((): FencePart[] => {
+    if (!floor || !roofAbove?.roof || !eaveLayout) return []
+    const offset = floor.datumHeight + WALL_HEAD
+    return buildGutterParts(eaveLayout, roofAbove.id, gutterOf(roofAbove.roof), () => -offset).map((part) => ({
+      geometry: part.geometry.translate(0, offset, 0),
+      colour: part.colour,
+      opacity: 1,
+    }))
+  })
+
+  $effect(() => {
+    const parts = gutterParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
   })
 
   const fenceParts = $derived.by((): FencePart[] => {
@@ -833,6 +878,22 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
             <span class="text-muted-foreground">mm</span>
           </label>
         {/if}
+      {#if gutterValue}
+        <div class="flex items-center gap-2 ">
+          <span class="text-muted-foreground">Gutter</span>
+          <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
+            <Select.Trigger size="sm" class="w-36" aria-label="Gutter above this wall">
+              {gutterValue === 'none' ? 'None here' : GUTTERS[gutterValue].name}
+            </Select.Trigger>
+            <Select.Content>
+              {#each Object.entries(GUTTERS) as [id, spec] (id)}
+                <Select.Item value={id} label={spec.name} />
+              {/each}
+              <Select.Item value="none" label="None above this wall" />
+            </Select.Content>
+          </Select.Root>
+        </div>
+      {/if}
       </div>
     {:else}
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
@@ -910,7 +971,23 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       {#if editingOpening}
         <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
-      <div class="flex w-full min-w-0 items-center gap-2 sm:ml-auto sm:w-auto">
+      {#if gutterValue}
+        <div class="flex items-center gap-2 sm:ml-auto">
+          <span class="text-muted-foreground">Gutter</span>
+          <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
+            <Select.Trigger size="sm" class="w-36" aria-label="Gutter above this wall">
+              {gutterValue === 'none' ? 'None here' : GUTTERS[gutterValue].name}
+            </Select.Trigger>
+            <Select.Content>
+              {#each Object.entries(GUTTERS) as [id, spec] (id)}
+                <Select.Item value={id} label={spec.name} />
+              {/each}
+              <Select.Item value="none" label="None above this wall" />
+            </Select.Content>
+          </Select.Root>
+        </div>
+      {/if}
+      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue ? '' : 'sm:ml-auto'}">
         <span class="text-muted-foreground">Wall</span>
         <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
           <Select.Trigger size="sm" class="w-full sm:w-48" aria-label="Wall system">{system.name}</Select.Trigger>
@@ -971,6 +1048,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           ...fenceParts,
           ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
           ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
+          ...gutterParts,
         ]}
         {orthoCamera}
         {onOrthoCamera}

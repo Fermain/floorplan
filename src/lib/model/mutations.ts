@@ -854,6 +854,19 @@ export function setRoof(document: Document, floorId: string, roof: Roof | null):
   if (roof.form !== undefined && !['hip', 'gable', 'mono'].includes(roof.form)) return fail(document, 'unknown roof form')
   if (roof.turns !== undefined && !Number.isInteger(roof.turns)) return fail(document, 'roof turns must be whole')
   if (roof.covering !== undefined && !COVERINGS.some((item) => item.id === roof.covering)) return fail(document, 'unknown roof covering')
+  if (roof.gutter !== undefined && roof.gutter !== 'round-pvc' && roof.gutter !== 'square-metal') return fail(document, 'unknown gutter')
+  return ok(replaceFloor(document, { ...floor, roof }))
+}
+
+// Keep or take away the gutter along the eave above one wall.
+export function setWallGutter(document: Document, roofFloorId: string, wallId: string, gutter: boolean): MutationResult {
+  const floor = getFloor(document, roofFloorId)
+  if (!floor?.roof) return fail(document, 'roof not found')
+  const without = new Set(floor.roof.noGutter ?? [])
+  if (gutter) without.delete(wallId)
+  else without.add(wallId)
+  const { noGutter: _old, ...rest } = floor.roof
+  const roof = without.size > 0 ? { ...rest, noGutter: [...without].sort() } : rest
   return ok(replaceFloor(document, { ...floor, roof }))
 }
 

@@ -67,7 +67,8 @@
     supportingFloor,
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
-  import type { RoofCovering } from '../../lib/model/types'
+  import { GUTTERS, gutterOf } from '../../lib/geometry/gutters'
+  import type { GutterType, Roof, RoofCovering } from '../../lib/model/types'
   import type { Floor, FloorFinish, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
@@ -1200,6 +1201,10 @@
     const floor = roofFloor
     if (!floor?.roof) return
     applyResult(documentStore.setRoof(floor.id, { ...floor.roof, covering, pitchDeg: fitPitch(floor.roof.pitchDeg, covering, floor.roof.covering ?? DEFAULT_COVERING) }))
+  }
+
+  function floorRoof(floorId: string, roof: Roof) {
+    applyResult(documentStore.setRoof(floorId, roof))
   }
 
   function setRoofPitch(value: number) {
@@ -3015,6 +3020,24 @@
                 {/each}
               </Select.Content>
             </Select.Root>
+          </div>
+          <div class="grid gap-1.5">
+            <Label>Gutters</Label>
+            <Select.Root
+              type="single"
+              value={gutterOf(roof)}
+              onValueChange={(next) => roofFloor && floorRoof(roofFloor.id, { ...roof, gutter: next as GutterType })}
+            >
+              <Select.Trigger class="w-full">{GUTTERS[gutterOf(roof)].name}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(GUTTERS) as [id, spec] (id)}
+                  <Select.Item value={id} label={spec.name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+            <p class="text-xs text-muted-foreground">
+              Every eave gets one{roof.noGutter?.length ? `, except above ${roof.noGutter.length} ${roof.noGutter.length === 1 ? 'wall' : 'walls'}` : ''}. Take it off a wall in Focus.
+            </p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="grid gap-1.5">

@@ -5,7 +5,7 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
@@ -16,6 +16,7 @@ import { FIXTURES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
+import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
 import {
   floorSupports,
   pierCourses,
@@ -469,6 +470,16 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: 1,
       rateKey: 'earth-leakage',
     })
+  }
+
+  const gutters = gutterLengths(gutterLayout(doc), doc)
+  for (const type of ['round-pvc', 'square-metal'] as GutterType[]) {
+    if (gutters.gutter[type] > 0) {
+      drafts.push({ id: `gutter:${type}`, group: 'Roof', label: `${GUTTERS[type].name} gutter`, note: 'Along the eaves, plus 10%', unit: 'm', quantity: Math.ceil(gutters.gutter[type] * 1.1), rateKey: `gutter:${type}` })
+    }
+    if (gutters.pipes[type] > 0) {
+      drafts.push({ id: `downpipe:${type}`, group: 'Roof', label: `${GUTTERS[type].name} downpipes`, note: `${gutters.pipes[type]} from the eaves to the ground`, unit: 'm', quantity: Math.ceil(gutters.downpipe[type]), rateKey: `downpipe:${type}` })
+    }
   }
 
   const power = powerLayout(doc)

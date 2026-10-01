@@ -144,12 +144,17 @@ export type RoofForm = 'hip' | 'gable' | 'mono'
 
 export type RoofCovering = 'concrete-tile' | 'clay-tile' | 'ibr' | 'corrugated'
 
+export type GutterType = 'round-pvc' | 'square-metal'
+
 export type Roof = {
   pitchDeg: number
   eaves: number
   form?: RoofForm
   turns?: number
   covering?: RoofCovering
+  // Every eave gets a gutter of this type, except above the walls listed in noGutter.
+  gutter?: GutterType
+  noGutter?: string[]
 }
 
 export type ProjectDefaults = {
