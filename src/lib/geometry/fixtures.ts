@@ -189,8 +189,8 @@ export function placeFixture(
   const either = EITHER_SIDE.includes(kind)
   if (!spec.outside && !cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
   if (cell && (!spec.outside || either)) {
-    // A fitting being moved keeps its setup; a new one indoors starts with the indoor setup.
-    const setup = options.setup ?? INDOOR_SETUP[kind] ?? {}
+    // A new fitting indoors starts with the indoor setup, under any size chosen for it; one being moved keeps its own.
+    const setup = { ...INDOOR_SETUP[kind], ...options.setup }
     const size = fixtureSize({ kind, ...setup })
     const ring = cell.net
     for (let i = 0; i < ring.length; i++) {

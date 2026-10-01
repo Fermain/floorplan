@@ -26,6 +26,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { Separator } from '$lib/components/ui/separator'
   import ElevationScene from './ElevationScene.svelte'
   import ElevationDimensions from './ElevationDimensions.svelte'
+  import ContextPanel from '../shared/ContextPanel.svelte'
+  import FittingSetup from '../shared/FittingSetup.svelte'
+  import { Label } from '$lib/components/ui/label'
   import { SURFACE_BED_TOP_ABOVE_DATUM_M } from '../../lib/geometry/pad'
   import { WALL_HEAD } from '../../lib/plot/fixture'
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
@@ -420,10 +423,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     selectedFixtureId = null
   }
 
-  function setSelectedFittingHeight(mm: number) {
-    if (!floor || !selectedFitting || !Number.isFinite(mm)) return
-    documentStore.updateFixture(floor.id, selectedFitting.fixture.id, { y: fitFixtureY(selectedFitting.fixture.kind, mm / 1000) })
-  }
 
   $effect(() => {
     if (!selectedFixtureId) return
@@ -1171,29 +1170,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </Select.Content>
         </Select.Root>
       </div>
-      {#if selectedFitting}
-        {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
-        <Separator orientation="vertical" class="hidden h-5 sm:block" />
-        <span class="font-medium">{spec.name}</span>
-        {#if spec.mount !== 'ceiling'}
-          <label class="flex items-center gap-2">
-            <span class="text-muted-foreground">{spec.mount === 'wall' ? 'Height' : 'Raised'}</span>
-            <Input
-              class="h-7 w-20"
-              type="number"
-              min="0"
-              step="50"
-              value={mm(selectedFitting.fixture.y)}
-              onchange={(event) => setSelectedFittingHeight(Number(event.currentTarget.value))}
-            />
-            <span class="text-muted-foreground">mm</span>
-          </label>
-        {/if}
-        <Button variant="destructive" size="sm" onclick={removeSelectedFitting}>Remove fitting</Button>
-      {:else if widthLimits && widthAllowed && (editingOpening || (mode === 'place' && !insertFixture))}
+      {#if !selectedFitting && widthLimits && widthAllowed && mode === 'place' && !insertFixture}
         <Separator orientation="vertical" class="hidden h-5 sm:block" />
         <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-          <span class="shrink-0 text-muted-foreground">{editingOpening ? 'Width' : 'New width'}</span>
+          <span class="shrink-0 text-muted-foreground">New width</span>
           <input
             class="min-w-0 flex-1 accent-primary sm:w-32 sm:flex-none"
             type="range"
@@ -1219,9 +1199,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           />
           <span class="text-muted-foreground">mm</span>
         </label>
-      {/if}
-      {#if editingOpening}
-        <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
       {#if faceTrimNow}
         <div class="flex items-center gap-2 sm:ml-auto">
@@ -1350,6 +1327,50 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         />
       {/if}
       </div>
+      {#if selectedFitting && floor}
+        {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
+        <ContextPanel label="Fitting" title={spec.name} description={spec.text} onclose={() => chooseFitting(null)}>
+          <FittingSetup floorId={floor.id} fixture={selectedFitting.fixture} />
+          <Button variant="destructive" onclick={removeSelectedFitting}>Remove</Button>
+        </ContextPanel>
+      {:else if editingOpening}
+        <ContextPanel
+          label="Opening"
+          title={insertChoices.find((choice) => choice.kind === editingOpening.kind)?.label ?? 'Opening'}
+          onclose={() => onSelectOpening?.(null)}
+        >
+          {#if widthLimits && widthAllowed}
+            <div class="grid gap-1.5">
+              <Label for="opening-width">Width (mm)</Label>
+              <input
+                class="w-full accent-primary"
+                type="range"
+                aria-label="Width"
+                min={widthLimits.min}
+                max={widthLimits.max}
+                step="0.01"
+                value={shownWidth}
+                oninput={(event) => onWidthInput(Number(event.currentTarget.value))}
+                onchange={(event) => commitWidth(Number(event.currentTarget.value))}
+              />
+              <Input
+                id="opening-width"
+                type="number"
+                min={mm(widthLimits.min)}
+                max={mm(widthLimits.max)}
+                step="10"
+                value={mm(shownWidth)}
+                onchange={(event) => {
+                  const next = Number(event.currentTarget.value) / 1000
+                  onWidthInput(next)
+                  commitWidth(next)
+                }}
+              />
+            </div>
+          {/if}
+          <Button variant="destructive" onclick={removeSelected}>Remove opening</Button>
+        </ContextPanel>
+      {/if}
     </div>
   {/if}
 </div>

@@ -125,6 +125,22 @@ export const TANKS: Record<TankLitres, { name: string; dia: number; height: numb
 export const TANK_SIZES: TankLitres[] = [1000, 2500, 5000, 10000]
 export const DEFAULT_TANK_LITRES: TankLitres = 5000
 
+// Fittings that come in sizes step through them: gas bottles by weight, tanks by litres.
+export type SizeSetup = Partial<Pick<Fixture, 'bottleKg' | 'litres'>>
+
+export function sizeName(kind: FixtureKind, setup: SizeSetup = {}): string | null {
+  if (kind === 'gas-cylinder') return BOTTLES[setup.bottleKg ?? DEFAULT_BOTTLE_KG].name
+  if (kind === 'water-tank') return TANKS[setup.litres ?? DEFAULT_TANK_LITRES].name
+  return null
+}
+
+export function stepSize(kind: FixtureKind, setup: SizeSetup, by: 1 | -1): SizeSetup {
+  const step = <T>(sizes: T[], now: T) => sizes[Math.min(sizes.length - 1, Math.max(0, sizes.indexOf(now) + by))]
+  if (kind === 'gas-cylinder') return { ...setup, bottleKg: step(BOTTLE_SIZES, setup.bottleKg ?? DEFAULT_BOTTLE_KG) }
+  if (kind === 'water-tank') return { ...setup, litres: step(TANK_SIZES, setup.litres ?? DEFAULT_TANK_LITRES) }
+  return setup
+}
+
 export function tankLitres(fixture: Pick<Fixture, 'litres'>): TankLitres {
   return fixture.litres ?? DEFAULT_TANK_LITRES
 }

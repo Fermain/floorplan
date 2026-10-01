@@ -18,7 +18,7 @@ import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
-import { fixtureProblem, swapsFor } from './fixtures'
+import { fixtureProblem, reseat, swapsFor } from './fixtures'
 import { faceKey, trimProblem } from './trims'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
@@ -441,6 +441,29 @@ export function updateFixture(
   const next = { ...current, ...patch }
   const problem = fixtureProblem(next)
   if (problem) return fail(document, problem)
+  const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? next : item))
+  return ok(replaceFloor(document, { ...floor, fixtures }))
+}
+
+// Change a fitting's own setup (gas bottles' count, size and cage, a tank's size), keeping its back where it was.
+export function setFixtureSetup(
+  document: Document,
+  floorId: string,
+  fixtureId: string,
+  patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres'>>,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const current = floor.fixtures?.find((item) => item.id === fixtureId)
+  if (!current) return fail(document, 'fixture not found')
+  if (current.kind !== 'gas-cylinder' && (patch.bottles !== undefined || patch.bottleKg !== undefined || patch.cage !== undefined)) {
+    return fail(document, 'only gas bottles have bottles')
+  }
+  if (current.kind !== 'water-tank' && patch.litres !== undefined) return fail(document, 'only tanks have a size in litres')
+  // Check the new setup before sizing it: an unknown size has no dimensions to re-seat by.
+  const problem = fixtureProblem({ ...current, ...patch })
+  if (problem) return fail(document, problem)
+  const next = reseat(current, patch)
   const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? next : item))
   return ok(replaceFloor(document, { ...floor, fixtures }))
 }
