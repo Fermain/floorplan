@@ -48,6 +48,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   } from '../../lib/model/fences'
   import type { CorniceType, FaceTrim, FenceType, FixtureKind, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
   import { buildTrimParts, trimRuns } from '../../lib/geometry/trims'
+  import { PORTS, type PortKind } from '../../lib/model/ports'
   import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
@@ -262,17 +263,62 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   }
 
   // A conduit from each electrical point on the face up to the ceiling; points in one column share one.
+  // A conduit that would have to pass through a window or door is a clash: move the point or the opening.
   const conduits = $derived.by(() => {
-    const columns: { u: number; bottom: number }[] = []
+    const columns: { u: number; bottom: number; names: string[] }[] = []
     for (const mark of fittingMarks) {
       const item = faceFittings.find((entry) => entry.fixture.id === mark.id)
       if (!item || !conduitKinds(item.fixture.kind)) continue
       const column = columns.find((entry) => Math.abs(entry.u - mark.u) < 0.005)
-      if (column) column.bottom = Math.min(column.bottom, mark.top)
-      else columns.push({ u: mark.u, bottom: mark.top })
+      if (column) {
+        column.bottom = Math.min(column.bottom, mark.top)
+        column.names.push(mark.label)
+      } else columns.push({ u: mark.u, bottom: mark.top, names: [mark.label] })
     }
-    return columns.map((column) => ({ ...column, top: WALL_HEAD }))
+    const openings = displayWall && !logical ? shownOpenings(displayWall.openings) : []
+    return columns.map((column) => {
+      const through = openings.find(
+        (opening) =>
+          column.u > opening.u - 0.02 &&
+          column.u < opening.u + opening.width + 0.02 &&
+          opening.v < WALL_HEAD &&
+          opening.v + opening.height > column.bottom,
+      )
+      return { u: column.u, bottom: column.bottom, top: WALL_HEAD, clash: Boolean(through), names: column.names, through: through?.kind }
+    })
   })
+  // Where the plumbing fittings on this face come through the wall, seen from the room.
+  const ports = $derived.by(() => {
+    const out: { u: number; v: number; r: number; kind: PortKind }[] = []
+    if (viewFace?.outside) return out
+    for (const mark of fittingMarks) {
+      const item = faceFittings.find((entry) => entry.fixture.id === mark.id)
+      if (!item) continue
+      for (const port of PORTS[item.fixture.kind] ?? []) {
+        out.push({ u: mark.u + port.along, v: mark.bottom - item.fixture.y + port.y, r: Math.max(port.dia / 2, 0.012), kind: port.kind })
+      }
+    }
+    return out
+  })
+
+  // Supplies come down from the roof space: on each face the cold inlets share one chase and riser, and so do the hot.
+  // Wastes drop to the floor.
+  const pipeRuns = $derived.by(() => {
+    const runs: { kind: PortKind; points: [number, number][] }[] = []
+    for (const kind of ['cold', 'hot'] as const) {
+      const inlets = ports.filter((port) => port.kind === kind).sort((a, b) => a.u - b.u)
+      if (inlets.length === 0) continue
+      const level = Math.max(...inlets.map((port) => port.v))
+      const riser = inlets[0].u
+      for (const port of inlets) if (port.v < level - 1e-6) runs.push({ kind, points: [[port.u, port.v], [port.u, level]] })
+      if (inlets.length > 1) runs.push({ kind, points: [[inlets[0].u, level], [inlets[inlets.length - 1].u, level]] })
+      runs.push({ kind, points: [[riser, level], [riser, WALL_HEAD]] })
+    }
+    for (const port of ports.filter((entry) => entry.kind === 'waste')) runs.push({ kind: 'waste', points: [[port.u, port.v], [port.u, ffl]] })
+    return runs
+  })
+
+  const clash = $derived(conduits.find((conduit) => conduit.clash) ?? null)
 
   function snapFittingY(y: number): number {
     const step = system.courseHeight / 2
@@ -808,6 +854,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return { text: parts.join(', '), error: false }
     }
     if (!locked) return { text: 'Perspective. The fixed view is where this wall is edited.', error: false }
+    if (clash) {
+      const what = clash.through === 'window' ? 'a window' : 'a door'
+      return {
+        text: `The conduit for the ${clash.names[0].toLowerCase()} would run up through ${what}. Move the ${clash.names[0].toLowerCase()} along the wall, or the opening.`,
+        error: true,
+      }
+    }
     if (mode === 'place') return { text: `${insertHint(insertTool)} Hold Shift to place more than one; Esc goes back to selecting.`, error: false }
     if (wall.openings.length > 0 && scheduleLine) return { text: `${scheduleLine}. Click a window, door or fitting to select it.`, error: false }
     return { text: 'Click a window, door or fitting to select it, or choose Place to add one.', error: false }
@@ -1204,6 +1257,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
           fittings={fittingMarks}
           {conduits}
+          {ports}
+          pipes={pipeRuns}
         />
       {/if}
       </div>

@@ -15,10 +15,12 @@
     selectedId: string | null
     floorLevel: number | null
     fittings?: Fitting[]
-    conduits?: { u: number; bottom: number; top: number }[]
+    conduits?: { u: number; bottom: number; top: number; clash?: boolean }[]
+    ports?: { u: number; v: number; r: number; kind: 'waste' | 'cold' | 'hot' }[]
+    pipes?: { kind: 'waste' | 'cold' | 'hot'; points: [number, number][] }[]
   }
 
-  let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [] }: Props = $props()
+  let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [], ports = [], pipes = [] }: Props = $props()
 
   let width = $state(0)
   let tall = $state(0)
@@ -100,8 +102,14 @@
         </text>
       </g>
     {/if}
+    {#each pipes as pipe, i (i)}
+      <polyline class="pipe {pipe.kind}" points={pipe.points.map(([u, v]) => `${u},${y(v)}`).join(' ')} />
+    {/each}
+    {#each ports as port, i (i)}
+      <circle class="port {port.kind}" cx={port.u} cy={y(port.v)} r={port.r} />
+    {/each}
     {#each conduits as conduit (conduit.u)}
-      <line class="conduit" x1={conduit.u} y1={y(conduit.bottom)} x2={conduit.u} y2={y(conduit.top)} />
+      <line class="conduit" class:clash={conduit.clash} x1={conduit.u} y1={y(conduit.bottom)} x2={conduit.u} y2={y(conduit.top)} />
     {/each}
     {#if fittingStops.length > 0}
       <g class="fittings">
@@ -187,6 +195,35 @@
     stroke: #d97706;
     stroke-width: 1.5px;
     stroke-dasharray: 5 4;
+  }
+
+  .pipe {
+    fill: none;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5 4;
+    vector-effect: non-scaling-stroke;
+  }
+  .pipe.cold,
+  .port.cold {
+    stroke: #0284c7;
+  }
+  .pipe.hot,
+  .port.hot {
+    stroke: #dc2626;
+  }
+  .pipe.waste,
+  .port.waste {
+    stroke: #78716c;
+  }
+  .port {
+    fill: #1c1917;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .conduit.clash {
+    stroke: #dc2626;
+    stroke-width: 2px;
   }
 
   .fittings line {
