@@ -7,7 +7,7 @@
   import { documentStore } from '../../lib/state/document.svelte'
   import { summerSolstice, winterSolstice } from '../../lib/solar/sun'
   import * as Select from '$lib/components/ui/select'
-  import type { WallView } from './cutaway'
+  import type { CutShape, WallView } from './cutaway'
 
   const YEAR = 2026
   const SAST_OFFSET_HOURS = 2
@@ -71,18 +71,19 @@
 
   // Seeing inside: a cutaway that eats what is close in front of the camera, walls cut low or hidden, and the
   // storeys above one lifted off with the roof.
-  const CUTAWAYS = [
-    { value: '0', label: 'No cutaway' },
-    { value: '5', label: 'Cut close' },
-    { value: '8', label: 'Cut near' },
-    { value: '14', label: 'Cut deep' },
+  const CUTAWAYS: { value: string; label: string; shape: CutShape; depth: number }[] = [
+    { value: 'none', label: 'No cutaway', shape: 'box', depth: 0 },
+    { value: 'box-near', label: 'Box cut', shape: 'box', depth: 8 },
+    { value: 'box-deep', label: 'Deep box cut', shape: 'box', depth: 14 },
+    { value: 'cone', label: 'Cone cut', shape: 'cone', depth: 8 },
   ]
   const WALL_VIEWS: { value: WallView; label: string }[] = [
     { value: 'full', label: 'Full walls' },
     { value: 'half', label: 'Half walls' },
     { value: 'hidden', label: 'No walls' },
   ]
-  let cutDepth = $state('8')
+  let cutaway = $state('box-near')
+  const chosenCut = $derived(CUTAWAYS.find((item) => item.value === cutaway) ?? CUTAWAYS[1])
   let walls = $state<WallView>('full')
   let upTo = $state('all')
   const storeys = $derived(
@@ -128,9 +129,9 @@
       <span class="shrink-0 tabular-nums">{String(hour).padStart(2, '0')}:00 SAST</span>
     </label>
     <div class="flex flex-wrap items-center gap-2">
-      <Select.Root type="single" bind:value={cutDepth}>
+      <Select.Root type="single" bind:value={cutaway}>
         <Select.Trigger size="sm" class="w-32" aria-label="Cutaway" title="Cut away what is close in front of the camera as you zoom in">
-          {CUTAWAYS.find((item) => item.value === cutDepth)?.label}
+          {chosenCut.label}
         </Select.Trigger>
         <Select.Content>
           {#each CUTAWAYS as item (item.value)}
@@ -160,7 +161,7 @@
     </div>
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} {onSelectWall} cutDepth={Number(cutDepth)} {walls} upTo={upTo === 'all' ? null : Number(upTo)} />
+    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} {walls} upTo={upTo === 'all' ? null : Number(upTo)} />
   </div>
 </div>
 

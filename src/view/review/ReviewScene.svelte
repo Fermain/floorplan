@@ -65,7 +65,7 @@
   import ReviewSky from './ReviewSky.svelte'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
   import ReviewCutaway from './ReviewCutaway.svelte'
-  import { isCutAway, type WallView } from './cutaway'
+  import { isCutAway, type CutShape, type WallView } from './cutaway'
   import { Button } from '$lib/components/ui/button'
 
   interface Props {
@@ -73,11 +73,12 @@
     onSelectWall?: (wallId: string) => void
     // How far ahead of the camera the cutaway reaches (0 for none), how the walls show, and the top storey shown.
     cutDepth?: number
+    cutShape?: CutShape
     walls?: WallView
     upTo?: number | null
   }
 
-  let { sunDate, onSelectWall, cutDepth = 0, walls = 'full', upTo = null }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null }: Props = $props()
 
   type WallMeshes = {
     key: string
@@ -217,6 +218,8 @@
   type Pick = { kind: 'wall'; floorId: string; wallId: string } | { kind: 'fixture'; floorId: string; fixtureId: string }
   let selected = $state<Pick | null>(null)
   let hovered = $state<Pick | null>(null)
+  // While the camera is being turned, nothing under the pointer is highlighted.
+  let orbiting = $state(false)
 
   const same = (a: Pick | null, b: Pick | null) =>
     a !== null && b !== null && a.kind === b.kind && a.floorId === b.floorId && (a.kind === 'wall' ? a.wallId === (b as typeof a).wallId : a.fixtureId === (b as typeof a).fixtureId)
@@ -254,6 +257,7 @@
       onpointermove: (event: IntersectionEvent<PointerEvent>) => {
         if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
+        if (orbiting) return
         if (!same(hovered, wallPick(wall))) hovered = wallPick(wall)
       },
       onpointerleave: () => {
@@ -286,6 +290,7 @@
       onpointermove: (event: IntersectionEvent<PointerEvent>) => {
         if (isCutAway(event.point, event.object)) return
         event.stopPropagation()
+        if (orbiting) return
         const pick = fixtureAtPoint(floorId, event.point)
         if (!same(hovered, pick)) hovered = pick
       },
@@ -301,12 +306,19 @@
     selected = null
   }
 
-  function wallGlow(wall: WallMeshes): { emissive: string; emissiveIntensity: number } {
-    const pick = wallPick(wall)
-    if (same(selected, pick)) return { emissive: '#2563eb', emissiveIntensity: 0.45 }
-    if (same(hovered, pick)) return { emissive: '#60a5fa', emissiveIntensity: 0.25 }
-    return { emissive: '#000000', emissiveIntensity: 0 }
-  }
+  const highlightedWalls = $derived.by(() => {
+    const out: { key: string; wall: WallMeshes; colour: string; opacity: number }[] = []
+    for (const [pick, colour, opacity] of [
+      [selected, '#2563eb', 0.4],
+      [hovered, '#60a5fa', 0.25],
+    ] as const) {
+      if (pick?.kind !== 'wall') continue
+      if (pick === hovered && same(selected, hovered)) continue
+      const wall = wallMeshes.find((item) => item.floorId === pick.floorId && item.wallId === pick.wallId)
+      if (wall && walls !== 'hidden' && shownFloor(wall.floorId)) out.push({ key: `${colour}:${wall.key}`, wall, colour, opacity })
+    }
+    return out
+  })
 
   // A box drawn round the fitting picked or under the pointer.
   const fixtureBoxes = $derived.by(() => {
@@ -741,11 +753,16 @@
         enabled={!locked}
         target={orbitTarget}
         onchange={(event) => keepCameraAboveGround(event.target)}
+        onstart={() => {
+          orbiting = true
+          hovered = null
+        }}
+        onend={() => (orbiting = false)}
       />
     </T.PerspectiveCamera>
 
     <ReviewSky {sun} centre={plotCenter} />
-    <ReviewCutaway depth={cutDepth} />
+    <ReviewCutaway depth={cutDepth} shape={cutShape} />
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}
@@ -890,17 +907,17 @@
       <T.Group position.y={wall.datumY} userData={halfCut(wall.datumY)}>
         {#each wall.geoms as geom, i (`${wall.key}-${i}`)}
           <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#6e6256" {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#6e6256" />
           </T.Mesh>
         {/each}
         {#each wall.courses as geom, i (`${wall.key}-course-${i}`)}
           <T.Mesh geometry={geom} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
           </T.Mesh>
         {/each}
         {#if wall.lintel}
           <T.Mesh geometry={wall.lintel} castShadow receiveShadow {...wallHandlers(wall)}>
-            <T.MeshStandardMaterial color="#8a8680" {...wallGlow(wall)} />
+            <T.MeshStandardMaterial color="#8a8680" />
           </T.Mesh>
         {/if}
         {#if wall.frame}
@@ -927,6 +944,25 @@
               emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
               toneMapped={panel.emissive === '#000000'}
               roughness={0.72}
+            />
+          </T.Mesh>
+        {/each}
+      </T.Group>
+    {/each}
+
+    <!-- The wall picked or under the pointer, washed blue: a copy of its faces drawn over it, cut like the wall. -->
+    {#each highlightedWalls as item (item.key)}
+      <T.Group position.y={item.wall.datumY} userData={halfCut(item.wall.datumY)}>
+        {#each [...item.wall.geoms, ...item.wall.courses] as geom, i (`${item.key}-${i}`)}
+          <T.Mesh geometry={geom} renderOrder={2}>
+            <T.MeshBasicMaterial
+              color={item.colour}
+              transparent
+              opacity={item.opacity}
+              depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={-2}
+              polygonOffsetUnits={-2}
             />
           </T.Mesh>
         {/each}
