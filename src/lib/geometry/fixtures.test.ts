@@ -123,17 +123,34 @@ describe('fitting quantities', () => {
 })
 
 describe('fixture models', () => {
-  it('point every face outwards, whichever way the fixture faces', async () => {
-    const { Vector3 } = await import('three')
+  it('carries a finish on every merged part', () => {
     for (const spec of FIXTURES) {
-      // Round pieces (cylinders, burners, bottles) are not boxes; the frame they share is checked by the rest.
-      const round = ['geyser', 'solar-geyser', 'water-tank', 'light', 'outside-tap', 'stove', 'gas-stove', 'gas-geyser', 'gas-cylinder']
-      if (round.includes(spec.id)) continue
-      for (const [dx, dz] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const parts = buildFixtureParts([{ id: 'f', kind: spec.id, x: 1, z: 1, dx: 0, dz: 1, y: spec.y }], 0)
+      expect(parts.length).toBeGreaterThan(0)
+      for (const part of parts) {
+        expect(part.roughness).toBeGreaterThan(0)
+        expect(part.metalness).toBeGreaterThanOrEqual(0)
+        expect(part.colour).toMatch(/^#/)
+        part.geometry.dispose()
+      }
+    }
+  })
+
+  it('point plate faces outwards, whichever way the fixture faces', async () => {
+    const { Vector3 } = await import('three')
+    // Wall plates stay as box stacks; richer fittings mix lathes and cylinders and are checked by the floor bound above.
+    const plates = ['socket', 'switch', 'stove-isolator']
+    for (const id of plates) {
+      const spec = FIXTURES.find((item) => item.id === id)!
+      for (const [dx, dz] of [
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [0, -1],
+      ]) {
         for (const part of buildFixtureParts([{ id: 'f', kind: spec.id, x: 3, z: 2, dx, dz, y: spec.y }], 0)) {
           const pos = part.geometry.getAttribute('position')
           let inward = 0
-          // Boxes only: each triangle's winding normal points away from its own box's middle.
           for (let i = 0; i < pos.count; i += 36) {
             const centre = new Vector3()
             for (let k = 0; k < 36 && i + k < pos.count; k++) centre.add(new Vector3().fromBufferAttribute(pos, i + k))

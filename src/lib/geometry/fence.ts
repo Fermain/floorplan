@@ -3,7 +3,15 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { fencePosts, fenceSpec } from '../model/fences'
 import type { Fence, Floor, Wall } from '../model/types'
 
-export type FencePart = { geometry: BufferGeometry; colour: string; opacity: number }
+export type FencePart = {
+  geometry: BufferGeometry
+  colour: string
+  opacity: number
+  roughness?: number
+  metalness?: number
+  emissive?: string
+  emissiveIntensity?: number
+}
 
 type Frame = { start: { x: number; z: number }; dir: { x: number; z: number }; normal: { x: number; z: number }; length: number }
 

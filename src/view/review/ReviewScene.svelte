@@ -580,7 +580,13 @@
     {#each fixtureMeshes as fitting (fitting.key)}
       {#each fitting.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} castShadow receiveShadow>
-          <T.MeshStandardMaterial color={part.colour} roughness={0.5} />
+          <T.MeshStandardMaterial
+            color={part.colour}
+            roughness={part.roughness}
+            metalness={part.metalness}
+            emissive={part.emissive ?? '#000000'}
+            emissiveIntensity={part.emissiveIntensity ?? 0}
+          />
         </T.Mesh>
       {/each}
     {/each}
