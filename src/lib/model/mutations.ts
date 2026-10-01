@@ -970,7 +970,20 @@ export function replacePlot(document: Document, plot: Plot): MutationResult {
       }
     }
   }
-  return ok({ ...document, plot })
+  // Road sides are kept only where the new boundary still has that edge.
+  const roads = (plot.roads ?? []).filter((edge) => Number.isInteger(edge) && edge >= 0 && edge < plot.ring.length)
+  const { roads: _roads, ...rest } = plot
+  return ok({ ...document, plot: roads.length > 0 ? { ...rest, roads: [...new Set(roads)].sort((a, b) => a - b) } : rest })
+}
+
+// Mark one side of the plot as on a road, or not.
+export function setPlotRoad(document: Document, edge: number, road: boolean): MutationResult {
+  const { ring } = document.plot
+  if (!Number.isInteger(edge) || edge < 0 || edge >= ring.length) return fail(document, 'no such side of the plot')
+  const others = (document.plot.roads ?? []).filter((item) => item !== edge)
+  const roads = road ? [...others, edge].sort((a, b) => a - b) : others
+  const { roads: _roads, ...rest } = document.plot
+  return ok({ ...document, plot: roads.length > 0 ? { ...rest, roads } : rest })
 }
 
 export function replaceHeightfield(document: Document, heightfield: Heightfield): MutationResult {

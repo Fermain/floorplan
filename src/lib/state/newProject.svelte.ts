@@ -1,5 +1,6 @@
 import { BASE_DEFAULTS } from '../model/defaults'
-import { DEFAULT_WALL_SYSTEM_ID } from '../model/systems'
+import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../model/systems'
+import { openingDefaultsFor } from '../model/openings'
 import type { Heightfield, Plot, ProjectDefaults, WallSystemId } from '../model/types'
 import { DEFAULT_SAMPLE_ID, type SamplePlotId } from '../plot/samples'
 
@@ -9,6 +10,8 @@ export type NewProjectDraft = ProjectDefaults & {
   customPlot: Plot | null
   customHeightfield: Heightfield | null
   systemId: WallSystemId
+  // The wall system the window and door sizes were made for; when the system changes they are made again.
+  openingsFor: WallSystemId
 }
 
 const KEY = 'floorplan:new-project'
@@ -21,6 +24,7 @@ function fresh(): NewProjectDraft {
     customPlot: null,
     customHeightfield: null,
     systemId: DEFAULT_WALL_SYSTEM_ID,
+    openingsFor: DEFAULT_WALL_SYSTEM_ID,
   }
 }
 
@@ -36,7 +40,16 @@ function restore(): NewProjectDraft {
 
 export const draft = $state<NewProjectDraft>(restore())
 
+// Window and door sizes snap to the chosen wall's courses: clay sizes left on a block wall land between courses.
+export function fitOpeningsToSystem(): void {
+  if (draft.openingsFor === draft.systemId) return
+  Object.assign(draft, openingDefaultsFor(wallSystem(draft.systemId)), { openingsFor: draft.systemId })
+}
+
 $effect.root(() => {
+  $effect(() => {
+    fitOpeningsToSystem()
+  })
   $effect(() => {
     const snapshot = JSON.stringify(draft)
     try {

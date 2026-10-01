@@ -20,8 +20,30 @@
     type ProjectSummary,
   } from '$lib/state/projects'
   import { session } from '$lib/state/session.svelte'
+  import { EXAMPLES, type Example } from '$lib/examples'
+  import PlanThumbnail from '$lib/components/project/PlanThumbnail.svelte'
 
   let projects = $state<ProjectSummary[]>([])
+  // Each example, built or loaded once for its thumbnail; opening one saves a copy to edit.
+  let examples = $state.raw<Record<string, Document>>({})
+  let opening = $state<string | null>(null)
+
+  async function loadExamples() {
+    const loaded = await Promise.all(EXAMPLES.map(async (example) => [example.id, await example.load()] as const))
+    examples = Object.fromEntries(loaded)
+  }
+
+  async function openExample(example: Example) {
+    opening = example.id
+    try {
+      const document = structuredClone(examples[example.id] ?? (await example.load()))
+      const saved = await saveProject(null, example.name, document)
+      if (saved.ok) await goto(sectionHref(saved.project.id, 'plan'))
+      else problem = 'The example could not be saved.'
+    } finally {
+      opening = null
+    }
+  }
   let last = $state<string | null>(null)
   let loaded = $state(false)
   let problem = $state('')
@@ -34,6 +56,7 @@
 
   onMount(() => {
     void session.close().then(refresh)
+    void loadExamples()
   })
 
   const recent = $derived(projects.find((project) => project.id === last) ?? null)
@@ -142,5 +165,40 @@
         </ul>
       </Card.Content>
     </Card.Root>
+
+    <section class="grid gap-3" aria-labelledby="examples-heading">
+      <div>
+        <h2 id="examples-heading" class="text-lg font-semibold">Examples</h2>
+        <p class="text-sm text-muted-foreground">Open a copy of a finished house to see how it is put together, or to start from it.</p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {#each EXAMPLES as example (example.id)}
+          <Card.Root class="overflow-hidden">
+            <div class="aspect-[4/3] border-b bg-background p-3">
+              {#if examples[example.id]}
+                <PlanThumbnail document={examples[example.id]} class="h-full w-full" />
+              {/if}
+            </div>
+            <Card.Header>
+              <Card.Title>{example.name}</Card.Title>
+              <Card.Description>{example.place}</Card.Description>
+            </Card.Header>
+            <Card.Content class="grid gap-3 text-sm">
+              <p>{example.description}</p>
+              <div class="flex flex-wrap gap-1.5">
+                {#each example.highlights as highlight (highlight)}
+                  <span class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{highlight}</span>
+                {/each}
+              </div>
+            </Card.Content>
+            <Card.Footer>
+              <Button variant="outline" disabled={opening !== null} onclick={() => void openExample(example)}>
+                {opening === example.id ? 'Opening…' : 'Open a copy'}
+              </Button>
+            </Card.Footer>
+          </Card.Root>
+        {/each}
+      </div>
+    </section>
   </div>
 </div>

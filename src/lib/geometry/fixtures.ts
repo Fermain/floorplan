@@ -163,7 +163,7 @@ export function placeFixture(
   pointer: Point,
   kind: FixtureKind,
   preferred: Point,
-  options: { setup?: FixtureSetup; downpipes?: Point[] } = {},
+  options: { setup?: FixtureSetup; downpipes?: Point[]; plot?: [number, number][] } = {},
 ): FixturePlacement {
   const spec = fixtureSpec(kind)
   const cells = floorCells(floor)
@@ -186,6 +186,8 @@ export function placeFixture(
     best = { fixture, score }
   }
 
+  const plotRing = options.plot?.map(([x, z]) => ({ x, z }))
+  const onPlot = (point: Point) => !plotRing || pointInRing(plotRing, point.x, point.z)
   const either = EITHER_SIDE.includes(kind)
   if (!spec.outside && !cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
   if (cell && (!spec.outside || either)) {
@@ -236,12 +238,14 @@ export function placeFixture(
             // as far as the wall's end, so long as it stays clear of the rooms.
             const under = Math.min(length, Math.max(0, dot({ x: pipe.x - a.x, z: pipe.z - a.z }, t)))
             const there = against({ x: a.x + t.x * under + n.x * reach, z: a.z + t.z * under + n.z * reach }, n, kind, spec.y, setup)
-            s = fixtureFootprint(there).some((point) => inAnyRoom(point)) ? clamp(under) : under
+            s = fixtureFootprint(there).some((point) => inAnyRoom(point) || !onPlot(point)) ? clamp(under) : under
           }
         }
         const face = { x: a.x + t.x * s + n.x * reach, z: a.z + t.z * s + n.z * reach }
         const fixture = against(face, n, kind, spec.y, setup)
-        consider(fixture, !inAnyRoom({ x: face.x + n.x * 0.05, z: face.z + n.z * 0.05 }), unsnapped)
+        // Outside, a fitting stands on the plot, not over the boundary.
+        const fits = !inAnyRoom({ x: face.x + n.x * 0.05, z: face.z + n.z * 0.05 }) && fixtureFootprint(fixture).every(onPlot)
+        consider(fixture, fits, unsnapped)
       }
     }
   }

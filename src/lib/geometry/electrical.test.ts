@@ -103,3 +103,23 @@ describe('where the distribution board may go', () => {
     expect(ids).toContain('db-stove')
   })
 })
+
+describe('bathroom zones', () => {
+  it('only count sockets in the same room as the bath or shower', async () => {
+    const { addWall, addCorner } = await import('../model/mutations')
+    let doc = room([])
+    const id = doc.building.floors[0].id
+    doc = addCorner(doc, id, 8, 4).document
+    doc = addCorner(doc, id, 8, 10).document
+    const [a, b] = doc.building.floors[0].corners.slice(-2)
+    doc = addWall(doc, id, a.id, b.id, 'double').document
+    // A shower against the dividing wall on one side, a socket on the other side of the same wall.
+    const reach = 0.131
+    const shower = { kind: 'shower' as const, x: 8 - reach - 0.45, z: 7, dx: -1, dz: 0, y: 0 }
+    const across = { kind: 'socket' as const, x: 8 + reach + 0.02, z: 7, dx: 1, dz: 0, y: 0.3 }
+    const beside = { kind: 'socket' as const, x: 8 - reach - 0.02, z: 7.9, dx: -1, dz: 0, y: 0.3 }
+    const ids = (d: Document) => electricalIssues(d).map((issue) => issue.id.split(':')[0])
+    expect(ids(addFixtures(doc, id, [shower, across]).document)).not.toContain('zone')
+    expect(ids(addFixtures(doc, id, [shower, beside]).document)).toContain('zone')
+  })
+})

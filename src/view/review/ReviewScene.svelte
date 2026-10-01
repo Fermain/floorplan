@@ -3,6 +3,7 @@
   import { OrbitControls } from '@threlte/extras'
   import {
     BufferGeometry,
+    Color,
     DoubleSide,
     ExtrudeGeometry,
     Float32BufferAttribute,
@@ -15,6 +16,7 @@
     floorWorldDatum,
     groundPad,
     pointInRing,
+    ringDistance,
     SURFACE_BED_THICKNESS_M,
     SURFACE_BED_TOP_ABOVE_DATUM_M,
     wallDatum,
@@ -39,6 +41,7 @@
   import { buildStairGeometry } from '../../lib/geometry/stairMesh'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
+  import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildFixtureParts, fixtureStandAboveDatum, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
@@ -47,13 +50,14 @@
   import { wallSystem } from '../../lib/model/systems'
   import type { SupportType } from '../../lib/model/types'
   import { FLOOR_TO_FLOOR } from '../../lib/plot/fixture'
-  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong } from '../../lib/geometry/terrain'
+  import { bilinearHeight, buildGroundGeometry, bottomSamplesAlong, padField } from '../../lib/geometry/terrain'
   import { documentStore } from '../../lib/state/document.svelte'
   import { sunDirection } from '../../lib/solar/sun'
   import type { Floor, Wall } from '../../lib/model/types'
   import type { OrbitControls as OrbitControlsInstance } from 'three/examples/jsm/controls/OrbitControls.js'
   import type { Ring } from '../../lib/geometry/pad'
   import { liftAboveGround } from './ground-limit'
+  import ReviewSky from './ReviewSky.svelte'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
   import { Button } from '$lib/components/ui/button'
 
@@ -92,6 +96,11 @@
 
   let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
+  let roadMeshes = $state<RoadPart[]>([])
+  // How far the ground carries on past the survey.
+  const SURROUNDINGS_M = 120
+  const LAWN = '#6a8f5c'
+  const VELD = '#8f9468'
   let contourMinor = $state<BufferGeometry | null>(null)
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
@@ -123,15 +132,25 @@
     return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
   }
 
+  // The camera looks at the building, from far enough back to take it all in; on an empty plot, at the plot.
+  const focus = $derived.by(() => {
+    const corners = doc.building.floors.flatMap((floor) => floor.corners)
+    if (corners.length === 0) return { x: plotCenter.x, z: plotCenter.z, reach: 14 }
+    const xs = corners.map((corner) => corner.x)
+    const zs = corners.map((corner) => corner.z)
+    const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs))
+    return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2, reach: Math.max(14, size * 1.1) }
+  })
+
   const orbitTarget = $derived.by(() => {
-    const next: [number, number, number] = [plotCenter.x, plotCenter.y, plotCenter.z]
+    const next: [number, number, number] = [focus.x, plotCenter.y, focus.z]
     if (sameTriple(stableTarget, next)) return stableTarget
     stableTarget = next
     return stableTarget
   })
 
   const cameraPosition = $derived.by(() => {
-    const next: [number, number, number] = [plotCenter.x + 14, plotCenter.y + 10, plotCenter.z + 14]
+    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, focus.z + focus.reach]
     if (sameTriple(stableCamera, next)) return stableCamera
     stableCamera = next
     return stableCamera
@@ -146,10 +165,20 @@
     ),
   )
 
+  // The sun fades as it sets: no light, and no shadows thrown upwards, from below the horizon.
+  const sunStrength = $derived(1.25 * Math.min(1, Math.max(0, (sun.y + 0.02) / 0.15)))
+
+  // The shadows cover the whole plot, however big it is.
+  const shadowReach = $derived.by(() => {
+    let reach = 0
+    for (const [x, z] of doc.plot.ring) reach = Math.max(reach, Math.hypot(x - plotCenter.x, z - plotCenter.z))
+    return Math.max(24, reach + 6)
+  })
+
   const lightPosition = $derived([
-    plotCenter.x + sun.x * 40,
-    plotCenter.y + sun.y * 40,
-    plotCenter.z + sun.z * 40,
+    plotCenter.x + sun.x * (20 + shadowReach),
+    plotCenter.y + sun.y * (20 + shadowReach),
+    plotCenter.z + sun.z * (20 + shadowReach),
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
@@ -175,8 +204,20 @@
     const floors = doc.building.floors
     const pad = groundPad(doc)
     const displayField = siteField(doc)
-    const ground = buildGroundGeometry(displayField)
+    // The ground runs on past the survey to the horizon; contours stay on the surveyed part.
+    const surroundings = padField(displayField, SURROUNDINGS_M)
+    // Kept lawn inside the boundary, fading to dry veld beyond it.
+    const ring = doc.plot.ring.map(([x, z]) => ({ x, z }))
+    const lawn = new Color(LAWN)
+    const veld = new Color(VELD)
+    const tint = new Color()
+    const ground = buildGroundGeometry(surroundings, (x, z) => {
+      const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
+      tint.copy(lawn).lerp(veld, out)
+      return [tint.r, tint.g, tint.b]
+    })
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
+    const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -247,6 +288,7 @@
         }
       })
     groundGeometry = ground
+    roadMeshes = roadParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -263,6 +305,7 @@
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
+      for (const part of roadParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -486,8 +529,10 @@
     light.target.position.set(plotCenter.x, plotCenter.y, plotCenter.z)
     light.shadow.mapSize.set(2048, 2048)
     light.shadow.camera.near = 1
-    light.shadow.camera.far = 120
-    const extent = 24
+    light.shadow.camera.far = 40 + shadowReach * 2
+    light.shadow.bias = -0.0004
+    light.shadow.normalBias = 0.02
+    const extent = shadowReach
     light.shadow.camera.left = -extent
     light.shadow.camera.right = extent
     light.shadow.camera.top = extent
@@ -519,7 +564,7 @@
       makeDefault
       position={cameraPosition}
       oncreate={(ref) => {
-        ref.lookAt(plotCenter.x, plotCenter.y, plotCenter.z)
+        ref.lookAt(focus.x, plotCenter.y, focus.z)
       }}
     >
       <OrbitControls
@@ -529,10 +574,11 @@
       />
     </T.PerspectiveCamera>
 
-    <T.AmbientLight intensity={0.35} />
+    <ReviewSky {sun} centre={plotCenter} />
+    <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}
-      intensity={1.15}
+      intensity={sunStrength}
       castShadow
       oncreate={(ref) => {
         configureSunLight(ref)
@@ -541,9 +587,14 @@
 
     {#if groundGeometry}
       <T.Mesh geometry={groundGeometry} receiveShadow>
-        <T.MeshStandardMaterial color="#6b8f71" />
+        <T.MeshStandardMaterial vertexColors roughness={0.95} />
       </T.Mesh>
     {/if}
+    {#each roadMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} receiveShadow>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
     {#if contourMinor}
       <T.LineSegments geometry={contourMinor}>
         <T.LineBasicMaterial color="#3f3428" />
