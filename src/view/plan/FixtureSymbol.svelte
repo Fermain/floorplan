@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fixtureSpec } from '../../lib/model/fixtures'
+  import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import type { Fixture } from '../../lib/model/types'
 
   let {
@@ -11,8 +11,10 @@
   }: { fixture: Fixture; chosen?: boolean; ghost?: boolean; invalid?: boolean; line: number } = $props()
 
   const spec = $derived(fixtureSpec(fixture.kind))
-  const w = $derived(spec.width)
-  const d = $derived(spec.depth)
+  const size = $derived(fixtureSize(fixture))
+  const w = $derived(size.width)
+  const d = $derived(size.depth)
+  const bottles = $derived(bottleSetup(fixture))
   // Local frame: x runs along the wall, y out into the room, origin at the middle of the footprint.
   const matrix = $derived(`matrix(${-fixture.dz} ${fixture.dx} ${fixture.dx} ${fixture.dz} ${fixture.x} ${fixture.z})`)
   const tone = $derived(invalid ? 'invalid' : spec.trade)
@@ -66,6 +68,24 @@
   {:else if fixture.kind === 'water-tank'}
     <circle r={w / 2} class="fill" />
     <circle r={w / 2 - 0.12} />
+  {:else if fixture.kind === 'stove' || fixture.kind === 'gas-stove'}
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />
+    {#each [-0.14, 0.14] as x (x)}
+      {#each [-0.1, 0.12] as y (y)}
+        <circle cx={x} cy={y} r={0.08} class:solid={fixture.kind === 'stove'} />
+      {/each}
+    {/each}
+  {:else if fixture.kind === 'gas-geyser'}
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />
+    <path d="M 0 {d / 2 - 0.03} q -0.07 -0.06 0 -{d - 0.06} q 0.07 0.06 0 {d - 0.06}" />
+  {:else if fixture.kind === 'gas-cylinder'}
+    {@const bottle = BOTTLES[bottles.kg]}
+    {@const wrap = bottles.cage ? CAGE_M : 0}
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} class:dashed={!bottles.cage} />
+    {#each Array.from({ length: bottles.count }, (_, i) => -w / 2 + wrap + bottle.dia / 2 + i * (bottle.dia + BOTTLE_GAP_M)) as x (x)}
+      <circle cx={x} cy={0} r={bottle.dia / 2} class="fill" />
+      <circle cx={x} cy={0} r={0.06} />
+    {/each}
   {:else if fixture.kind === 'outside-tap'}
     <circle r={0.05} class="solid" />
   {/if}
@@ -83,6 +103,9 @@
   }
   .fixture.plumbing {
     --ink: #0369a1;
+  }
+  .fixture.gas {
+    --ink: #a21caf;
   }
   .fixture.invalid {
     --ink: #b91c1c;

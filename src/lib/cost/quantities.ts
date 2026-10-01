@@ -5,15 +5,16 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { FIXTURES } from '../model/fixtures'
+import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
+import { gasLayout } from '../geometry/gas'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
@@ -31,7 +32,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -47,7 +48,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -413,10 +414,11 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    if (!count) continue
+    // Gas bottles are counted below, bottle by bottle, with their regulator and cage.
+    if (!count || spec.id === 'gas-cylinder') continue
     drafts.push({
       id: `fixture:${spec.id}`,
-      group: spec.trade === 'electrical' ? 'Electrical' : 'Plumbing',
+      group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : 'Plumbing',
       label: spec.name,
       note: 'Fitting only; cable, pipe and labour not yet counted',
       unit: 'each',
@@ -556,6 +558,26 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: round(trench, 1),
       rateKey: 'trench',
     })
+  }
+
+  const gas = gasLayout(doc)
+  const bottles = new Map<BottleSize, number>()
+  let cages = 0
+  for (const item of gas.cylinders) {
+    const setup = bottleSetup(item.fixture)
+    bottles.set(setup.kg, (bottles.get(setup.kg) ?? 0) + setup.count)
+    if (setup.cage) cages += 1
+  }
+  for (const kg of BOTTLE_SIZES) {
+    const count = bottles.get(kg)
+    if (count) drafts.push({ id: `gas-bottle:${kg}`, group: 'Gas', label: `LP gas bottle ${BOTTLES[kg].name}`, note: 'Deposit and first fill', unit: 'each', quantity: count, rateKey: `gas-bottle:${kg}` })
+  }
+  if (gas.cylinders.length > 0) drafts.push({ id: 'gas-regulator', group: 'Gas', label: 'Regulator and manifold', note: 'Automatic changeover between bottles where there are two or more', unit: 'each', quantity: gas.cylinders.length, rateKey: 'gas-regulator' })
+  if (cages > 0) drafts.push({ id: 'gas-cage', group: 'Gas', label: 'Gas bottle cage', note: 'Galvanised steel, locked, on a level slab', unit: 'each', quantity: cages, rateKey: 'gas-cage' })
+  if (gas.runs.length > 0) {
+    drafts.push({ id: 'gas-pipe', group: 'Gas', label: 'Copper gas pipe 15 mm', note: 'From the bottles round the outside walls to each appliance, plus 10%', unit: 'm', quantity: Math.ceil(gas.length * 1.1), rateKey: 'gas-pipe' })
+    drafts.push({ id: 'gas-valve', group: 'Gas', label: 'Gas isolating valves', note: 'One at each appliance', unit: 'each', quantity: gas.runs.length, rateKey: 'gas-valve' })
+    drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
   }
 
   const fences = new Map<string, { length: number; area: number; posts: number }>()

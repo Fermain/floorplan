@@ -16,8 +16,8 @@
     floorLevel: number | null
     fittings?: Fitting[]
     conduits?: { u: number; bottom: number; top: number; clash?: boolean }[]
-    ports?: { u: number; v: number; r: number; kind: 'waste' | 'cold' | 'hot' }[]
-    pipes?: { kind: 'waste' | 'cold' | 'hot'; points: [number, number][] }[]
+    ports?: { u: number; v: number; r: number; kind: 'waste' | 'cold' | 'hot' | 'gas' }[]
+    pipes?: { kind: 'waste' | 'cold' | 'hot' | 'gas'; points: [number, number][] }[]
   }
 
   let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [], ports = [], pipes = [] }: Props = $props()
@@ -210,6 +210,14 @@
   .pipe.hot,
   .port.hot {
     stroke: #dc2626;
+  }
+  .pipe.gas,
+  .port.gas {
+    stroke: #a21caf;
+  }
+  .pipe.gas {
+    stroke-dasharray: none;
+    stroke-width: 2px;
   }
   .pipe.waste,
   .port.waste {

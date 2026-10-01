@@ -8,6 +8,8 @@
   import { layoutSpaces, roomTypeLabel } from '$lib/geometry/spaces'
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
+  import { gasLayout } from '$lib/geometry/gas'
+  import { bottleSetup } from '$lib/model/fixtures'
   import { BATTERY_MODULE_KWH, powerLayout, suggestedPanels } from '$lib/geometry/power'
   import { planHref } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
@@ -20,6 +22,7 @@
   const electricalProblems = $derived(electricalIssues(doc))
   const pipes = $derived(plumbingLayout(doc))
   const power = $derived(powerLayout(doc))
+  const gas = $derived(gasLayout(doc))
   const longestHot = $derived(pipes.hot.reduce((most, run) => Math.max(most, run.length), 0))
   const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
@@ -435,5 +438,60 @@
       </Card.Root>
     {/if}
 
+    {#if gas.appliances.length > 0 || gas.cylinders.length > 0}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold">Gas</h2>
+        <p class="text-sm text-muted-foreground">
+          LP gas from bottles outside, piped in copper round the house. A registered gas installer lays it to SANS 10087-1
+          and issues a certificate of conformity.
+        </p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Appliances</Card.Description>
+            <Card.Title class="text-2xl">{gas.appliances.length}</Card.Title>
+            <Card.Description>
+              {gas.appliances.map((item) => item.fixture.kind === 'gas-stove' ? 'stove' : 'geyser').join(', ') || 'None yet'}
+            </Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Copper pipe</Card.Description>
+            <Card.Title class="text-2xl">{gas.runs.length > 0 ? `${number.format(gas.length)} m` : '–'}</Card.Title>
+            <Card.Description>15 mm, along the outside walls and in to each appliance</Card.Description>
+          </Card.Header>
+        </Card.Root>
+        <Card.Root>
+          <Card.Header>
+            <Card.Description>Gas bottles</Card.Description>
+            <Card.Title class="text-2xl">
+              {gas.cylinders.length > 0
+                ? gas.cylinders.map((item) => `${bottleSetup(item.fixture).count} × ${bottleSetup(item.fixture).kg} kg`).join(', ')
+                : '–'}
+            </Card.Title>
+            <Card.Description>Two or more on a changeover regulator, so one can be swapped while the other runs</Card.Description>
+          </Card.Header>
+        </Card.Root>
+      </div>
+      {#if gas.issues.length > 0}
+        <Card.Root>
+          <Card.Content class="grid gap-2 py-4 text-sm">
+            {#each gas.issues as issue (issue.id)}
+              <div class="flex items-start justify-between gap-3">
+                <span class="text-amber-700">{issue.text}</span>
+                {#if issue.floorId}
+                  {@const floor = doc.building.floors.find((item) => item.id === issue.floorId)}
+                  {#if floor}
+                    <Button variant="ghost" size="sm" href={planHref(id, floor.index)}>Show on plan</Button>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </Card.Content>
+        </Card.Root>
+      {/if}
+    {/if}
   </div>
 </div>

@@ -13,10 +13,23 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Plug from '@lucide/svelte/icons/plug'
   import FixtureSymbol from './FixtureSymbol.svelte'
-  import { FIXTURES, fitFixtureY, fixtureFootprint, fixtureSpec } from '../../lib/model/fixtures'
+  import {
+    BOTTLE_SIZES,
+    BOTTLES,
+    bottleSetup,
+    FIXTURES,
+    fitFixtureY,
+    fixtureFootprint,
+    fixtureSize,
+    fixtureSpec,
+    MAX_BOTTLES,
+    reseatBottles,
+    swapsFor,
+  } from '../../lib/model/fixtures'
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
+  import { gasLayout } from '../../lib/geometry/gas'
   import {
     DEFAULT_SEWER_DEPTH_M,
     DRAIN_FALL,
@@ -56,7 +69,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { BottleSize, Fixture, FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -1706,6 +1719,20 @@
     if (applyResult(documentStore.setServiceBends(kind, []))) chooseSelection({ service: kind })
   }
 
+  const gas = $derived(gasLayout(document))
+  // Gas pipes run round the outside of the ground floor; the chosen appliance or bottles pick out their own.
+  const gasLines = $derived.by(() => {
+    if (activeStoreyIndex !== 0) return []
+    const id = chosenFixture?.fixture.id
+    return gas.runs.map((run) => ({ id: run.item.fixture.id, path: run.path, chosen: id === run.item.fixture.id || id === run.cylinder.fixture.id }))
+  })
+
+  function swapChosenFixture(kind: FixtureKind) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    applyResult(documentStore.setFixtureKind(chosen.floorId, chosen.fixture.id, kind))
+  }
+
   const wiring = $derived(electricalLayout(document))
   const wiringProblems = $derived(electricalIssues(document))
 
@@ -1732,7 +1759,7 @@
   function fixtureAt(x: number, z: number): { floorId: string; id: string } | null {
     for (const item of [...levelFixtures].reverse()) {
       const ring = fixtureFootprint(item.fixture)
-      const spec = fixtureSpec(item.fixture.kind)
+      const spec = fixtureSize(item.fixture)
       const hit = spec.width < 0.3 || spec.depth < 0.3
         ? Math.hypot(item.fixture.x - x, item.fixture.z - z) < 0.2
         : pointInRing(ring, x, z)
@@ -1765,6 +1792,18 @@
       return
     }
     applyResult(documentStore.addFixture(ghost.floorId, ghost.placement.fixture))
+  }
+
+  function setChosenBottles(patch: Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>) {
+    const chosen = chosenFixture
+    if (!chosen) return
+    const next = reseatBottles(chosen.fixture, { ...bottleSetupPatch(chosen.fixture), ...patch })
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { x: next.x, z: next.z, bottles: next.bottles, bottleKg: next.bottleKg, cage: next.cage }))
+  }
+
+  function bottleSetupPatch(fixture: Fixture): Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'> {
+    const setup = bottleSetup(fixture)
+    return { bottles: setup.count, bottleKg: setup.kg, cage: setup.cage }
   }
 
   $effect(() => {
@@ -2020,6 +2059,12 @@
           <Select.Group>
             <Select.Label>Plumbing</Select.Label>
             {#each FIXTURES.filter((item) => item.trade === 'plumbing') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
+          <Select.Group>
+            <Select.Label>Gas</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'gas') as option (option.id)}
               <Select.Item value={option.id} label={option.name} />
             {/each}
           </Select.Group>
@@ -2369,6 +2414,17 @@
           {#if points.length > 1}
             <polyline points={pointsAttr(points)} fill="none" stroke="#d97706" stroke-width={s(0.02)} stroke-dasharray={dash(0.15, 0.1)} />
           {/if}
+        {/each}
+      </g>
+      <g class="gas" pointer-events="none">
+        {#each gasLines as line (line.id)}
+          <polyline
+            points={pointsAttr(line.path.map((p) => [p.x, p.z] as SvgPoint))}
+            fill="none"
+            class="service-line gas"
+            class:chosen={line.chosen}
+            stroke-width={s(line.chosen ? 0.05 : 0.03)}
+          />
         {/each}
       </g>
       {#if showServices}
@@ -2861,8 +2917,74 @@
             {circuit.cable} mm² cable, {circuit.points.length}
             {circuit.points.length === 1 ? 'point' : 'points'}, about {checkFormat.format(circuit.length)} m of cable.
           </p>
-        {:else if chosenFixture.spec.trade === 'electrical'}
+        {:else if chosenFixture.spec.trade === 'electrical' && chosenFixture.fixture.kind !== 'stove'}
           <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
+        {/if}
+        {#if swapsFor(chosenFixture.fixture.kind).length > 0}
+          <div class="grid gap-1.5">
+            <Label for="fixture-kind">Type</Label>
+            <Select.Root type="single" value={chosenFixture.fixture.kind} onValueChange={(next) => next && swapChosenFixture(next as FixtureKind)}>
+              <Select.Trigger id="fixture-kind" size="sm" class="w-full">{chosenFixture.spec.name}</Select.Trigger>
+              <Select.Content>
+                {#each swapsFor(chosenFixture.fixture.kind) as kind (kind)}
+                  <Select.Item value={kind} label={fixtureSpec(kind).name} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        {/if}
+        {#if chosenFixture.fixture.kind === 'gas-cylinder'}
+          {@const setup = bottleSetup(chosenFixture.fixture)}
+          {@const fed = gas.runs.filter((run) => run.cylinder.fixture.id === chosenFixture?.fixture.id)}
+          <div class="grid grid-cols-2 gap-2">
+            <div class="grid gap-1.5">
+              <Label for="bottle-count">Bottles</Label>
+              <Select.Root type="single" value={String(setup.count)} onValueChange={(next) => next && setChosenBottles({ bottles: Number(next) })}>
+                <Select.Trigger id="bottle-count" size="sm" class="w-full">{setup.count}</Select.Trigger>
+                <Select.Content>
+                  {#each Array.from({ length: MAX_BOTTLES }, (_, i) => i + 1) as count (count)}
+                    <Select.Item value={String(count)} label={String(count)} />
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="grid gap-1.5">
+              <Label for="bottle-size">Size</Label>
+              <Select.Root type="single" value={String(setup.kg)} onValueChange={(next) => next && setChosenBottles({ bottleKg: Number(next) as BottleSize })}>
+                <Select.Trigger id="bottle-size" size="sm" class="w-full">{BOTTLES[setup.kg].name}</Select.Trigger>
+                <Select.Content>
+                  {#each BOTTLE_SIZES as kg (kg)}
+                    <Select.Item value={String(kg)} label={BOTTLES[kg].name} />
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+            <div class="col-span-2 grid gap-1.5">
+              <Label for="bottle-cage">Cage</Label>
+              <Select.Root type="single" value={setup.cage ? 'yes' : 'no'} onValueChange={(next) => next && setChosenBottles({ cage: next === 'yes' })}>
+                <Select.Trigger id="bottle-cage" size="sm" class="w-full">{setup.cage ? 'Locked steel cage' : 'No cage'}</Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="yes" label="Locked steel cage" />
+                  <Select.Item value="no" label="No cage" />
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+          <p>
+            Feeds {fed.length} {fed.length === 1 ? 'appliance' : 'appliances'}{fed.length > 0
+              ? `, through about ${checkFormat.format(fed.reduce((sum, run) => sum + run.length, 0))} m of 15 mm copper pipe.`
+              : '.'}
+          </p>
+        {:else if chosenFixture.spec.trade === 'gas'}
+          {@const run = gas.runs.find((item) => item.item.fixture.id === chosenFixture?.fixture.id)}
+          {#if run}
+            <p>
+              About {checkFormat.format(run.length)} m of 15 mm copper pipe from the gas bottles: {checkFormat.format(run.outside)} m along the
+              outside wall{run.inside > 0.05 ? `, ${checkFormat.format(run.inside)} m through and inside` : ''}.
+            </p>
+          {:else}
+            <p class="text-amber-700">No gas yet: place gas bottles against an outside wall.</p>
+          {/if}
         {/if}
         {#if chosenFixture.spec.mount !== 'ceiling'}
           <div class="grid gap-1.5">
@@ -3185,6 +3307,13 @@
   }
   .service-line.sewer {
     stroke: #7c4a1e;
+  }
+  .service-line.gas {
+    stroke: #a21caf;
+    stroke-dasharray: 0.12 0.08;
+  }
+  .service-line.gas.chosen {
+    stroke-dasharray: none;
   }
   .service-line.water {
     stroke: #0284c7;

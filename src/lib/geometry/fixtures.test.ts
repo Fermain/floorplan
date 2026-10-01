@@ -126,7 +126,9 @@ describe('fixture models', () => {
   it('point every face outwards, whichever way the fixture faces', async () => {
     const { Vector3 } = await import('three')
     for (const spec of FIXTURES) {
-      if (spec.id === 'geyser' || spec.id === 'solar-geyser' || spec.id === 'water-tank' || spec.id === 'light' || spec.id === 'outside-tap') continue
+      // Round pieces (cylinders, burners, bottles) are not boxes; the frame they share is checked by the rest.
+      const round = ['geyser', 'solar-geyser', 'water-tank', 'light', 'outside-tap', 'stove', 'gas-stove', 'gas-geyser', 'gas-cylinder']
+      if (round.includes(spec.id)) continue
       for (const [dx, dz] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
         for (const part of buildFixtureParts([{ id: 'f', kind: spec.id, x: 3, z: 2, dx, dz, y: spec.y }], 0)) {
           const pos = part.geometry.getAttribute('position')

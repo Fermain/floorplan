@@ -46,13 +46,16 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { CorniceType, FaceTrim, FenceType, FixtureKind, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
+  import type { CorniceType, FaceTrim, FenceType, Fixture, FixtureKind, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
   import { buildTrimParts, trimRuns } from '../../lib/geometry/trims'
   import { PORTS, type PortKind } from '../../lib/model/ports'
+  import { GAS_RUN_Y, gasLayout, regulatorY } from '../../lib/geometry/gas'
+  import { cornerById } from '../../lib/model/geom'
+  import { wallReach } from '../../lib/geometry/outline'
   import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
-  import { FIXTURES, fitFixtureY, fixtureSpec } from '../../lib/model/fixtures'
+  import { bottleSetup, EITHER_SIDE, FIXTURES, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
@@ -188,7 +191,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   const faceFittings = $derived(wallFittings.filter((item) => item.side === side))
   const selectedFitting = $derived(faceFittings.find((item) => item.fixture.id === selectedFixtureId) ?? null)
   const fittingChoices = $derived(
-    FIXTURES.filter((spec) => spec.mount !== 'ceiling' && spec.outside === (viewFace?.outside ?? false)),
+    FIXTURES.filter((spec) => spec.mount !== 'ceiling' && (spec.outside === (viewFace?.outside ?? false) || EITHER_SIDE.includes(spec.id))),
   )
 
   // Where each fitting on this wall is drawn, with a fitting being dragged shown where it is going.
@@ -197,7 +200,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (!floor || !wall) return wallFittings.map((item) => item.fixture)
     return wallFittings.map((item) => {
       if (!moving || moving.id !== item.fixture.id) return item.fixture
-      const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, moving.u, moving.y)
+      const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, moving.u, moving.y, setupOf(item.fixture))
       return moved ? { ...item.fixture, ...moved } : item.fixture
     })
   })
@@ -213,6 +216,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     }
   })
 
+  // Gas bottles keep their count, size and cage as they move.
+  function setupOf(fixture: Fixture) {
+    if (fixture.kind !== 'gas-cylinder') return {}
+    const { count, kg, cage } = bottleSetup(fixture)
+    return { bottles: count, bottleKg: kg, cage }
+  }
+
   function viewU(u: number): number {
     return side === -1 && frame ? frame.length - u : u
   }
@@ -226,9 +236,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return {
         id: item.fixture.id,
         u: viewU(u),
-        width: spec.width,
+        width: fixtureSize(item.fixture).width,
         bottom: ffl + y,
-        top: ffl + y + spec.height,
+        top: ffl + y + fixtureSize(item.fixture).height,
         selected: item.fixture.id === selectedFixtureId,
         label: spec.name,
       }
@@ -237,10 +247,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   function fittingAt(u: number, v: number) {
     for (const item of faceFittings) {
-      const spec = fixtureSpec(item.fixture.kind)
+      const size = fixtureSize(item.fixture)
       const pad = 0.04
       const bottom = ffl + item.fixture.y
-      if (Math.abs(u - item.u) <= spec.width / 2 + pad && v >= bottom - pad && v <= bottom + spec.height + pad) return item
+      if (Math.abs(u - item.u) <= size.width / 2 + pad && v >= bottom - pad && v <= bottom + size.height + pad) return item
     }
     return null
   }
@@ -290,7 +300,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   // Where the plumbing fittings on this face come through the wall, seen from the room.
   const ports = $derived.by(() => {
     const out: { u: number; v: number; r: number; kind: PortKind }[] = []
-    if (viewFace?.outside) return out
     for (const mark of fittingMarks) {
       const item = faceFittings.find((entry) => entry.fixture.id === mark.id)
       if (!item) continue
@@ -305,6 +314,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   // Wastes drop to the floor.
   const pipeRuns = $derived.by(() => {
     const runs: { kind: PortKind; points: [number, number][] }[] = []
+    // Outside, a gas geyser's water goes straight through the wall behind it.
+    if (viewFace?.outside) return [...runs, ...gasRuns]
     for (const kind of ['cold', 'hot'] as const) {
       const inlets = ports.filter((port) => port.kind === kind).sort((a, b) => a.u - b.u)
       if (inlets.length === 0) continue
@@ -315,6 +326,53 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       runs.push({ kind, points: [[riser, level], [riser, WALL_HEAD]] })
     }
     for (const port of ports.filter((entry) => entry.kind === 'waste')) runs.push({ kind: 'waste', points: [[port.u, port.v], [port.u, ffl]] })
+    return [...runs, ...gasRuns]
+  })
+
+  // Gas: copper pipe clipped along the outside wall from the bottles, rising to a gas geyser or through the wall
+  // to a stove. Inside, a stove fed from further off has its pipe come along the floor.
+  const gas = $derived(gasLayout(doc))
+  const gasRuns = $derived.by(() => {
+    const runs: { kind: PortKind; points: [number, number][] }[] = []
+    if (!floor || !wall || logical || !frame) return runs
+    const p = cornerById(floor.corners, wall.startCornerId)
+    const q = cornerById(floor.corners, wall.endCornerId)
+    if (!p || !q) return runs
+    const length = Math.hypot(q.x - p.x, q.z - p.z)
+    if (length < 1e-6) return runs
+    const t = { x: (q.x - p.x) / length, z: (q.z - p.z) / length }
+    const n = { x: -t.z * side, z: t.x * side }
+    const reach = wallReach(wall)
+    const across = (at: { x: number; z: number }) => (at.x - p.x) * n.x + (at.z - p.z) * n.z
+    const along = (at: { x: number; z: number }) => (at.x - p.x) * t.x + (at.z - p.z) * t.z
+    const onFace = (at: { x: number; z: number }) => Math.abs(across(at) - reach) < 0.12 && along(at) > -0.2 && along(at) < length + 0.2
+    const level = ffl + GAS_RUN_Y
+    const here = (fixtureId: string) => faceFittings.find((item) => item.fixture.id === fixtureId)
+    for (const run of gas.runs) {
+      if (viewFace?.outside) {
+        for (let i = 1; i < run.path.length; i++) {
+          const a = run.path[i - 1]
+          const b = run.path[i]
+          if (!onFace(a) || !onFace(b)) continue
+          const ua = viewU(Math.min(length, Math.max(0, along(a))))
+          const ub = viewU(Math.min(length, Math.max(0, along(b))))
+          if (Math.abs(ua - ub) > 1e-3) runs.push({ kind: 'gas', points: [[ua, level], [ub, level]] })
+        }
+        const bottles = here(run.cylinder.fixture.id)
+        if (bottles) runs.push({ kind: 'gas', points: [[viewU(bottles.u), ffl + regulatorY(bottles.fixture)], [viewU(Math.min(length, Math.max(0, along(run.path[0])))), level]] })
+        const end = run.path[run.path.length - 1]
+        const heater = here(run.item.fixture.id)
+        const port = (PORTS[run.item.fixture.kind] ?? []).find((item) => item.kind === 'gas')
+        if (heater && port) runs.push({ kind: 'gas', points: [[viewU(Math.min(length, Math.max(0, along(end)))), level], [viewU(heater.u) + port.along, ffl + port.y]] })
+      } else {
+        const stove = here(run.item.fixture.id)
+        const port = (PORTS[run.item.fixture.kind] ?? []).find((item) => item.kind === 'gas')
+        if (stove && port && !run.direct) {
+          const u = viewU(stove.u) + port.along
+          runs.push({ kind: 'gas', points: [[u, ffl + port.y], [u, ffl]] })
+        }
+      }
+    }
     return runs
   })
 
@@ -716,8 +774,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (insertFixture) {
       const spec = fixtureSpec(insertFixture)
       const y = spec.mount === 'wall' ? fitFixtureY(insertFixture, snapFittingY(uv.v - ffl - spec.height / 2)) : spec.y
-      const draft = fixtureOnFace(floor, wall, side, insertFixture, snapFittingU(insertFixture, uv.u, null), y)
-      if (!draft) return
+      const placed = fixtureOnFace(floor, wall, side, insertFixture, snapFittingU(insertFixture, uv.u, null), y)
+      if (!placed) return
+      const draft = insertFixture === 'gas-cylinder' && !viewFace?.outside ? indoorBottles(placed) : placed
       const result = documentStore.addFixture(floor.id, draft)
       const added = result.ok ? result.document.building.floors.find((item) => item.id === floor.id)?.fixtures?.at(-1) : undefined
       if (added) chooseFitting(added.id)
@@ -895,7 +954,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       const item = wallFittings.find((entry) => entry.fixture.id === sliding.id)
       if (!item) return
       const spec = fixtureSpec(item.fixture.kind)
-      const u = snapFittingU(item.fixture.kind, Math.min(frame.length - spec.width / 2, Math.max(spec.width / 2, uv.u - sliding.grabU)), item.fixture.id)
+      const half = fixtureSize(item.fixture).width / 2
+      const u = snapFittingU(item.fixture.kind, Math.min(frame.length - half, Math.max(half, uv.u - sliding.grabU)), item.fixture.id)
       const y = spec.mount === 'wall' ? fitFixtureY(item.fixture.kind, snapFittingY(uv.v - sliding.grabV - ffl)) : item.fixture.y
       fixtureDrag = { ...sliding, u, y, moved: sliding.moved || Math.abs(u - item.u) > 0.01 || Math.abs(y - item.fixture.y) > 1e-6 }
       return
@@ -917,7 +977,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (movingFitting && floor && wall) {
       const item = wallFittings.find((entry) => entry.fixture.id === movingFitting.id)
       if (item && movingFitting.moved) {
-        const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, movingFitting.u, movingFitting.y)
+        const moved = fixtureOnFace(floor, wall, item.side, item.fixture.kind, movingFitting.u, movingFitting.y, setupOf(item.fixture))
         if (moved) documentStore.updateFixture(floor.id, item.fixture.id, { x: moved.x, z: moved.z, dx: moved.dx, dz: moved.dz, y: moved.y })
       }
       fixtureDrag = null

@@ -77,7 +77,7 @@ function fits(cell: Cell, draft: Draft): boolean {
   return fixtureFootprint(draft).every((point) => pointInRing(cell.net, point.x, point.z))
 }
 
-const isGeyser = (kind: FixtureKind) => kind === 'geyser' || kind === 'solar-geyser'
+const isGeyser = (kind: FixtureKind) => kind === 'geyser' || kind === 'solar-geyser' || kind === 'gas-geyser'
 
 // The geyser goes in the roof space over the top walled storey of the room's building, not into the floor above.
 function roofSpaceY(doc: Document, floor: Floor, cell: Cell): number {
@@ -128,11 +128,11 @@ export function suggestRoomFixtures(doc: Document, floor: Floor, cell: Cell, typ
       .filter(({ span }) => span.b - span.a >= width + 0.4)
       .sort((x, y) => y.span.b - y.span.a - (x.span.b - x.span.a))
     const pick = options[0]
-    if (!pick) return false
+    if (!pick) return null
     const u = (pick.span.a + pick.span.b) / 2
-    if (!add(at(pick.face, kind, u))) return false
+    if (!add(at(pick.face, kind, u))) return null
     pick.face.spans = subtract(pick.face.spans, { a: u - width / 2 - 0.5, b: u + width / 2 + 0.5 })
-    return true
+    return { face: pick.face, u }
   }
 
   const centre = ringLabelPoint(cell.net)
@@ -175,7 +175,14 @@ export function suggestRoomFixtures(doc: Document, floor: Floor, cell: Cell, typ
         })()
       : false
     if (!placedSink) tuck('sink')
-    middle('stove-isolator')
+    // The stove takes a clear stretch of wall; its isolator goes beside it, within reach but clear of the hob.
+    const stove = middle('stove')
+    if (stove) {
+      const reach = fixtureSpec('stove').width / 2 + 0.35
+      for (const u of [stove.u + reach, stove.u - reach]) {
+        if (u > 0.1 && u < stove.face.length - 0.1 && add(at(stove.face, 'stove-isolator', u))) break
+      }
+    }
   }
 
   if (type === 'bathroom' || type === 'toilet') {

@@ -1,7 +1,7 @@
 import { BoxGeometry, BufferGeometry, CylinderGeometry, Matrix4 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { cornerById } from '../model/geom'
-import { fixtureFootprint, fixtureSpec } from '../model/fixtures'
+import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
 import type { Fixture, FixtureKind, Floor, Wall } from '../model/types'
 import { wallReach } from './outline'
 import { pointInRing } from './pad'
@@ -25,10 +25,16 @@ export function finishedFloor(floor: Floor): number {
   return stairBase(floor.index)
 }
 
-function against(face: Point, n: Point, kind: FixtureKind, y: number): Omit<Fixture, 'id'> {
-  const reach = fixtureSpec(kind).depth / 2 + FACE_GAP_M
-  return { kind, x: face.x + n.x * reach, z: face.z + n.z * reach, dx: n.x, dz: n.z, y }
+// A fitting's own setup, such as how many gas bottles it holds, which can change its size.
+export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage'>>
+
+function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: FixtureSetup = {}): Omit<Fixture, 'id'> {
+  const reach = fixtureSize({ kind, ...setup }).depth / 2 + FACE_GAP_M
+  return { kind, ...setup, x: face.x + n.x * reach, z: face.z + n.z * reach, dx: n.x, dz: n.z, y }
 }
+
+// Indoors, gas bottles start as a single 9 kg bottle with no cage.
+const INDOOR_SETUP: Partial<Record<FixtureKind, FixtureSetup>> = { 'gas-cylinder': { bottles: 1, bottleKg: 9, cage: false } }
 
 // Where a fixture goes for a pointer: snapped against the nearest wall face it can use, or over the middle of a room.
 export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, preferred: Point): FixturePlacement {
@@ -52,24 +58,28 @@ export function placeFixture(floor: Floor, pointer: Point, kind: FixtureKind, pr
     best = { fixture, score }
   }
 
-  if (!spec.outside) {
-    if (!cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
+  const either = EITHER_SIDE.includes(kind)
+  if (!spec.outside && !cell) return { fixture: free, snapped: false, problem: 'Point inside a room, near a wall.' }
+  if (cell && (!spec.outside || either)) {
+    const setup = INDOOR_SETUP[kind] ?? {}
+    const size = fixtureSize({ kind, ...setup })
     const ring = cell.net
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i]
       const b = ring[(i + 1) % ring.length]
       const edge = Math.hypot(b.x - a.x, b.z - a.z)
-      if (edge < spec.width) continue
+      if (edge < size.width) continue
       const t = { x: (b.x - a.x) / edge, z: (b.z - a.z) / edge }
       let n = { x: -t.z, z: t.x }
       const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
       if (!pointInRing(ring, mid.x + n.x * 0.01, mid.z + n.z * 0.01)) n = { x: -n.x, z: -n.z }
-      const half = spec.width / 2
+      const half = size.width / 2
       const s = Math.min(edge - half, Math.max(half, dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)))
-      const fixture = against({ x: a.x + t.x * s, z: a.z + t.z * s }, n, kind, spec.y)
+      const fixture = against({ x: a.x + t.x * s, z: a.z + t.z * s }, n, kind, spec.y, setup)
       consider(fixture, fixtureFootprint(fixture).every((point) => pointInRing(ring, point.x, point.z)))
     }
-  } else {
+  }
+  if (spec.outside || either) {
     const inAnyRoom = (point: Point) => cells.some((item) => pointInRing(item.ring, point.x, point.z))
     for (const wall of floor.walls) {
       if (wall.skin === 'logical') continue
@@ -108,9 +118,10 @@ export type FixtureOnWall = { fixture: Fixture; wall: Wall; side: WallSide; u: n
 export function fixtureWall(floor: Floor, fixture: Fixture): FixtureOnWall | null {
   const spec = fixtureSpec(fixture.kind)
   if (spec.mount === 'ceiling') return null
+  const depth = fixtureSize(fixture).depth
   const back = {
-    x: fixture.x - fixture.dx * (spec.depth / 2 + FACE_GAP_M),
-    z: fixture.z - fixture.dz * (spec.depth / 2 + FACE_GAP_M),
+    x: fixture.x - fixture.dx * (depth / 2 + FACE_GAP_M),
+    z: fixture.z - fixture.dz * (depth / 2 + FACE_GAP_M),
   }
   let best: (FixtureOnWall & { miss: number }) | null = null
   for (const wall of floor.walls) {
@@ -145,7 +156,15 @@ export function fixturesOnWall(floor: Floor, wallId: string): FixtureOnWall[] {
 }
 
 // A fixture placed on a wall face at a distance u along the wall, with its underside y above the finished floor.
-export function fixtureOnFace(floor: Floor, wall: Wall, side: WallSide, kind: FixtureKind, u: number, y: number): Omit<Fixture, 'id'> | null {
+export function fixtureOnFace(
+  floor: Floor,
+  wall: Wall,
+  side: WallSide,
+  kind: FixtureKind,
+  u: number,
+  y: number,
+  setup: FixtureSetup = {},
+): Omit<Fixture, 'id'> | null {
   const a = cornerById(floor.corners, wall.startCornerId)
   const b = cornerById(floor.corners, wall.endCornerId)
   if (!a || !b) return null
@@ -154,9 +173,9 @@ export function fixtureOnFace(floor: Floor, wall: Wall, side: WallSide, kind: Fi
   const t = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
   const n = { x: -t.z * side, z: t.x * side }
   const reach = wallReach(wall)
-  const half = fixtureSpec(kind).width / 2
+  const half = fixtureSize({ kind, ...setup }).width / 2
   const at = Math.min(length - half, Math.max(half, u))
-  return against({ x: a.x + t.x * at + n.x * reach, z: a.z + t.z * at + n.z * reach }, n, kind, y)
+  return against({ x: a.x + t.x * at + n.x * reach, z: a.z + t.z * at + n.z * reach }, n, kind, y, setup)
 }
 
 export type FixturePart = { geometry: BufferGeometry; colour: string }
@@ -170,6 +189,9 @@ const GLOW = '#fff7d6'
 const FLOOR_CLEAR_M = 0.003
 const TANK = '#2f5d3a'
 const CONCRETE = '#a8a29e'
+const HOB = '#2b2b2b'
+const BOTTLE = '#b4b8bd'
+const CAGE = '#9aa3a8'
 
 type Piece = { geometry: BufferGeometry; along: number; out: number; y: number; colour: string }
 
@@ -182,9 +204,9 @@ function puck(r: number, h: number, along: number, out: number, y: number, colou
 }
 
 // Pieces in the fixture's own frame: along the wall, out from its back, and up from its underside.
-function pieces(kind: FixtureKind): Piece[] {
-  const spec = fixtureSpec(kind)
-  const { width: w, depth: d, height: h } = spec
+function pieces(fixture: Fixture): Piece[] {
+  const kind = fixture.kind
+  const { width: w, depth: d, height: h } = fixtureSize(fixture)
   switch (kind) {
     case 'wc':
       return [box(0.36, 0.18, 0.4, 0, 0.09, 0.38, CERAMIC), box(0.34, 0.5, 0.4, 0, 0.43, 0, CERAMIC)]
@@ -203,6 +225,38 @@ function pieces(kind: FixtureKind): Piece[] {
     case 'geyser':
     case 'solar-geyser':
       return [{ geometry: new CylinderGeometry(d / 2, d / 2, w, 24).rotateZ(Math.PI / 2), along: 0, out: d / 2, y: h / 2, colour: CERAMIC }]
+    case 'stove':
+    case 'gas-stove': {
+      const body = [box(w, d, h - 0.04, 0, d / 2, 0, CERAMIC), box(w - 0.04, d - 0.06, 0.02, 0, d / 2 + 0.02, h - 0.04, HOB), box(w, 0.04, 0.1, 0, 0.02, h - 0.04, CERAMIC)]
+      const rings = [-0.14, 0.14].flatMap((x) => [0.2, 0.42].map((out) => puck(kind === 'gas-stove' ? 0.06 : 0.08, 0.02, x, out, h - 0.025, kind === 'gas-stove' ? METAL : '#3f3f46')))
+      return [...body, ...rings]
+    }
+    case 'gas-geyser':
+      return [box(w, d, h, 0, d / 2, 0, CERAMIC), puck(0.05, 0.12, 0, d / 2, h, METAL)]
+    case 'gas-cylinder': {
+      const { count, kg, cage } = bottleSetup(fixture)
+      const bottle = BOTTLES[kg]
+      const wrap = cage ? CAGE_M : 0
+      const out: Piece[] = []
+      for (let i = 0; i < count; i++) {
+        const x = -w / 2 + wrap + bottle.dia / 2 + i * (bottle.dia + BOTTLE_GAP_M)
+        out.push(puck(bottle.dia / 2, bottle.height - 0.12, x, d / 2, 0, BOTTLE), puck(0.07, 0.12, x, d / 2, bottle.height - 0.12, METAL))
+      }
+      if (cage) {
+        // A galvanised frame: corner posts, rails round the top and bottom, and a mesh panel behind.
+        const bar = 0.025
+        for (const x of [-w / 2 + bar / 2, w / 2 - bar / 2]) {
+          for (const z of [bar / 2, d - bar / 2]) out.push(box(bar, bar, h, x, z, 0, CAGE))
+        }
+        for (const y of [0.02, h / 2, h - bar]) {
+          out.push(box(w, bar, bar, 0, d - bar / 2, y, CAGE), box(bar, d, bar, -w / 2 + bar / 2, d / 2, y, CAGE), box(bar, d, bar, w / 2 - bar / 2, d / 2, y, CAGE))
+        }
+        out.push(box(w, d, bar, 0, d / 2, h - bar, CAGE))
+        const bars = Math.max(2, Math.round(w / 0.12))
+        for (let i = 1; i < bars; i++) out.push(box(0.008, 0.008, h, -w / 2 + (w * i) / bars, d - bar / 2, 0, CAGE))
+      }
+      return out
+    }
     case 'light':
       return [puck(0.15, h, 0, 0, 0, GLOW)]
     case 'db-board':
@@ -221,11 +275,11 @@ export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePa
   const move = new Matrix4()
   for (const fixture of fixtures) {
     const spec = fixtureSpec(fixture.kind)
-    const out = spec.mount === 'ceiling' ? 0 : spec.depth / 2
+    const out = spec.mount === 'ceiling' ? 0 : fixtureSize(fixture).depth / 2
     const back = { x: fixture.x - fixture.dx * out, z: fixture.z - fixture.dz * out }
     // A right-handed frame (along, up, out), so faces point outwards and nothing renders inside out.
     const along = { x: fixture.dz, z: -fixture.dx }
-    for (const piece of pieces(fixture.kind)) {
+    for (const piece of pieces(fixture)) {
       basis.set(along.x, 0, fixture.dx, 0, 0, 1, 0, 0, along.z, 0, fixture.dz, 0, 0, 0, 0, 1)
       move.makeTranslation(
         back.x + along.x * piece.along + fixture.dx * piece.out,

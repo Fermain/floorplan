@@ -18,7 +18,7 @@ import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
-import { fixtureProblem } from './fixtures'
+import { fixtureProblem, swapsFor } from './fixtures'
 import { faceKey, trimProblem } from './trims'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
@@ -35,6 +35,7 @@ import type {
   FaceTrim,
   Fence,
   Fixture,
+  FixtureKind,
   PlanPoint,
   ServiceKind,
   SewerType,
@@ -441,6 +442,18 @@ export function updateFixture(
   const problem = fixtureProblem(next)
   if (problem) return fail(document, problem)
   const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? next : item))
+  return ok(replaceFloor(document, { ...floor, fixtures }))
+}
+
+// Swap a fitting for another that stands in the same spot, keeping where it is.
+export function setFixtureKind(document: Document, floorId: string, fixtureId: string, kind: FixtureKind): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const current = floor.fixtures?.find((item) => item.id === fixtureId)
+  if (!current) return fail(document, 'fixture not found')
+  if (current.kind === kind) return ok(document)
+  if (!swapsFor(current.kind).includes(kind)) return fail(document, 'those fittings cannot be swapped')
+  const fixtures = (floor.fixtures ?? []).map((item) => (item.id === fixtureId ? { ...item, kind } : item))
   return ok(replaceFloor(document, { ...floor, fixtures }))
 }
 

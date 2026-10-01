@@ -1,6 +1,6 @@
 import type { FixtureKind } from './types'
 
-export type PortKind = 'waste' | 'cold' | 'hot'
+export type PortKind = 'waste' | 'cold' | 'hot' | 'gas'
 
 // A pipe through the wall behind a fitting: sideways from the fitting's middle as you face it (left is negative),
 // its centre's height above the finished floor, and the pipe's diameter. Typical South African positions, as a guide.
@@ -35,6 +35,14 @@ export const PORTS: Partial<Record<FixtureKind, Port[]>> = {
     { kind: 'waste', along: 0.15, y: 0.7, dia: 0.05 },
     { kind: 'cold', along: -0.15, y: 0.9, dia: 0.015 },
   ],
+  // The gas point sits low behind the stove, to one side, where its isolating valve can be reached.
+  'gas-stove': [{ kind: 'gas', along: 0.2, y: 0.45, dia: 0.015 }],
+  // Water and gas come in under the heater; the hot pipe goes back through the wall.
+  'gas-geyser': [
+    { kind: 'cold', along: 0.1, y: 1.12, dia: 0.015 },
+    { kind: 'gas', along: 0, y: 1.12, dia: 0.015 },
+    { kind: 'hot', along: -0.1, y: 1.12, dia: 0.015 },
+  ],
 }
 
-export const PORT_LABEL: Record<PortKind, string> = { waste: 'Waste', cold: 'Cold', hot: 'Hot' }
+export const PORT_LABEL: Record<PortKind, string> = { waste: 'Waste', cold: 'Cold', hot: 'Hot', gas: 'Gas' }

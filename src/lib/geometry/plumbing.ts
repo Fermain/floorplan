@@ -30,7 +30,7 @@ const SAMPLE_M = 0.5
 const DRAINS: Partial<Record<FixtureKind, number>> = { wc: 110, basin: 50, shower: 50, bath: 50, sink: 50, 'washing-machine': 50 }
 const COLD: FixtureKind[] = ['wc', 'basin', 'shower', 'bath', 'sink', 'washing-machine', 'outside-tap']
 const HOT: FixtureKind[] = ['basin', 'shower', 'bath', 'sink']
-const GEYSERS: FixtureKind[] = ['geyser', 'solar-geyser']
+const GEYSERS: FixtureKind[] = ['geyser', 'solar-geyser', 'gas-geyser']
 
 export type Placed = { floor: Floor; fixture: Fixture }
 
@@ -399,12 +399,12 @@ export function plumbingLayout(doc: Document): PlumbingLayout {
   }
 
   if (hotItems.length > 0 && geysers.length === 0) {
-    issues.push({ id: 'no-geyser', text: 'Hot water is needed but there is no geyser. Add one in the roof space near the bathroom and kitchen.' })
+    issues.push({ id: 'no-geyser', text: 'Hot water is needed but there is no geyser. Add one in the roof space near the bathroom and kitchen, or a gas geyser on an outside wall.' })
   }
-  if (geysers.length > 0 && !geysers.some((item) => item.fixture.kind === 'solar-geyser')) {
+  if (geysers.length > 0 && !geysers.some((item) => item.fixture.kind === 'solar-geyser' || item.fixture.kind === 'gas-geyser')) {
     issues.push({
       id: 'xa-hot-water',
-      text: 'SANS 10400-XA wants at least half the hot water heated by something other than an element. Use a solar geyser or a heat pump.',
+      text: 'SANS 10400-XA wants at least half the hot water heated by something other than an element. Use a solar or gas geyser, or a heat pump.',
     })
   }
   const longest = hot.reduce<{ item: Placed; length: number } | null>((best, run) => (!best || run.length > best.length ? run : best), null)

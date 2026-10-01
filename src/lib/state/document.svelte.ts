@@ -100,6 +100,7 @@ export const documentStore = {
   setSolarPanels: bind(mutations.setSolarPanels),
   addFixtures: bind(mutations.addFixtures),
   updateFixture: bind(mutations.updateFixture),
+  setFixtureKind: bind(mutations.setFixtureKind),
   removeFixture: bind(mutations.removeFixture),
   setRate: bind(mutations.setRate),
   nameCell: bind(mutations.nameCell),

@@ -121,6 +121,12 @@ export type FixtureKind =
   | 'solar-geyser'
   | 'outside-tap'
   | 'water-tank'
+  | 'stove'
+  | 'gas-stove'
+  | 'gas-geyser'
+  | 'gas-cylinder'
+
+export type BottleSize = 9 | 19 | 48
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -131,6 +137,10 @@ export type Fixture = {
   dx: number
   dz: number
   y: number
+  // Gas bottles only: how many stand in a row, their size, and whether a steel cage locks them in.
+  bottles?: number
+  bottleKg?: BottleSize
+  cage?: boolean
 }
 
 export type Floor = {
