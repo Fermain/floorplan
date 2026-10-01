@@ -166,6 +166,8 @@ const PLATE = '#ededea'
 const METAL = '#8d9399'
 const COUNTER = '#d6d0c4'
 const GLOW = '#fff7d6'
+// A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
+const FLOOR_CLEAR_M = 0.003
 const TANK = '#2f5d3a'
 const CONCRETE = '#a8a29e'
 
@@ -221,12 +223,13 @@ export function buildFixtureParts(fixtures: Fixture[], baseY: number): FixturePa
     const spec = fixtureSpec(fixture.kind)
     const out = spec.mount === 'ceiling' ? 0 : spec.depth / 2
     const back = { x: fixture.x - fixture.dx * out, z: fixture.z - fixture.dz * out }
-    const along = { x: -fixture.dz, z: fixture.dx }
+    // A right-handed frame (along, up, out), so faces point outwards and nothing renders inside out.
+    const along = { x: fixture.dz, z: -fixture.dx }
     for (const piece of pieces(fixture.kind)) {
       basis.set(along.x, 0, fixture.dx, 0, 0, 1, 0, 0, along.z, 0, fixture.dz, 0, 0, 0, 0, 1)
       move.makeTranslation(
         back.x + along.x * piece.along + fixture.dx * piece.out,
-        baseY + fixture.y + piece.y,
+        baseY + fixture.y + piece.y + FLOOR_CLEAR_M,
         back.z + along.z * piece.along + fixture.dz * piece.out,
       )
       const geometry = (piece.geometry.index ? piece.geometry.toNonIndexed() : piece.geometry).applyMatrix4(move.multiply(basis))

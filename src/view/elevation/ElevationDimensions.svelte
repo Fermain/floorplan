@@ -15,9 +15,10 @@
     selectedId: string | null
     floorLevel: number | null
     fittings?: Fitting[]
+    conduits?: { u: number; bottom: number; top: number }[]
   }
 
-  let { length, height, head, openings, selectedId, floorLevel, fittings = [] }: Props = $props()
+  let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [] }: Props = $props()
 
   let width = $state(0)
   let tall = $state(0)
@@ -99,6 +100,9 @@
         </text>
       </g>
     {/if}
+    {#each conduits as conduit (conduit.u)}
+      <line class="conduit" x1={conduit.u} y1={y(conduit.bottom)} x2={conduit.u} y2={y(conduit.top)} />
+    {/each}
     {#if fittingStops.length > 0}
       <g class="fittings">
         <line x1={0} y1={y(fittingChainV)} x2={length} y2={y(fittingChainV)} />
@@ -177,6 +181,12 @@
 
   .heights text {
     fill: #92400e;
+  }
+
+  .conduit {
+    stroke: #d97706;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5 4;
   }
 
   .fittings line {

@@ -244,6 +244,36 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     return null
   }
 
+  // Electrical points on a wall share a conduit when one sits straight above another: snap to that line.
+  const CONDUIT_SNAP_M = 0.12
+  const conduitKinds = (kind: FixtureKind) => {
+    const spec = fixtureSpec(kind)
+    return spec.trade === 'electrical' && spec.mount === 'wall'
+  }
+
+  function snapFittingU(kind: FixtureKind, u: number, except: string | null): number {
+    if (!conduitKinds(kind)) return u
+    let best: number | null = null
+    for (const item of faceFittings) {
+      if (item.fixture.id === except || !conduitKinds(item.fixture.kind)) continue
+      if (Math.abs(item.u - u) < CONDUIT_SNAP_M && (best === null || Math.abs(item.u - u) < Math.abs(best - u))) best = item.u
+    }
+    return best ?? u
+  }
+
+  // A conduit from each electrical point on the face up to the ceiling; points in one column share one.
+  const conduits = $derived.by(() => {
+    const columns: { u: number; bottom: number }[] = []
+    for (const mark of fittingMarks) {
+      const item = faceFittings.find((entry) => entry.fixture.id === mark.id)
+      if (!item || !conduitKinds(item.fixture.kind)) continue
+      const column = columns.find((entry) => Math.abs(entry.u - mark.u) < 0.005)
+      if (column) column.bottom = Math.min(column.bottom, mark.top)
+      else columns.push({ u: mark.u, bottom: mark.top })
+    }
+    return columns.map((column) => ({ ...column, top: WALL_HEAD }))
+  })
+
   function snapFittingY(y: number): number {
     const step = system.courseHeight / 2
     return Math.max(0, Math.round(y / step) * step)
@@ -640,11 +670,12 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     if (insertFixture) {
       const spec = fixtureSpec(insertFixture)
       const y = spec.mount === 'wall' ? snapFittingY(uv.v - ffl - spec.height / 2) : spec.y
-      const draft = fixtureOnFace(floor, wall, side, insertFixture, uv.u, y)
+      const draft = fixtureOnFace(floor, wall, side, insertFixture, snapFittingU(insertFixture, uv.u, null), y)
       if (!draft) return
       const result = documentStore.addFixture(floor.id, draft)
       const added = result.ok ? result.document.building.floors.find((item) => item.id === floor.id)?.fixtures?.at(-1) : undefined
       if (added) chooseFitting(added.id)
+      if (!event.shiftKey) mode = 'select'
       return
     }
 
@@ -653,6 +684,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     const placed = placeSnappedOpeningU(uv.u - shownWidth / 2, shownWidth, frame.length, wall.openings, min, system)
     if (placed === null) return
     selectAdded(documentStore.addOpening(floor.id, wall.id, insertTool, placed.u, placed.width))
+    // One placement, then back to selecting; hold Shift to keep placing.
+    if (!event.shiftKey) mode = 'select'
   }
 
   function onWidthInput(value: number) {
@@ -775,7 +808,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       return { text: parts.join(', '), error: false }
     }
     if (!locked) return { text: 'Perspective. The fixed view is where this wall is edited.', error: false }
-    if (mode === 'place') return { text: `${insertHint(insertTool)} Esc goes back to selecting.`, error: false }
+    if (mode === 'place') return { text: `${insertHint(insertTool)} Hold Shift to place more than one; Esc goes back to selecting.`, error: false }
     if (wall.openings.length > 0 && scheduleLine) return { text: `${scheduleLine}. Click a window, door or fitting to select it.`, error: false }
     return { text: 'Click a window, door or fitting to select it, or choose Place to add one.', error: false }
   }
@@ -809,7 +842,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       const item = wallFittings.find((entry) => entry.fixture.id === sliding.id)
       if (!item) return
       const spec = fixtureSpec(item.fixture.kind)
-      const u = Math.min(frame.length - spec.width / 2, Math.max(spec.width / 2, uv.u - sliding.grabU))
+      const u = snapFittingU(item.fixture.kind, Math.min(frame.length - spec.width / 2, Math.max(spec.width / 2, uv.u - sliding.grabU)), item.fixture.id)
       const y = spec.mount === 'wall' ? snapFittingY(uv.v - sliding.grabV - ffl) : item.fixture.y
       fixtureDrag = { ...sliding, u, y, moved: sliding.moved || Math.abs(u - item.u) > 0.01 || Math.abs(y - item.fixture.y) > 1e-6 }
       return
@@ -1170,6 +1203,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           selectedId={selectedOpeningId}
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
           fittings={fittingMarks}
+          {conduits}
         />
       {/if}
       </div>
