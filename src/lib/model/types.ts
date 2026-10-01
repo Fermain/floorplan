@@ -51,6 +51,12 @@ export type Support = {
   spacing: number
 }
 
+export type SkirtingType = 'rounded' | 'square' | 'angled'
+export type CorniceType = 'rounded' | 'coral'
+
+// What runs along one face of a wall inside a room; anything left out follows the project default.
+export type FaceTrim = { skirting?: SkirtingType | 'none'; cornice?: CorniceType | 'none' }
+
 export type Wall = {
   id: string
   startCornerId: string
@@ -59,6 +65,8 @@ export type Wall = {
   systemId?: WallSystemId
   fence?: Fence
   support?: Support
+  // front is the face on side 1 of the wall, back the face on side -1.
+  trim?: { front?: FaceTrim; back?: FaceTrim }
   openings: Opening[]
 }
 
@@ -166,6 +174,8 @@ export type ProjectDefaults = {
   windowHeight: number
   sill: number
   doorHeight: number
+  skirting: SkirtingType | 'none'
+  cornice: CorniceType | 'none'
 }
 
 export type Building = {

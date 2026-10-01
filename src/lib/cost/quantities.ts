@@ -17,6 +17,8 @@ import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { plumbingLayout, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
+import { trimLengths } from '../geometry/trims'
+import { CORNICES, SKIRTINGS } from '../model/trims'
 import {
   floorSupports,
   pierCourses,
@@ -470,6 +472,16 @@ export function takeoff(doc: Document): QuantityLine[] {
       quantity: 1,
       rateKey: 'earth-leakage',
     })
+  }
+
+  const trims = trimLengths(doc)
+  for (const spec of SKIRTINGS) {
+    const length = trims.skirting[spec.id]
+    if (length > 0) drafts.push({ id: `skirting:${spec.id}`, group: 'Finishes', label: `${spec.name} skirting`, note: 'Round every room, less doorways, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `skirting:${spec.id}` })
+  }
+  for (const spec of CORNICES) {
+    const length = trims.cornice[spec.id]
+    if (length > 0) drafts.push({ id: `cornice:${spec.id}`, group: 'Finishes', label: `${spec.name} cornice`, note: 'Round every room at the ceiling, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `cornice:${spec.id}` })
   }
 
   const gutters = gutterLengths(gutterLayout(doc), doc)

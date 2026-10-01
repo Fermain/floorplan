@@ -94,6 +94,7 @@ export const documentStore = {
   setSoakaway: bind(mutations.setSoakaway),
   setRainfall: bind(mutations.setRainfall),
   setWallGutter: bind(mutations.setWallGutter),
+  setFaceTrim: bind(mutations.setFaceTrim),
   setEssential: bind(mutations.setEssential),
   setBackupHours: bind(mutations.setBackupHours),
   setSolarPanels: bind(mutations.setSolarPanels),

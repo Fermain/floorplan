@@ -19,6 +19,7 @@ import { defaultsProblem, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
 import { fixtureProblem } from './fixtures'
+import { faceKey, trimProblem } from './trims'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
 import {
@@ -31,6 +32,7 @@ import {
 import type {
   CostAssumptions,
   Document,
+  FaceTrim,
   Fence,
   Fixture,
   PlanPoint,
@@ -525,6 +527,31 @@ export function setSolarPanels(document: Document, panels: number): MutationResu
 export function setSewerDepth(document: Document, depth: number): MutationResult {
   if (!(depth >= 0.3 && depth <= 4)) return fail(document, 'sewer depth out of range')
   return ok({ ...document, services: { ...(document.services ?? {}), sewerDepth: depth } })
+}
+
+// Choose the trim on one face of a wall; a choice that matches the project default is dropped so it follows the default.
+export function setFaceTrim(document: Document, floorId: string, wallId: string, side: 1 | -1, patch: FaceTrim): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin === 'logical') return fail(document, 'a logical wall has no faces to trim')
+  const problem = trimProblem(patch)
+  if (problem) return fail(document, problem)
+  const defaults = projectDefaults(document)
+  const key = faceKey(side)
+  const merged: FaceTrim = { ...(wall.trim?.[key] ?? {}), ...patch }
+  if (merged.skirting === defaults.skirting) delete merged.skirting
+  if (merged.cornice === defaults.cornice) delete merged.cornice
+  const trim = { ...(wall.trim ?? {}) }
+  if (merged.skirting === undefined && merged.cornice === undefined) delete trim[key]
+  else trim[key] = merged
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    const { trim: _old, ...rest } = item
+    return Object.keys(trim).length > 0 ? { ...rest, trim } : rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
 }
 
 export function setRate(document: Document, key: string, value: number | null): MutationResult {

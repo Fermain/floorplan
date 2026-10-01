@@ -41,6 +41,7 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildFixtureParts, finishedFloor, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
   import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
@@ -101,6 +102,7 @@
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
   let fixtureMeshes = $state<{ key: string; parts: FixturePart[] }[]>([])
+  let trimMeshes = $state<{ key: string; parts: TrimPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -233,6 +235,10 @@
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
+    const trims = floors.map((floor) => ({
+      key: floor.id,
+      parts: buildTrimParts(trimRuns(doc, floor), floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))),
+    }))
     const fittings = floors
       .filter((floor) => (floor.fixtures ?? []).length > 0)
       .map((floor) => ({
@@ -249,7 +255,9 @@
     fenceMeshes = fences
     pillarMeshes = pillars
     fixtureMeshes = fittings
+    trimMeshes = trims
     return () => {
+      for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
@@ -550,6 +558,14 @@
           polygonOffsetUnits={1}
         />
       </T.Mesh>
+    {/each}
+
+    {#each trimMeshes as trim (trim.key)}
+      {#each trim.parts as part (part.geometry.uuid)}
+        <T.Mesh geometry={part.geometry} receiveShadow>
+          <T.MeshStandardMaterial color={part.colour} roughness={0.6} side={DoubleSide} />
+        </T.Mesh>
+      {/each}
     {/each}
 
     {#each fixtureMeshes as fitting (fitting.key)}

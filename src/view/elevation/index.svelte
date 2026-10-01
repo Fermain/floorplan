@@ -43,7 +43,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { FenceType, FixtureKind, GutterType, SupportType } from '../../lib/model/types'
+  import type { CorniceType, FaceTrim, FenceType, FixtureKind, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
+  import { buildTrimParts, trimRuns } from '../../lib/geometry/trims'
+  import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
   import { FIXTURES, fixtureSpec } from '../../lib/model/fixtures'
@@ -326,6 +328,28 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       for (const part of parts) part.geometry.dispose()
     }
   })
+
+  // Skirting and cornice on the face in view; only that face, as other rooms' walls can stand in front of the camera.
+  const faceRuns = $derived(floor && wall && !logical ? trimRuns(doc, floor).filter((run) => run.wall.id === wall.id && run.side === side) : [])
+  const faceTrimNow = $derived(wall && !logical && faceRuns.length > 0 ? faceTrim(doc, wall, side) : null)
+
+  const trimParts = $derived.by((): FencePart[] =>
+    floor && faceRuns.length > 0
+      ? buildTrimParts(faceRuns, floor, floor.datumHeight).map((part) => ({ ...part, opacity: 1 }))
+      : [],
+  )
+
+  $effect(() => {
+    const parts = trimParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  function chooseTrim(patch: FaceTrim) {
+    if (!floor || !wall) return
+    documentStore.setFaceTrim(floor.id, wall.id, side, patch)
+  }
 
   const fenceParts = $derived.by((): FencePart[] => {
     if (!floor || !wall || !fence) return []
@@ -980,8 +1004,36 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       {#if editingOpening}
         <Button variant="destructive" size="sm" onclick={removeSelected}>Remove opening</Button>
       {/if}
-      {#if gutterValue}
+      {#if faceTrimNow}
         <div class="flex items-center gap-2 sm:ml-auto">
+          <span class="text-muted-foreground">Skirting</span>
+          <Select.Root type="single" value={faceTrimNow.skirting} onValueChange={(next) => chooseTrim({ skirting: next as SkirtingType | 'none' })}>
+            <Select.Trigger size="sm" class="w-28" aria-label="Skirting on this face">
+              {faceTrimNow.skirting === 'none' ? 'None' : skirtingSpec(faceTrimNow.skirting).name}
+            </Select.Trigger>
+            <Select.Content>
+              {#each SKIRTINGS as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+              <Select.Item value="none" label="None" />
+            </Select.Content>
+          </Select.Root>
+          <span class="text-muted-foreground">Cornice</span>
+          <Select.Root type="single" value={faceTrimNow.cornice} onValueChange={(next) => chooseTrim({ cornice: next as CorniceType | 'none' })}>
+            <Select.Trigger size="sm" class="w-28" aria-label="Cornice on this face">
+              {faceTrimNow.cornice === 'none' ? 'None' : corniceSpec(faceTrimNow.cornice).name}
+            </Select.Trigger>
+            <Select.Content>
+              {#each CORNICES as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+              <Select.Item value="none" label="None" />
+            </Select.Content>
+          </Select.Root>
+        </div>
+      {/if}
+      {#if gutterValue}
+        <div class="flex items-center gap-2 {faceTrimNow ? '' : 'sm:ml-auto'}">
           <span class="text-muted-foreground">Gutter</span>
           <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
             <Select.Trigger size="sm" class="w-36" aria-label="Gutter above this wall">
@@ -996,7 +1048,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </Select.Root>
         </div>
       {/if}
-      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue ? '' : 'sm:ml-auto'}">
+      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue || faceTrimNow ? '' : 'sm:ml-auto'}">
         <span class="text-muted-foreground">Wall</span>
         <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
           <Select.Trigger size="sm" class="w-full sm:w-48" aria-label="Wall system">{system.name}</Select.Trigger>
@@ -1058,6 +1110,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
           ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
           ...gutterParts,
+          ...trimParts,
         ]}
         {orthoCamera}
         {onOrthoCamera}

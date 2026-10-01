@@ -66,5 +66,7 @@ export function draftDefaults(): ProjectDefaults {
     windowHeight: draft.windowHeight,
     sill: draft.sill,
     doorHeight: draft.doorHeight,
+    skirting: draft.skirting,
+    cornice: draft.cornice,
   }
 }
