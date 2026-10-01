@@ -81,3 +81,25 @@ describe('runs into the roof', () => {
     expect(run(high) - run(low)).toBeCloseTo(2.8, 1)
   })
 })
+
+describe('where the distribution board may go', () => {
+  it('keeps it between 1.2 m and 2.2 m', async () => {
+    const { fitFixtureY, fixtureSpec } = await import('../model/fixtures')
+    expect(fitFixtureY('db-board', 0.3)).toBe(1.2)
+    expect(fitFixtureY('db-board', 2.5)).toBeCloseTo(2.2 - fixtureSpec('db-board').height)
+    expect(fitFixtureY('socket', 0.3)).toBe(0.3)
+    const low = room([{ ...board, y: 0.9 }])
+    expect(electricalIssues(low).map((i) => i.id.split(':')[0])).toContain('db-low')
+    const fine = room([board])
+    expect(electricalIssues(fine).map((i) => i.id.split(':')[0])).not.toContain('db-low')
+  })
+
+  it('keeps it out of bathrooms and a metre from taps and the stove', () => {
+    let doc = room([board, { kind: 'basin', x: 4.4, z: 5.6, dx: 1, dz: 0, y: 0.67 }, { kind: 'stove-isolator', x: 4.2, z: 5.8, dx: 1, dz: 0, y: 1.4 }])
+    doc = nameCell(doc, doc.building.floors[0].id, 8, 7, 'Bathroom', 'bathroom').document
+    const ids = electricalIssues(doc).map((i) => i.id.split(':')[0])
+    expect(ids).toContain('db-bathroom')
+    expect(ids).toContain('db-water')
+    expect(ids).toContain('db-stove')
+  })
+})

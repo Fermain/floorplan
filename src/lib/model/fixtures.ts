@@ -44,6 +44,19 @@ export const FIXTURES: readonly FixtureSpec[] = [
 // High enough for a geyser in the roof space over a four-storey building.
 export const FIXTURE_MAX_Y_M = 12
 
+// SANS 10142-1: no part of an indoor distribution board lower than 1.2 m, and nothing you operate higher than 2.2 m.
+export const DB_LOWEST_M = 1.2
+export const DB_HIGHEST_M = 2.2
+// Nor in a bathroom, above a stove, or within 1 m of a tap or valve in the same room.
+export const DB_WATER_CLEAR_M = 1
+
+// A fitting's height kept inside any band the wiring code sets for it.
+export function fitFixtureY(kind: FixtureKind, y: number): number {
+  if (kind !== 'db-board') return Math.max(0, y)
+  const height = fixtureSpec(kind).height
+  return Math.min(DB_HIGHEST_M - height, Math.max(DB_LOWEST_M, y))
+}
+
 export function fixtureSpec(kind: FixtureKind): FixtureSpec {
   return FIXTURES.find((item) => item.id === kind) ?? FIXTURES[0]
 }

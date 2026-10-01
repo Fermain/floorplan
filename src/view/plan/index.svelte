@@ -13,7 +13,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Plug from '@lucide/svelte/icons/plug'
   import FixtureSymbol from './FixtureSymbol.svelte'
-  import { FIXTURES, fixtureFootprint, fixtureSpec } from '../../lib/model/fixtures'
+  import { FIXTURES, fitFixtureY, fixtureFootprint, fixtureSpec } from '../../lib/model/fixtures'
   import { fixtureWall, placeFixture, type FixturePlacement } from '../../lib/geometry/fixtures'
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
@@ -1788,7 +1788,7 @@
   function setChosenFixtureHeight(mm: number) {
     const chosen = chosenFixture
     if (!chosen || !Number.isFinite(mm)) return
-    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { y: Math.max(0, mm / 1000) }))
+    applyResult(documentStore.updateFixture(chosen.floorId, chosen.fixture.id, { y: fitFixtureY(chosen.fixture.kind, mm / 1000) }))
   }
 
   function suggestForSelectedRoom() {

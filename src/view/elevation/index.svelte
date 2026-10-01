@@ -52,7 +52,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
   import { CORNICES, corniceSpec, faceTrim, SKIRTINGS, skirtingSpec } from '../../lib/model/trims'
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
-  import { FIXTURES, fixtureSpec } from '../../lib/model/fixtures'
+  import { FIXTURES, fitFixtureY, fixtureSpec } from '../../lib/model/fixtures'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixturesOnWall, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
@@ -338,7 +338,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   function setSelectedFittingHeight(mm: number) {
     if (!floor || !selectedFitting || !Number.isFinite(mm)) return
-    documentStore.updateFixture(floor.id, selectedFitting.fixture.id, { y: Math.max(0, mm / 1000) })
+    documentStore.updateFixture(floor.id, selectedFitting.fixture.id, { y: fitFixtureY(selectedFitting.fixture.kind, mm / 1000) })
   }
 
   $effect(() => {
@@ -715,7 +715,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
     if (insertFixture) {
       const spec = fixtureSpec(insertFixture)
-      const y = spec.mount === 'wall' ? snapFittingY(uv.v - ffl - spec.height / 2) : spec.y
+      const y = spec.mount === 'wall' ? fitFixtureY(insertFixture, snapFittingY(uv.v - ffl - spec.height / 2)) : spec.y
       const draft = fixtureOnFace(floor, wall, side, insertFixture, snapFittingU(insertFixture, uv.u, null), y)
       if (!draft) return
       const result = documentStore.addFixture(floor.id, draft)
@@ -896,7 +896,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
       if (!item) return
       const spec = fixtureSpec(item.fixture.kind)
       const u = snapFittingU(item.fixture.kind, Math.min(frame.length - spec.width / 2, Math.max(spec.width / 2, uv.u - sliding.grabU)), item.fixture.id)
-      const y = spec.mount === 'wall' ? snapFittingY(uv.v - sliding.grabV - ffl) : item.fixture.y
+      const y = spec.mount === 'wall' ? fitFixtureY(item.fixture.kind, snapFittingY(uv.v - sliding.grabV - ffl)) : item.fixture.y
       fixtureDrag = { ...sliding, u, y, moved: sliding.moved || Math.abs(u - item.u) > 0.01 || Math.abs(y - item.fixture.y) > 1e-6 }
       return
     }

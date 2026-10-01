@@ -1,9 +1,10 @@
-import { fixtureFootprint, fixtureSpec } from '../model/fixtures'
+import { DB_HIGHEST_M, DB_LOWEST_M, DB_WATER_CLEAR_M, fixtureFootprint, fixtureSpec } from '../model/fixtures'
+import { roomKey } from '../model/rooms'
 import type { Document, Fixture, FixtureKind, Floor } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
 import { finishedFloor } from './fixtures'
 import { pointInRing } from './pad'
-import { layoutSpaces } from './spaces'
+import { cellAt, floorCells, layoutSpaces } from './spaces'
 
 // Rules of thumb for an indicative layout, not a SANS 10142-1 design. A registered electrician sizes the real thing.
 export const MAX_LIGHT_POINTS = 10
@@ -38,6 +39,8 @@ export type ElectricalLayout = {
 }
 
 const LIGHT_KINDS: FixtureKind[] = ['light', 'outdoor-light', 'extractor']
+// Fittings with a tap or valve.
+const WATER: FixtureKind[] = ['wc', 'basin', 'sink', 'shower', 'bath', 'washing-machine']
 
 const CIRCUIT_INFO: Record<CircuitKind, { prefix: string; label: string; breaker: number; cable: number }> = {
   lights: { prefix: 'L', label: 'Lights', breaker: 10, cable: 1.5 },
@@ -192,8 +195,39 @@ export function electricalIssues(doc: Document): ElectricalIssue[] {
     issues.push({ id: 'no-board', text: 'Add a distribution board; every circuit starts there.' })
   }
   for (const floor of doc.building.floors) {
-    const wet = (floor.fixtures ?? []).filter((fixture) => fixture.kind === 'bath' || fixture.kind === 'shower')
+    // Where the distribution board may go: SANS 10142-1.
+    const cells = floorCells(floor)
     const spaces = layoutSpaces(floor).spaces
+    const roomOf = (x: number, z: number) => cellAt(cells, x, z)
+    for (const board of (floor.fixtures ?? []).filter((fixture) => fixture.kind === 'db-board')) {
+      const spec = fixtureSpec('db-board')
+      const at = { floorId: floor.id, fixtureId: board.id }
+      if (board.y < DB_LOWEST_M - 1e-6) {
+        issues.push({ id: `db-low:${board.id}`, text: `The distribution board starts ${Math.round(board.y * 1000)} mm up; SANS 10142-1 wants no part of it below ${DB_LOWEST_M * 1000} mm, out of a child's reach.`, ...at })
+      }
+      if (board.y + spec.height > DB_HIGHEST_M + 1e-6) {
+        issues.push({ id: `db-high:${board.id}`, text: `The top of the distribution board is ${Math.round((board.y + spec.height) * 1000)} mm up; its switches must be no higher than ${DB_HIGHEST_M * 1000} mm.`, ...at })
+      }
+      const room = roomOf(board.x, board.z)
+      const named = room ? spaces.find((space) => space.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.room.cornerIds))) : undefined
+      if (named && (named.space.type === 'bathroom' || named.space.type === 'toilet')) {
+        issues.push({ id: `db-bathroom:${board.id}`, text: `The distribution board is in ${named.space.name}; it may not go in a bathroom.`, ...at })
+      }
+      const sameRoom = (fixture: Fixture) => room !== undefined && roomOf(fixture.x, fixture.z)?.room === room.room
+      const water = (floor.fixtures ?? []).find(
+        (fixture) => WATER.includes(fixture.kind) && sameRoom(fixture) && Math.hypot(fixture.x - board.x, fixture.z - board.z) < DB_WATER_CLEAR_M,
+      )
+      if (water) {
+        issues.push({ id: `db-water:${board.id}`, text: `The distribution board is within ${DB_WATER_CLEAR_M} m of the ${fixtureSpec(water.kind).name.toLowerCase()}'s tap; keep it a metre from water, or use a weatherproof board.`, ...at })
+      }
+      const stove = (floor.fixtures ?? []).find(
+        (fixture) => fixture.kind === 'stove-isolator' && sameRoom(fixture) && Math.hypot(fixture.x - board.x, fixture.z - board.z) < DB_WATER_CLEAR_M,
+      )
+      if (stove) {
+        issues.push({ id: `db-stove:${board.id}`, text: 'The distribution board is next to the stove isolator; it may not go above the stove, or where a stove could stand under it.', ...at })
+      }
+    }
+    const wet = (floor.fixtures ?? []).filter((fixture) => fixture.kind === 'bath' || fixture.kind === 'shower')
     for (const fixture of floor.fixtures ?? []) {
       if (fixture.kind === 'socket') {
         const near = wet.find((item) => distanceToRing(fixtureFootprint(item), fixture.x, fixture.z) < BATHROOM_ZONE_M)

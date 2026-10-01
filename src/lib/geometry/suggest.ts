@@ -205,7 +205,9 @@ export function suggestRoomFixtures(doc: Document, floor: Floor, cell: Cell, typ
   if ((type === 'bathroom' || type === 'kitchen') && !fixtures.some((item) => isGeyser(item.kind)) && !drafts.some((item) => isGeyser(item.kind))) {
     drafts.push({ kind: 'geyser', x: centre.x, z: centre.z, dx: 1, dz: 0, y: roofSpaceY(doc, floor, cell) })
   }
-  if (floor.index === 0 && external.length > 0 && !fixtures.some((item) => item.kind === 'db-board')) {
+  // SANS 10142-1 keeps the board out of bathrooms and away from taps and the stove, so it goes in a dry room.
+  const wetRoom = type === 'bathroom' || type === 'toilet' || type === 'kitchen' || type === 'laundry'
+  if (floor.index === 0 && external.length > 0 && !wetRoom && !fixtures.some((item) => item.kind === 'db-board')) {
     middle('db-board')
   }
   return drafts
