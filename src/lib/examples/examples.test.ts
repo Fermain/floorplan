@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { electricalIssues } from '../geometry/electrical'
+import { finishIssues } from '../geometry/finishes'
 import { gasLayout } from '../geometry/gas'
 import { gutterLayout } from '../geometry/gutters'
 import { plumbingLayout } from '../geometry/plumbing'
@@ -9,7 +10,7 @@ import { isDocument } from '../state/projects'
 import { EXAMPLES } from '.'
 
 function warnings(doc: Document): string[] {
-  return [...plumbingLayout(doc).issues, ...electricalIssues(doc), ...gasLayout(doc).issues].map((issue) => issue.text)
+  return [...plumbingLayout(doc).issues, ...electricalIssues(doc), ...gasLayout(doc).issues, ...finishIssues(doc)].map((issue) => issue.text)
 }
 
 const byId = async (id: string) => EXAMPLES.find((example) => example.id === id)!.load()

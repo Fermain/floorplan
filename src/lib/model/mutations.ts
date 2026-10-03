@@ -20,6 +20,7 @@ import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
 import { fixtureProblem, reseat, swapsFor } from './fixtures'
 import { faceKey, trimProblem } from './trims'
+import { finishProblem } from './finishes'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
 import {
@@ -32,6 +33,7 @@ import {
 import type {
   CostAssumptions,
   Document,
+  FaceFinish,
   FaceTrim,
   Fence,
   Fixture,
@@ -51,6 +53,7 @@ import type {
   ProjectDefaults,
   Roof,
   RoomType,
+  WallFinish,
   Space,
   Stair,
   Wall,
@@ -588,6 +591,38 @@ export function setFaceTrim(document: Document, floorId: string, wallId: string,
     if (item.id !== wallId) return item
     const { trim: _old, ...rest } = item
     return Object.keys(trim).length > 0 ? { ...rest, trim } : rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
+// A face's own finish and paint; null hands the choice back to the project.
+export function setFaceFinish(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  side: 1 | -1,
+  patch: { finish?: WallFinish | null; paint?: string | null },
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin === 'logical') return fail(document, 'a logical wall has no faces to finish')
+  const problem = finishProblem(patch)
+  if (problem) return fail(document, problem)
+  const key = faceKey(side)
+  const merged: FaceFinish = { ...(wall.finish?.[key] ?? {}) }
+  if (patch.finish === null) delete merged.finish
+  else if (patch.finish !== undefined) merged.finish = patch.finish
+  if (patch.paint === null) delete merged.paint
+  else if (patch.paint !== undefined) merged.paint = patch.paint
+  const finish = { ...(wall.finish ?? {}) }
+  if (merged.finish === undefined && merged.paint === undefined) delete finish[key]
+  else finish[key] = merged
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    const { finish: _old, ...rest } = item
+    return Object.keys(finish).length > 0 ? { ...rest, finish } : rest
   })
   return ok(replaceFloor(document, { ...floor, walls }))
 }

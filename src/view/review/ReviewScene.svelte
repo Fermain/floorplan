@@ -31,7 +31,8 @@
     GLASS_OPACITY,
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
-  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildCourseFaceGeometries, buildFinishSkin, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { outsideFaces, resolveFinish } from '../../lib/geometry/finishes'
   import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
   import { coveringOf } from '../../lib/geometry/coverings'
   import { coveringTexture } from './roofTexture'
@@ -92,6 +93,8 @@
     frame: BufferGeometry | null
     glass: BufferGeometry | null
     panels: OpeningPanelMesh[]
+    // Plaster or bagging over a face, in its paint colour; bagging lets the coursing show through.
+    skins: { geometry: BufferGeometry; colour: string; opacity: number }[]
   }
   type FloorSlab = { key: string; storey: number; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = {
@@ -416,6 +419,7 @@
       for (const [key, group] of Object.entries(groups)) {
         pillars.push({ key: `${floor.id}:${key}`, parts: buildPillarParts(group.type, group.spots, system, group.datum) })
       }
+      const outside = outsideFaces(floor)
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') {
           const line = wall.fence ? fenceFrame(floor, wall) : null
@@ -437,6 +441,13 @@
         const frame = buildOpeningFrameGeometry(floor, wall, samples)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
         const panels = buildOpeningPanelMeshes(floor, wall, samples)
+        const skins: WallMeshes['skins'] = []
+        for (const side of [1, -1] as const) {
+          const finish = resolveFinish(doc, wall, side, outside(wall, side))
+          if (finish.finish === 'exposed' || !finish.colour) continue
+          const geometry = buildFinishSkin(floor, wall, side, samples, head)
+          if (geometry) skins.push({ geometry, colour: finish.colour, opacity: finish.finish === 'bagged' ? 0.82 : 1 })
+        }
         if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass && panels.length === 0) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
@@ -449,6 +460,7 @@
           frame,
           glass,
           panels,
+          skins,
         })
       }
     }
@@ -499,6 +511,7 @@
         wall.frame?.dispose()
         wall.glass?.dispose()
         for (const panel of wall.panels) panel.geometry.dispose()
+        for (const skin of wall.skins) skin.geometry.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
       for (const roof of roofs) {
@@ -925,6 +938,11 @@
             <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
           </T.Mesh>
         {/each}
+        {#each wall.skins as skin (skin.geometry.uuid)}
+          <T.Mesh geometry={skin.geometry} castShadow receiveShadow {...wallHandlers(wall)}>
+            <T.MeshStandardMaterial color={skin.colour} roughness={0.95} transparent={skin.opacity < 1} opacity={skin.opacity} />
+          </T.Mesh>
+        {/each}
         {#if wall.lintel}
           <T.Mesh geometry={wall.lintel} castShadow receiveShadow {...wallHandlers(wall)}>
             <T.MeshStandardMaterial color="#8a8680" />
@@ -963,7 +981,7 @@
     <!-- The wall picked or under the pointer, washed blue: a copy of its faces drawn over it, cut like the wall. -->
     {#each highlightedWalls as item (item.key)}
       <T.Group position.y={item.wall.datumY} userData={halfCut(item.wall.datumY)}>
-        {#each [...item.wall.geoms, ...item.wall.courses] as geom, i (`${item.key}-${i}`)}
+        {#each [...item.wall.geoms, ...item.wall.courses, ...item.wall.skins.map((skin) => skin.geometry)] as geom, i (`${item.key}-${i}`)}
           <T.Mesh geometry={geom} renderOrder={2}>
             <T.MeshBasicMaterial
               color={item.colour}

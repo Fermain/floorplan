@@ -16,6 +16,7 @@ import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLi
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { gasLayout } from '../geometry/gas'
 import { PAVING_LIST, pavingPieces } from '../geometry/paving'
+import { finishTotals } from '../geometry/finishes'
 import { plumbingLayout, wallChases, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
@@ -35,7 +36,7 @@ const SUPPORT_BASE_DEPTH_M = 0.3
 
 export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Paving' | 'Supports' | 'Fencing'
 
-export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
+export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
 export type QuantityLine = {
   id: string
@@ -48,6 +49,9 @@ export type QuantityLine = {
   rate: number
   amount: number
 }
+
+// A litre of paint covers about this much wall in one coat.
+export const PAINT_COVERAGE_M2_PER_L = 8
 
 export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Paving', 'Supports', 'Fencing']
 
@@ -485,6 +489,44 @@ export function takeoff(doc: Document): QuantityLine[] {
   for (const spec of CORNICES) {
     const length = trims.cornice[spec.id]
     if (length > 0) drafts.push({ id: `cornice:${spec.id}`, group: 'Finishes', label: `${spec.name} cornice`, note: 'Round every room at the ceiling, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `cornice:${spec.id}` })
+  }
+
+  // Plaster, bagging and paint on the walls, outside and in.
+  const walls = finishTotals(doc)
+  const plastered = walls.plaster.outside + walls.plaster.inside
+  if (plastered > 0) {
+    drafts.push({
+      id: 'plaster',
+      group: 'Finishes',
+      label: 'Plaster, 15 mm',
+      note: `${round(walls.plaster.outside, 1)} m² outside and ${round(walls.plaster.inside, 1)} m² inside, with the reveals round openings`,
+      unit: 'm²',
+      quantity: round(plastered * waste, 1),
+      rateKey: 'plaster-m2',
+    })
+    drafts.push({ id: 'plaster-cement', group: 'Finishes', label: 'Cement for plaster', note: `${round(walls.mortar, 2)} m³ of plaster at ${assumptions.cementBagsPerM3} bags per m³`, unit: 'bag', quantity: Math.ceil(walls.mortar * assumptions.cementBagsPerM3), rateKey: 'cement-bag' })
+    drafts.push({ id: 'plaster-sand', group: 'Finishes', label: 'Plaster sand', note: `${assumptions.sandM3PerM3} m³ per m³ of plaster`, unit: 'm³', quantity: round(walls.mortar * assumptions.sandM3PerM3, 2), rateKey: 'sand-m3' })
+  }
+  const bagged = walls.bagging.outside + walls.bagging.inside
+  if (bagged > 0) {
+    drafts.push({ id: 'bagging', group: 'Finishes', label: 'Bagging', note: 'Cement slurry rubbed over the wall', unit: 'm²', quantity: round(bagged * waste, 1), rateKey: 'bagging-m2' })
+  }
+  const painted = walls.paint.outside + walls.paint.inside
+  if (painted > 0) {
+    drafts.push({ id: 'paint-primer', group: 'Finishes', label: 'Plaster primer', note: `One coat on ${round(painted, 1)} m², at ${PAINT_COVERAGE_M2_PER_L} m² a litre`, unit: 'L', quantity: Math.ceil(painted / PAINT_COVERAGE_M2_PER_L), rateKey: 'paint-primer-l' })
+    for (const [where, label] of [['outside', 'Exterior'], ['inside', 'Interior']] as const) {
+      if (walls.paint[where] <= 0) continue
+      drafts.push({
+        id: `paint-${where}`,
+        group: 'Finishes',
+        label: `${label} paint`,
+        note: `Two coats on ${round(walls.paint[where], 1)} m²`,
+        unit: 'L',
+        quantity: Math.ceil((walls.paint[where] * 2) / PAINT_COVERAGE_M2_PER_L),
+        rateKey: `paint-${where}-l`,
+      })
+    }
+    drafts.push({ id: 'painting', group: 'Finishes', label: 'Painting', note: 'Primer and two coats, labour', unit: 'm²', quantity: round(painted, 1), rateKey: 'painting-m2' })
   }
 
   const gutters = gutterLengths(gutterLayout(doc), doc)
