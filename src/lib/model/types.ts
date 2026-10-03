@@ -180,6 +180,11 @@ export type Roof = {
   noGutter?: string[]
 }
 
+// Hard surfaces on the ground round the house: driveways, paths, patios, and the apron along the walls.
+export type PavingSurface = 'concrete' | 'cement-pavers' | 'clay-pavers' | 'gravel' | 'grass-blocks'
+
+export type PavingArea = { id: string; ring: [number, number][]; surface: PavingSurface }
+
 export type ProjectDefaults = {
   roofForm: RoofForm
   roofCovering: RoofCovering
@@ -191,6 +196,9 @@ export type ProjectDefaults = {
   doorHeight: number
   skirting: SkirtingType | 'none'
   cornice: CorniceType | 'none'
+  // A strip laid round the outside of the house to throw water clear of the foundations; 0 for none.
+  apronWidth: number
+  apronSurface: PavingSurface
 }
 
 export type Building = {
@@ -241,6 +249,7 @@ export type Document = {
   building: Building
   costing?: Costing
   services?: SiteServices
+  paving?: PavingArea[]
 }
 
 export type DerivedRoom = {

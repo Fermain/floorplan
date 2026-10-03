@@ -15,6 +15,7 @@ import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { gasLayout } from '../geometry/gas'
+import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { plumbingLayout, wallChases, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
@@ -32,7 +33,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Paving' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
 
@@ -48,7 +49,7 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Paving', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -592,6 +593,38 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'gas-pipe', group: 'Gas', label: 'Copper gas pipe 15 mm', note: 'From the bottles round the outside walls to each appliance, plus 10%', unit: 'm', quantity: Math.ceil(gas.length * 1.1), rateKey: 'gas-pipe' })
     drafts.push({ id: 'gas-valve', group: 'Gas', label: 'Gas isolating valves', note: 'One at each appliance', unit: 'each', quantity: gas.runs.length, rateKey: 'gas-valve' })
     drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
+  }
+
+  // Paving and the apron: the surface laid, by area; the layers under it, by volume; the edging, by length.
+  const pieces = pavingPieces(doc)
+  const layers = new Map<string, { name: string; volume: number }>()
+  let edging = 0
+  for (const spec of PAVING_LIST) {
+    const mine = pieces.filter((piece) => piece.surface === spec.id)
+    const area = mine.reduce((sum, piece) => sum + piece.area, 0)
+    if (area <= 0) continue
+    const apron = mine.some((piece) => piece.apron)
+    drafts.push({
+      id: `paving:${spec.id}`,
+      group: 'Paving',
+      label: `${spec.name} paving, laid`,
+      note: apron ? 'Including the apron round the house' : 'Driveways, paths and patios',
+      unit: 'm²',
+      quantity: round(area, 1),
+      rateKey: `paving:${spec.id}`,
+    })
+    for (const layer of spec.layers) {
+      const tally = layers.get(layer.rateKey) ?? { name: layer.name, volume: 0 }
+      tally.volume += area * layer.thickness
+      layers.set(layer.rateKey, tally)
+    }
+    if (spec.edging) edging += mine.reduce((sum, piece) => sum + piece.edge, 0)
+  }
+  for (const [rateKey, layer] of layers) {
+    drafts.push({ id: `paving-layer:${rateKey}`, group: 'Paving', label: layer.name, note: 'Under the paving, plus 10%', unit: 'm³', quantity: round(layer.volume * 1.1, 2), rateKey })
+  }
+  if (edging > 0) {
+    drafts.push({ id: 'paving-edge', group: 'Paving', label: 'Paving kerb and edge restraint', note: 'Round pavers, blocks and gravel', unit: 'm', quantity: Math.ceil(edging), rateKey: 'paving-edge' })
   }
 
   const fences = new Map<string, { length: number; area: number; posts: number }>()

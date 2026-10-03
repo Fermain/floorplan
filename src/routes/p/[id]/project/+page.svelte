@@ -12,6 +12,7 @@
   import RoofPicker from '$lib/components/project/RoofPicker.svelte'
   import WallPicker from '$lib/components/project/WallPicker.svelte'
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
+  import ApronPicker from '$lib/components/project/ApronPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
   import { DEFAULT_RAINFALL_MM } from '$lib/geometry/plumbing'
@@ -275,6 +276,18 @@
         <TrimPicker
           bind:skirting={() => defaults.skirting, (next) => setDefault('skirting', next)}
           bind:cornice={() => defaults.cornice, (next) => setDefault('cornice', next)}
+        />
+      </Card.Content>
+    </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Apron</Card.Title>
+        <Card.Description>Paving laid round the outside of the house.</Card.Description>
+      </Card.Header>
+      <Card.Content>
+        <ApronPicker
+          bind:width={() => defaults.apronWidth, (next) => setDefault('apronWidth', next)}
+          bind:surface={() => defaults.apronSurface, (next) => setDefault('apronSurface', next)}
         />
       </Card.Content>
     </Card.Root>

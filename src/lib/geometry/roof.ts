@@ -320,6 +320,11 @@ export function buildRoofMeshes(floor: Floor, roof: Roof, reach = DEFAULT_REACH)
   return { top: geometry(top, uvs), under: geometry(under), edges: geometry(edges) }
 }
 
+// The outside faces of a storey's walls, joined into one outline per building, with any courtyards as holes.
+export function wallFootprints(floor: Floor): DeckPolygon[] {
+  return eavesFootprints(floor, 0, DEFAULT_REACH)
+}
+
 function eavesFootprints(floor: Floor, eaves: number, reach: number): DeckPolygon[] {
   const pieces: Ring[] = []
   if (floor.walls.length === 0) {

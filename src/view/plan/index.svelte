@@ -12,6 +12,7 @@
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Plug from '@lucide/svelte/icons/plug'
+  import Grid2x2 from '@lucide/svelte/icons/grid-2x2'
   import FixtureSymbol from './FixtureSymbol.svelte'
   import ContextPanel from '../shared/ContextPanel.svelte'
   import FittingSetup from '../shared/FittingSetup.svelte'
@@ -29,6 +30,7 @@
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
   import { centreDashes, plotSide, roadReach, roadStrips } from '../../lib/geometry/roads'
+  import { apronPolygons, PAVING, PAVING_LIST, pavingAt, pavingPieces, pavingRectangle, pavingSnapTargets, snapPavingPoint } from '../../lib/geometry/paving'
   import {
     DEFAULT_SEWER_DEPTH_M,
     DRAIN_FALL,
@@ -68,7 +70,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { Fixture, FixtureKind, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -120,7 +122,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -175,6 +177,11 @@
     snapped: boolean
   } | null>(null)
   let selectedEdge = $state<number | null>(null)
+  // Paving: the area picked ('apron' for the strip round the house), and one being drawn, corner by corner.
+  let selectedPaving = $state<string | null>(null)
+  let pavingDraft = $state<{ x: number; z: number }[]>([])
+  let pavingShape = $state<'rect' | 'outline'>('rect')
+  let pavingSurface = $state<PavingSurface>('concrete')
   let selectedOutline = $state<{ floorId: string | null; ring: number; edge: number } | null>(null)
   let selectedCornerId = $state<string | null>(null)
   let selectedPlateFloorId = $state<string | null>(null)
@@ -740,6 +747,12 @@
   }
 
   function cancelDraw() {
+    if (tool === 'draw-paving') {
+      if (pavingDraft.length > 0) pavingDraft = []
+      else setTool('select')
+      errorMessage = null
+      return
+    }
     if (tool === 'draw-stair' || tool === 'draw-fixture') {
       setTool('select')
       errorMessage = null
@@ -782,7 +795,9 @@
     fixture?: { floorId: string; id: string } | null
     service?: ServiceKind | null
     bend?: number | null
+    paving?: string | null
   }) {
+    selectedPaving = next.paving ?? null
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
     selectedFixture = next.fixture ?? null
@@ -837,6 +852,11 @@
       return
     }
 
+    if (tool === 'draw-paving') {
+      pavingClick(plan)
+      return
+    }
+
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
@@ -877,6 +897,11 @@
           return
         }
         chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
+        return
+      }
+      const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
+      if (paved) {
+        chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id })
         return
       }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
@@ -1161,6 +1186,7 @@
 
   function setTool(next: Tool) {
     tool = next
+    pavingDraft = []
     pendingDraw = null
     chainOriginId = null
     moveDrag = null
@@ -1838,6 +1864,86 @@
     placeSizes = { ...placeSizes, [fixtureKind]: stepSize(fixtureKind, size.setup, by) }
   }
 
+  // Paving corners snap to the plot, the house and other paving; a rectangle lies square to the drawing grid.
+  const pavingTargets = $derived(pavingSnapTargets(document))
+  const pavingPoint = $derived(pointerPlan && tool === 'draw-paving' ? snapPavingPoint(pointerPlan, pavingTargets, s(0.5)).point : null)
+  const pavingAxis = $derived.by(() => {
+    const grid = activeFloor ? highlightedDirection(activeFloor) : null
+    return grid ? { x: grid.dx, z: grid.dz } : { x: 1, z: 0 }
+  })
+  // The area being drawn, as it would be laid if the next click finished it.
+  const pavingPreview = $derived.by((): [number, number][] => {
+    const at = pavingPoint
+    if (!at || pavingDraft.length === 0) return []
+    if (pavingShape === 'rect') return pavingRectangle(pavingDraft[0], at, pavingAxis)
+    return [...pavingDraft, at].map((p) => [p.x, p.z] as [number, number])
+  })
+
+  function lay(ring: [number, number][]) {
+    if (applyResult(documentStore.addPaving(ring, pavingSurface))) {
+      const added = documentStore.document.paving?.at(-1)
+      pavingDraft = []
+      if (added) chooseSelection({ paving: added.id })
+    }
+  }
+
+  function pavingClick(plan: { x: number; z: number }) {
+    if (activeStoreyIndex !== 0) {
+      errorMessage = 'Paving goes on the ground. Switch to the ground floor to lay it.'
+      return
+    }
+    const at = snapPavingPoint(plan, pavingTargets, s(0.5)).point
+    if (pavingShape === 'rect') {
+      if (pavingDraft.length === 0) pavingDraft = [at]
+      else lay(pavingRectangle(pavingDraft[0], at, pavingAxis))
+      return
+    }
+    // An outline closes on its first corner.
+    const first = pavingDraft[0]
+    if (first && pavingDraft.length >= 3 && Math.hypot(first.x - at.x, first.z - at.z) <= s(0.5)) {
+      lay(pavingDraft.map((p) => [p.x, p.z]))
+      return
+    }
+    pavingDraft = [...pavingDraft, at]
+  }
+
+  function finishPavingOutline() {
+    if (tool === 'draw-paving' && pavingShape === 'outline' && pavingDraft.length >= 3) lay(pavingDraft.map((p) => [p.x, p.z]))
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-paving') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || typingTarget(event)) return
+      event.preventDefault()
+      finishPavingOutline()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  // The paving picked: one area, or the apron, which is a project setting.
+  const chosenPaving = $derived.by(() => {
+    const id = selectedPaving
+    if (!id) return null
+    if (id === 'apron') {
+      const piece = pavingPieces(document).filter((item) => item.apron)
+      if (piece.length === 0) return null
+      return { apron: true as const, area: piece.reduce((sum, item) => sum + item.area, 0) }
+    }
+    const item = document.paving?.find((entry) => entry.id === id)
+    const piece = pavingPieces(document).find((entry) => entry.id === id)
+    return item && piece ? { apron: false as const, item, area: piece.area } : null
+  })
+
+  function removeChosenPaving() {
+    const chosen = chosenPaving
+    if (!chosen) return
+    if (chosen.apron) applyResult(documentStore.setProjectDefaults({ apronWidth: 0 }))
+    else applyResult(documentStore.removePaving(chosen.item.id))
+    chooseSelection({})
+  }
+
   function placeFixtureAt(plan: { x: number; z: number }) {
     pointerPlan = plan
     const ghost = fixtureGhost
@@ -1928,6 +2034,7 @@
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
     if (selectedService && selectedBend !== null) return { label: 'Delete bend', run: removeSelectedBend }
     if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
+    if (chosenPaving) return { label: chosenPaving.apron ? 'Remove the apron' : 'Delete paving', run: removeChosenPaving }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -1955,6 +2062,17 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-paving') {
+      const spec = PAVING[pavingSurface]
+      if (pavingShape === 'rect') {
+        return pavingDraft.length === 0
+          ? `${spec.name} paving. Click one corner, then the opposite one; corners snap to the plot, the house and other paving.`
+          : 'Click the opposite corner. Esc to start again.'
+      }
+      return pavingDraft.length < 3
+        ? `${spec.name} paving. Click each corner of the area; corners snap to the plot, the house and other paving.`
+        : 'Click the first corner, or press Enter, to finish. Esc to start again.'
+    }
     if (tool === 'draw-fixture') {
       const ghost = fixtureGhost
       const spec = fixtureSpec(fixtureKind)
@@ -2092,7 +2210,36 @@
       <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
         <Plug /><span class="hidden sm:inline">Fittings</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
+        <Grid2x2 /><span class="hidden sm:inline">Paving</span>
+      </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if tool === 'draw-paving'}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={pavingShape}
+        onValueChange={(next) => {
+          if (next) {
+            pavingShape = next as 'rect' | 'outline'
+            pavingDraft = []
+          }
+        }}
+        aria-label="Paving shape"
+      >
+        <ToggleGroup.Item value="rect" title="Two opposite corners">Rectangle</ToggleGroup.Item>
+        <ToggleGroup.Item value="outline" title="Each corner in turn">Outline</ToggleGroup.Item>
+      </ToggleGroup.Root>
+      <Select.Root type="single" value={pavingSurface} onValueChange={(next) => next && (pavingSurface = next as PavingSurface)}>
+        <Select.Trigger size="sm" class="w-36" aria-label="Paving surface">{PAVING[pavingSurface].name}</Select.Trigger>
+        <Select.Content>
+          {#each PAVING_LIST as spec (spec.id)}
+            <Select.Item value={spec.id} label={spec.name} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    {/if}
     {#if tool === 'draw-fixture'}
       <Select.Root type="single" value={fixtureKind} onValueChange={(next) => (fixtureKind = next as FixtureKind)}>
         <Select.Trigger size="sm" class="w-44" aria-label="Fitting">{fixtureSpec(fixtureKind).name}</Select.Trigger>
@@ -2266,6 +2413,42 @@
           pointer-events="none"
         />
       {/if}
+    {/if}
+    {#if activeStoreyIndex === 0}
+      <g class="paving" pointer-events="none">
+        {#each apronPolygons(document) as polygon, i (i)}
+          <path
+            d={[polygon.outer, ...polygon.holes].map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}
+            fill-rule="evenodd"
+            fill={PAVING[projectDefaults(document).apronSurface].colour}
+            fill-opacity="0.55"
+            stroke={selectedPaving === 'apron' ? '#2563eb' : 'none'}
+            stroke-width={s(0.05)}
+          />
+        {/each}
+        {#each document.paving ?? [] as area (area.id)}
+          <polygon
+            points={pointsAttr(area.ring.map(([x, z]) => [x, z] as SvgPoint))}
+            fill={PAVING[area.surface].colour}
+            fill-opacity="0.7"
+            stroke={selectedPaving === area.id ? '#2563eb' : '#57534e'}
+            stroke-width={s(selectedPaving === area.id ? 0.06 : 0.02)}
+          />
+        {/each}
+        {#if pavingPreview.length >= 2}
+          <polygon
+            points={pointsAttr(pavingPreview.map(([x, z]) => [x, z] as SvgPoint))}
+            fill={PAVING[pavingSurface].colour}
+            fill-opacity="0.45"
+            stroke="#2563eb"
+            stroke-width={s(0.04)}
+            stroke-dasharray="{s(0.2)} {s(0.12)}"
+          />
+        {/if}
+        {#if pavingPoint && tool === 'draw-paving'}
+          <circle cx={pavingPoint.x} cy={pavingPoint.z} r={s(0.12)} fill="#2563eb" />
+        {/if}
+      </g>
     {/if}
     {#if localGrid.length > 0 && !outlineReference}
       <g clip-path="url(#plan-plot-clip)" pointer-events="none">
@@ -3032,6 +3215,54 @@
           </p>
         </ContextPanel>
       {/if}
+    {/if}
+    {#if chosenPaving && !roofFloor}
+      {@const surface = chosenPaving.apron ? projectDefaults(document).apronSurface : chosenPaving.item.surface}
+      <ContextPanel
+        label="Paving"
+        title={chosenPaving.apron ? 'Apron round the house' : `${PAVING[surface].name} paving`}
+        description="{checkFormat.format(chosenPaving.area)} m². {PAVING[surface].text}"
+        onclose={() => chooseSelection({})}
+      >
+        <div class="grid gap-1.5">
+          <Label for="paving-surface">Surface</Label>
+          <Select.Root
+            type="single"
+            value={surface}
+            onValueChange={(next) => {
+              if (!next || !chosenPaving) return
+              applyResult(
+                chosenPaving.apron
+                  ? documentStore.setProjectDefaults({ apronSurface: next as PavingSurface })
+                  : documentStore.updatePaving(chosenPaving.item.id, { surface: next as PavingSurface }),
+              )
+            }}
+          >
+            <Select.Trigger id="paving-surface" size="sm" class="w-full">{PAVING[surface].name}</Select.Trigger>
+            <Select.Content>
+              {#each PAVING_LIST as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        {#if chosenPaving.apron}
+          <div class="grid gap-1.5">
+            <Label for="apron-width">Width (mm)</Label>
+            <Input
+              id="apron-width"
+              type="number"
+              min="0"
+              max="3000"
+              step="100"
+              value={Math.round(projectDefaults(document).apronWidth * 1000)}
+              onchange={(event) => applyResult(documentStore.setProjectDefaults({ apronWidth: Number(event.currentTarget.value) / 1000 }))}
+            />
+          </div>
+          <p class="text-muted-foreground">Laid along every outside wall to carry rain clear of the foundations. It is set for the whole project.</p>
+        {/if}
+        <Button variant="destructive" onclick={removeChosenPaving}>{chosenPaving.apron ? 'No apron' : 'Remove'}</Button>
+      </ContextPanel>
     {/if}
     {#if selectedRoom && !roofFloor}
       <ContextPanel label="Room" onclose={() => chooseSelection({})}>

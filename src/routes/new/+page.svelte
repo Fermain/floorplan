@@ -1,5 +1,6 @@
 <script lang="ts">
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
+  import ApronPicker from '$lib/components/project/ApronPicker.svelte'
   import { corniceSpec, skirtingSpec } from '$lib/model/trims'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
@@ -25,7 +26,7 @@
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
   import Zap from '@lucide/svelte/icons/zap'
   import { homeHref, sectionHref } from '$lib/routes/links'
-  import { draft, draftDefaults, resetDraft } from '$lib/state/newProject.svelte'
+  import { draft, draftDefaults, NEW_APRON_M, resetDraft } from '$lib/state/newProject.svelte'
   import { saveProject } from '$lib/state/projects'
   import { cn } from '$lib/utils'
 
@@ -124,7 +125,7 @@
 
   async function quickStart() {
     creating = true
-    const document = documentFromSample(DEFAULT_SAMPLE_ID, DEFAULT_WALL_SYSTEM_ID, {})
+    const document = documentFromSample(DEFAULT_SAMPLE_ID, DEFAULT_WALL_SYSTEM_ID, { apronWidth: NEW_APRON_M })
     const saved = await saveProject(null, draft.name || 'Untitled house', document)
     creating = false
     if (!saved.ok) {
@@ -258,6 +259,10 @@
         <p class="text-sm text-muted-foreground">Run round every room. You can change or take them off any wall in Focus.</p>
       </div>
       <TrimPicker bind:skirting={draft.skirting} bind:cornice={draft.cornice} onchoose={advance} />
+      <div>
+        <h2 class="text-base font-semibold">Apron</h2>
+      </div>
+      <ApronPicker bind:width={draft.apronWidth} bind:surface={draft.apronSurface} />
     {:else}
       <div>
         <h1 class="text-xl font-semibold">Name your project</h1>
