@@ -102,6 +102,7 @@ export const documentStore = {
   updateFixture: bind(mutations.updateFixture),
   setFixtureKind: bind(mutations.setFixtureKind),
   setPlotRoad: bind(mutations.setPlotRoad),
+  setFaceFinish: bind(mutations.setFaceFinish),
   addPaving: bind(mutations.addPaving),
   updatePaving: bind(mutations.updatePaving),
   removePaving: bind(mutations.removePaving),

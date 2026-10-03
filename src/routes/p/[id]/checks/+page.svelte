@@ -9,6 +9,7 @@
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
   import { gasLayout } from '$lib/geometry/gas'
+  import { finishIssues } from '$lib/geometry/finishes'
   import { bottleSetup } from '$lib/model/fixtures'
   import { BATTERY_MODULE_KWH, powerLayout, suggestedPanels } from '$lib/geometry/power'
   import { planHref } from '$lib/routes/links'
@@ -23,6 +24,13 @@
   const pipes = $derived(plumbingLayout(doc))
   const power = $derived(powerLayout(doc))
   const gas = $derived(gasLayout(doc))
+  // Bare single-leaf outside walls, counted by storey.
+  const dampWalls = $derived.by(() => {
+    const issues = finishIssues(doc)
+    return doc.building.floors
+      .map((floor) => ({ floor, count: issues.filter((issue) => issue.floorId === floor.id).length }))
+      .filter((item) => item.count > 0)
+  })
   const longestHot = $derived(pipes.hot.reduce((most, run) => Math.max(most, run.length), 0))
   const cableTotal = $derived(electrical.circuits.reduce((sum, circuit) => sum + circuit.length, 0))
 
@@ -492,6 +500,30 @@
           </Card.Content>
         </Card.Root>
       {/if}
+    {/if}
+
+    {#if dampWalls.length > 0}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold">Wall finishes</h2>
+        <p class="text-sm text-muted-foreground">
+          SANS 10400-K expects an outside wall to keep the rain out. One leaf of bare block or brick does not, so it is
+          plastered, or bagged and painted.
+        </p>
+      </div>
+      <Card.Root>
+        <Card.Content class="grid gap-2 py-4 text-sm">
+          {#each dampWalls as item (item.floor.id)}
+            <div class="flex items-start justify-between gap-3">
+              <span class="text-amber-700">
+                {item.count === 1 ? 'One single-leaf outside wall is' : `${item.count} single-leaf outside walls are`} left
+                exposed{doc.building.floors.length > 1 ? ` on ${item.floor.index === 0 ? 'the ground floor' : `storey ${item.floor.index + 1}`}` : ''}. Change the finish on the Project page, or
+                wall by wall in Focus.
+              </span>
+              <Button variant="ghost" size="sm" href={planHref(id, item.floor.index)}>Show on plan</Button>
+            </div>
+          {/each}
+        </Card.Content>
+      </Card.Root>
     {/if}
   </div>
 </div>

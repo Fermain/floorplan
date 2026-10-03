@@ -7,6 +7,7 @@ import {
   DEFAULT_WINDOW_WIDTH,
   WALL_HEAD,
 } from '../plot/fixture'
+import { isPaint, isWallFinish } from './finishes'
 import type { Document, ProjectDefaults } from './types'
 
 export const BASE_DEFAULTS: ProjectDefaults = {
@@ -23,6 +24,10 @@ export const BASE_DEFAULTS: ProjectDefaults = {
   // No apron unless asked for, so projects made before it existed are unchanged; new ones start with one.
   apronWidth: 0,
   apronSurface: 'concrete',
+  outsideFinish: 'auto',
+  insideFinish: 'auto',
+  outsidePaint: 'sandstone',
+  insidePaint: 'white',
 }
 
 export const PAVING_SURFACES = ['concrete', 'cement-pavers', 'clay-pavers', 'gravel', 'grass-blocks'] as const
@@ -44,5 +49,11 @@ export function defaultsProblem(defaults: ProjectDefaults): string | null {
   if (!['rounded', 'coral', 'none'].includes(defaults.cornice)) return 'unknown cornice'
   if (!(defaults.apronWidth >= 0 && defaults.apronWidth <= MAX_APRON_M)) return 'apron width out of range'
   if (!(PAVING_SURFACES as readonly string[]).includes(defaults.apronSurface)) return 'unknown apron surface'
+  for (const finish of [defaults.outsideFinish, defaults.insideFinish]) {
+    if (finish !== 'auto' && !isWallFinish(finish)) return 'unknown wall finish'
+  }
+  for (const paint of [defaults.outsidePaint, defaults.insidePaint]) {
+    if (!isPaint(paint)) return 'unknown paint colour'
+  }
   return null
 }

@@ -87,5 +87,9 @@ export function draftDefaults(): ProjectDefaults {
     cornice: draft.cornice,
     apronWidth: draft.apronWidth,
     apronSurface: draft.apronSurface,
+    outsideFinish: draft.outsideFinish,
+    insideFinish: draft.insideFinish,
+    outsidePaint: draft.outsidePaint,
+    insidePaint: draft.insidePaint,
   }
 }

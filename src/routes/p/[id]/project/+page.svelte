@@ -13,6 +13,7 @@
   import WallPicker from '$lib/components/project/WallPicker.svelte'
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
   import ApronPicker from '$lib/components/project/ApronPicker.svelte'
+  import FinishPicker from '$lib/components/project/FinishPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
   import { DEFAULT_RAINFALL_MM } from '$lib/geometry/plumbing'
@@ -276,6 +277,21 @@
         <TrimPicker
           bind:skirting={() => defaults.skirting, (next) => setDefault('skirting', next)}
           bind:cornice={() => defaults.cornice, (next) => setDefault('cornice', next)}
+        />
+      </Card.Content>
+    </Card.Root>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Plaster and paint</Card.Title>
+        <Card.Description>How the walls are finished, unless a face has its own choice in Focus.</Card.Description>
+      </Card.Header>
+      <Card.Content>
+        <FinishPicker
+          {systemId}
+          bind:outsideFinish={() => defaults.outsideFinish, (next) => setDefault('outsideFinish', next)}
+          bind:insideFinish={() => defaults.insideFinish, (next) => setDefault('insideFinish', next)}
+          bind:outsidePaint={() => defaults.outsidePaint, (next) => setDefault('outsidePaint', next)}
+          bind:insidePaint={() => defaults.insidePaint, (next) => setDefault('insidePaint', next)}
         />
       </Card.Content>
     </Card.Root>

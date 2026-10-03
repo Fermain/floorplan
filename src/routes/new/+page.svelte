@@ -1,6 +1,7 @@
 <script lang="ts">
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
   import ApronPicker from '$lib/components/project/ApronPicker.svelte'
+  import FinishPicker from '$lib/components/project/FinishPicker.svelte'
   import { corniceSpec, skirtingSpec } from '$lib/model/trims'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
@@ -255,10 +256,22 @@
       />
     {:else if step === 'finishes'}
       <div>
-        <h1 class="text-xl font-semibold">Skirting and cornice</h1>
+        <h1 class="text-xl font-semibold">Finishes</h1>
+        <h2 class="mt-2 text-base font-semibold">Skirting and cornice</h2>
         <p class="text-sm text-muted-foreground">Run round every room. You can change or take them off any wall in Focus.</p>
       </div>
       <TrimPicker bind:skirting={draft.skirting} bind:cornice={draft.cornice} onchoose={advance} />
+      <div>
+        <h2 class="text-base font-semibold">Plaster and paint</h2>
+        <p class="text-sm text-muted-foreground">How the walls are finished, outside and in. Any face can be changed on its own in Focus.</p>
+      </div>
+      <FinishPicker
+        systemId={draft.systemId}
+        bind:outsideFinish={draft.outsideFinish}
+        bind:insideFinish={draft.insideFinish}
+        bind:outsidePaint={draft.outsidePaint}
+        bind:insidePaint={draft.insidePaint}
+      />
       <div>
         <h2 class="text-base font-semibold">Apron</h2>
       </div>
