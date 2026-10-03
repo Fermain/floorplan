@@ -43,6 +43,7 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
+  import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
   import { buildFixtureParts, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
@@ -110,6 +111,7 @@
   let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
+  let pavingMeshes = $state<PavingPart[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -395,6 +397,7 @@
     })
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
+    const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -468,6 +471,7 @@
       })
     groundGeometry = ground
     roadMeshes = roadParts
+    pavingMeshes = pavingParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -485,6 +489,7 @@
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
+      for (const part of pavingParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -781,6 +786,11 @@
     {#each roadMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each pavingMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
       </T.Mesh>
     {/each}
     {#if contourMinor}

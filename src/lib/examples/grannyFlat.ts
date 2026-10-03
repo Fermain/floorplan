@@ -17,7 +17,7 @@ export function grannyFlat(): Document {
     { ring, northBearingDeg: 0, latitude: -33.95, longitude: 18.47, roads: [0] },
     terrain(ring, levels),
     'clay-cavity',
-    { roofForm: 'hip', roofCovering: 'concrete-tile', roofPitchDeg: 26, roofEaves: 0.6 },
+    { roofForm: 'hip', roofCovering: 'concrete-tile', roofPitchDeg: 26, roofEaves: 0.6, apronWidth: 0.6, apronSurface: 'concrete' },
   )
 
   // 14 × 10 m. Ground: the flat to the west, the hall and stair in the middle, the garage to the east.
@@ -95,6 +95,8 @@ export function grannyFlat(): Document {
   // The flat has its own hot water: a gas geyser on its west wall, fed from two 19 kg bottles.
   b.fixture(0, 'gas-geyser', { x: w - 0.2, z: 27 }, { x: -1, z: 0 })
   b.fixture(0, 'gas-cylinder', { x: w - 0.3, z: 20 }, { x: -1, z: 0 }, { bottles: 2, bottleKg: 19, cage: true })
+  // A paved drive from the street, up the east side and round to the garage door on the north.
+  b.paving([[31, 0], [34.5, 0], [34.5, 33], [24.5, 33], [24.5, 29.5], [31, 29.5]], 'cement-pavers')
   // The wastes leave on the south side; the drain goes round the west end and down to the sewer at the back.
   b.apply(mutations.setServiceBends(b.doc, 'sewer', [{ x: 13.5, z: 17 }, { x: 13.5, z: 31 }]), 'drain round the house')
   return b.doc

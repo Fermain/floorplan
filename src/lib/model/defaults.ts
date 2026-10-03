@@ -20,7 +20,13 @@ export const BASE_DEFAULTS: ProjectDefaults = {
   doorHeight: DEFAULT_DOOR_HEIGHT,
   skirting: 'rounded',
   cornice: 'rounded',
+  // No apron unless asked for, so projects made before it existed are unchanged; new ones start with one.
+  apronWidth: 0,
+  apronSurface: 'concrete',
 }
+
+export const PAVING_SURFACES = ['concrete', 'cement-pavers', 'clay-pavers', 'gravel', 'grass-blocks'] as const
+export const MAX_APRON_M = 3
 
 export function projectDefaults(document: Pick<Document, 'building'>): ProjectDefaults {
   return { ...BASE_DEFAULTS, ...(document.building.defaults ?? {}) }
@@ -36,5 +42,7 @@ export function defaultsProblem(defaults: ProjectDefaults): string | null {
   if (!(defaults.roofEaves >= 0)) return 'eaves out of range'
   if (!['rounded', 'square', 'angled', 'none'].includes(defaults.skirting)) return 'unknown skirting'
   if (!['rounded', 'coral', 'none'].includes(defaults.cornice)) return 'unknown cornice'
+  if (!(defaults.apronWidth >= 0 && defaults.apronWidth <= MAX_APRON_M)) return 'apron width out of range'
+  if (!(PAVING_SURFACES as readonly string[]).includes(defaults.apronSurface)) return 'unknown apron surface'
   return null
 }
