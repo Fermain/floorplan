@@ -106,7 +106,8 @@
     meshes: RoofMeshes
     texture: CanvasTexture | null
     colour: string
-    gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
+    // The gable built up over each end wall, with the colour of that wall's outside finish if it has one.
+    gables: { body: BufferGeometry | null; faces: BufferGeometry | null; colour: string | null }[]
     panels: BufferGeometry | null
     gutters: GutterPart[]
     y: number
@@ -537,10 +538,10 @@
         roof.meshes.top?.dispose()
         roof.meshes.under?.dispose()
         roof.meshes.edges?.dispose()
-        roof.gable.body?.dispose()
+        for (const gable of roof.gables) gable.body?.dispose()
         roof.panels?.dispose()
         for (const part of roof.gutters) part.geometry.dispose()
-        roof.gable.faces?.dispose()
+        for (const gable of roof.gables) gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
     }
@@ -586,9 +587,15 @@
       const built = buildRoofMeshes(floor, roof, reach)
       if (!built.top) continue
       const spec = coveringOf(roof)
-      const gable = below
-        ? buildGableGeometries(below, roofInfills(below, floor, roof, reach))
-        : { body: null, faces: null }
+      // A gable is plastered and painted with the wall it stands on, on the face that looks outside.
+      const outside = below ? outsideFaces(below) : null
+      const gables = below
+        ? roofInfills(below, floor, roof, reach).map((infill) => {
+            const side = outside?.(infill.wall, 1) ? 1 : -1
+            const finish = resolveFinish(doc, infill.wall, side, outside?.(infill.wall, side) ?? true)
+            return { ...buildGableGeometries(below, [infill]), colour: finish.colour }
+          })
+        : []
       const grade = below ? supportGrade(below, pad) : outlineGrade(floor, pad)
       const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
       meshes.push({
@@ -596,7 +603,7 @@
         meshes: built,
         texture: coveringTexture(spec),
         colour: spec.colour,
-        gable,
+        gables,
         panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
         gutters: buildGutterParts(
           eaves,
@@ -977,16 +984,18 @@
           <T.MeshStandardMaterial color="#1e2a44" metalness={0.4} roughness={0.25} side={DoubleSide} />
         </T.Mesh>
       {/if}
-      {#if roof.gable.body}
-        <T.Mesh geometry={roof.gable.body} position.y={roof.y} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#6e6256" />
-        </T.Mesh>
-      {/if}
-      {#if roof.gable.faces}
-        <T.Mesh geometry={roof.gable.faces} position.y={roof.y} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
-        </T.Mesh>
-      {/if}
+      {#each roof.gables as gable, i (i)}
+        {#if gable.body}
+          <T.Mesh geometry={gable.body} position.y={roof.y} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={gable.colour ?? '#6e6256'} roughness={0.92} />
+          </T.Mesh>
+        {/if}
+        {#if gable.faces}
+          <T.Mesh geometry={gable.faces} position.y={roof.y} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={gable.colour ?? '#c4b5a0'} roughness={0.92} />
+          </T.Mesh>
+        {/if}
+      {/each}
     {/each}
 
     {#each walls === 'hidden' ? [] : wallMeshes.filter((wall) => shownFloor(wall.floorId)) as wall (wall.key)}

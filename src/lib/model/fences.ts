@@ -47,9 +47,18 @@ export const FENCES: readonly FenceSpec[] = [
     colour: '#7c5a3a',
     infill: '#9a7048',
   },
+  {
+    id: 'half-wall',
+    name: 'Half wall',
+    text: 'A low wall of plastered brick or block with a coping, round a garden, a deck or a stoep.',
+    postSpacing: 3,
+    postSize: 0.14,
+    colour: '#a8a39a',
+    infill: '#b7b2a8',
+  },
 ]
 
-export const FENCE_MIN_HEIGHT_M = 0.6
+export const FENCE_MIN_HEIGHT_M = 0.3
 export const FENCE_MAX_HEIGHT_M = 3
 export const DEFAULT_FENCE_HEIGHT_M = 1.8
 
@@ -66,7 +75,8 @@ export function fenceProblem(fence: Fence): string | null {
 }
 
 export function fencePosts(length: number, spec: FenceSpec): number[] {
-  if (length <= 1e-6) return []
+  // A half wall is one length of masonry; it has no posts.
+  if (length <= 1e-6 || spec.id === 'half-wall') return []
   const bays = Math.max(1, Math.ceil(length / spec.postSpacing - 1e-9))
   return Array.from({ length: bays + 1 }, (_, i) => (length * i) / bays)
 }

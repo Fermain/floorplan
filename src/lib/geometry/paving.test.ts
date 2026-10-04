@@ -48,6 +48,13 @@ describe('the apron', () => {
     expect(setProjectDefaults(house(), { apronWidth: 5 }).ok).toBe(false)
   })
 
+  it('goes round what is built, not round a patio marked off by logical walls', () => {
+    let doc = setProjectDefaults(house(), { apronWidth: 0.6 }).document
+    const before = pavingPieces(doc).find((item) => item.apron)!.area
+    doc = addWallRing(doc, doc.building.floors[0].id, [{ x: 4, z: 4 }, { x: 4, z: 1 }, { x: 12, z: 1 }, { x: 12, z: 4 }], 'logical').document
+    expect(pavingPieces(doc).find((item) => item.apron)!.area).toBeCloseTo(before, 3)
+  })
+
   it('stops at the boundary of the plot', () => {
     // A house half a metre in from the west boundary, with a metre of apron asked for.
     const base = fixtureDocument()

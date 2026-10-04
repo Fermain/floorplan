@@ -92,7 +92,7 @@ Double-click a wall to open it as a flat elevation. Place and size windows and d
 Each face of a wall is left exposed, bagged or plastered, and plastered and bagged faces take a paint colour. The project sets the finish outside and inside, and any face can differ. Skirting, cornice, fittings and gutters are set here as well.
 
 On a logical wall, Focus is where you choose what gets built along it:
-- **Fences:** steel palisade, welded mesh, precast concrete or timber slats, at any height from 600 to 3000 mm.
+- **Fences:** steel palisade, welded mesh, precast concrete, timber slats or a low plastered half wall, at any height from 300 to 3000 mm.
 - **Supports:** a classical precast column, a pier in the project's own block, a steel post or a treated timber pole, at a spacing you set.
 
 <p>
