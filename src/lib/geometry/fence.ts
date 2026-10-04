@@ -83,6 +83,17 @@ export function buildFenceParts(frame: Frame, fence: Fence, baseAt: (u: number) 
   const infill: Box[] = []
   const rails: Box[] = []
   const panel: Box[] = []
+  if (fence.type === 'half-wall') {
+    // One length of wall, stepped down the slope in 1.2 m lengths, under a coping a little wider than it.
+    const lengths = Math.max(1, Math.ceil(frame.length / 1.2))
+    for (let i = 0; i < lengths; i++) {
+      const [a, b] = [(frame.length * i) / lengths, (frame.length * (i + 1)) / lengths]
+      const base = Math.min(baseAt(a), baseAt(b))
+      const top = Math.max(baseAt(a), baseAt(b)) + h
+      infill.push({ u0: a, u1: b, y0: base - 0.05, y1: top - 0.05, depth: spec.postSize })
+      rails.push({ u0: a, u1: b, y0: top - 0.05, y1: top, depth: spec.postSize + 0.06 })
+    }
+  }
   for (let i = 0; i < posts.length - 1; i++) {
     const a = posts[i] + half
     const b = posts[i + 1] - half

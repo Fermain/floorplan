@@ -39,7 +39,7 @@ export type WallSkin = 'single' | 'double' | 'logical'
 
 export type WallSystemId = 'clay-cavity' | 'clay-solid' | 'clay-single' | 'maxi-140' | 'block-140' | 'block-90'
 
-export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber'
+export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber' | 'half-wall'
 
 export type Fence = {
   type: FenceType
@@ -166,6 +166,7 @@ export type Floor = {
   spaces?: Space[]
   stairs?: Stair[]
   fixtures?: Fixture[]
+  counters?: Counter[]
   outline?: { x: number; z: number }[][]
   roof?: Roof
 }
@@ -255,6 +256,48 @@ export type SiteServices = {
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
 }
 
+// A run of kitchen counter: cupboards under a worktop. It is placed by the start of its back edge, the way it
+// runs, and its length; its depth comes out to the left of the way it runs, so a counter drawn along a wall runs
+// with the room on its left.
+export type CounterKind = 'base' | 'island' | 'bar'
+export type CounterTop = 'laminate' | 'granite' | 'timber'
+export type Counter = {
+  id: string
+  x: number
+  z: number
+  dx: number
+  dz: number
+  length: number
+  depth: number
+  kind: CounterKind
+  top: CounterTop
+  // Cupboards on the wall above it.
+  wallUnits?: boolean
+}
+
+// A carport: a roof on posts with no walls, standing free on the ground. It is placed by its middle and the way
+// its cars drive in, and sized by how many cars it takes side by side.
+export type CarportRoof = 'sheet' | 'shade-cloth'
+export type Carport = {
+  id: string
+  x: number
+  z: number
+  // The unit direction cars drive in along.
+  dx: number
+  dz: number
+  bays: 1 | 2 | 3
+  roof: CarportRoof
+}
+
+// A retaining wall: a wall along a line on the ground that holds the higher ground on one side back from the
+// lower ground on the other. How much it holds comes from the ground itself; the wall does not reshape it.
+export type RetainingType = 'blocks' | 'masonry' | 'concrete'
+export type RetainingWall = {
+  id: string
+  points: [number, number][]
+  type: RetainingType
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
@@ -262,6 +305,8 @@ export type Document = {
   costing?: Costing
   services?: SiteServices
   paving?: PavingArea[]
+  carports?: Carport[]
+  retaining?: RetainingWall[]
 }
 
 export type DerivedRoom = {

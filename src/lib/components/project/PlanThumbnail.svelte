@@ -1,6 +1,7 @@
 <script lang="ts">
   import { solidWallPolygonsForFloor } from '$lib/export/svg'
   import { PAVING, pavingPieces } from '$lib/geometry/paving'
+  import { carportRing, carportRoofSpec } from '$lib/model/carports'
   import { roadReach, roadStrips } from '$lib/geometry/roads'
   import type { Document } from '$lib/model/types'
 
@@ -37,6 +38,9 @@
         fill-rule="evenodd"
         fill={PAVING[piece.surface].colour}
       />
+    {/each}
+    {#each document.carports ?? [] as carport (carport.id)}
+      <polygon points={points(carportRing(carport))} fill={carportRoofSpec(carport.roof).colour} fill-opacity="0.7" />
     {/each}
     {#each walls as polygon, i (i)}
       <polygon points={polygon.map(([x, z]) => `${x},${z}`).join(' ')} fill="#18181b" />

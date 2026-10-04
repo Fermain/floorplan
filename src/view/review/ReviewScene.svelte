@@ -49,6 +49,9 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
+  import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
+  import { buildRetainingParts, pinchedGround, retainingDistance, RETAINING_GROUND_REACH_M, type RetainingPart } from '../../lib/geometry/retaining'
+  import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
@@ -106,7 +109,8 @@
     meshes: RoofMeshes
     texture: CanvasTexture | null
     colour: string
-    gable: { body: BufferGeometry | null; faces: BufferGeometry | null }
+    // The gable built up over each end wall, with the colour of that wall's outside finish if it has one.
+    gables: { body: BufferGeometry | null; faces: BufferGeometry | null; colour: string | null }[]
     panels: BufferGeometry | null
     gutters: GutterPart[]
     y: number
@@ -120,6 +124,9 @@
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
+  let carportMeshes = $state<CarportPart[]>([])
+  let retainingMeshes = $state<RetainingPart[]>([])
+  let counterMeshes = $state<{ key: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -151,6 +158,12 @@
     return { x: sx / n, y: 2, z: sz / n }
   })
 
+  // Plan coordinates run x east and z north. three.js is right-handed with y up, so drawn as they stand the
+  // model would be a mirror image of the plan. The scene is therefore drawn with z turned over: in the 3D world
+  // z runs south. Everything placed in the world from plan coordinates outside the mirrored group (the camera,
+  // the sun, the sky) goes through here, and points picked in the world come back the same way.
+  const across = (z: number) => -z
+
   let stableTarget: [number, number, number] = [0, 2, 0]
   let stableCamera: [number, number, number] = [14, 12, 14]
 
@@ -175,20 +188,20 @@
   })
 
   const orbitTarget = $derived.by(() => {
-    const next: [number, number, number] = [focus.x, plotCenter.y, focus.z]
+    const next: [number, number, number] = [focus.x, plotCenter.y, across(focus.z)]
     if (sameTriple(stableTarget, next)) return stableTarget
     stableTarget = next
     return stableTarget
   })
 
   const cameraPosition = $derived.by(() => {
-    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, focus.z + focus.reach]
+    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, across(focus.z + focus.reach)]
     if (sameTriple(stableCamera, next)) return stableCamera
     stableCamera = next
     return stableCamera
   })
 
-  const sun = $derived(
+  const sunOnPlan = $derived(
     sunDirection(
       sunDate,
       doc.plot.latitude,
@@ -196,6 +209,8 @@
       doc.plot.northBearingDeg,
     ),
   )
+  // The way to the sun in the 3D world.
+  const sun = $derived({ x: sunOnPlan.x, y: sunOnPlan.y, z: across(sunOnPlan.z) })
 
   // The sun fades as it sets: no light, and no shadows thrown upwards, from below the horizon.
   const sunStrength = $derived(1.25 * Math.min(1, Math.max(0, (sun.y + 0.02) / 0.15)))
@@ -210,7 +225,7 @@
   const lightPosition = $derived([
     plotCenter.x + sun.x * (20 + shadowReach),
     plotCenter.y + sun.y * (20 + shadowReach),
-    plotCenter.z + sun.z * (20 + shadowReach),
+    across(plotCenter.z) + sun.z * (20 + shadowReach),
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
@@ -286,7 +301,7 @@
     let best: { id: string; d: number } | null = null
     for (const fixture of floor.fixtures ?? []) {
       const ring = fixtureFootprint(fixture).map((p) => ({ x: p.x, z: p.z }))
-      const d = pointInRing(ring, point.x, point.z) ? 0 : ringDistance(ring, point.x, point.z)
+      const d = pointInRing(ring, point.x, across(point.z)) ? 0 : ringDistance(ring, point.x, across(point.z))
       if (d < 0.15 && (!best || d < best.d)) best = { id: fixture.id, d }
     }
     return best ? { kind: 'fixture', floorId, fixtureId: best.id } : null
@@ -401,16 +416,32 @@
     const lawn = new Color(LAWN)
     const veld = new Color(VELD)
     const tint = new Color()
-    const ground = buildGroundGeometry(surroundings, (x, z) => {
-      const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
-      tint.copy(lawn).lerp(veld, out)
-      return [tint.r, tint.g, tint.b]
-    })
+    // The ground as it lies, and as it is drawn: brought in to meet the top and the foot of each retaining wall.
+    const lies = (x: number, z: number) => bilinearHeight(surroundings, x, z)
+    const groundAt = pinchedGround(doc, lies)
+    const held = (doc.retaining ?? []).length > 0
+    const nearWall = RETAINING_GROUND_REACH_M + surroundings.cellSize * 0.75
+    const ground = buildGroundGeometry(
+      surroundings,
+      (x, z) => {
+        const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
+        tint.copy(lawn).lerp(veld, out)
+        return [tint.r, tint.g, tint.b]
+      },
+      held ? { fine: (x, z) => retainingDistance(doc, x, z) < nearWall, heightAt: groundAt, divisions: Math.max(2, Math.round(surroundings.cellSize / 0.125)) } : undefined,
+    )
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
-    const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
-    const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
-    const minor = lineGeometry(contours.minor)
-    const major = lineGeometry(contours.major)
+    const roadParts = buildRoadParts(doc.plot, groundAt)
+    const pavingParts = buildPavingParts(doc, groundAt)
+    const carportParts = buildCarportParts(doc, groundAt)
+    const retainingParts = buildRetainingParts(doc, lies)
+    // A contour is left out where the ground under it has been drawn in to a wall.
+    const settled = (lines: Float32Array) => (held ? lines.filter((_, i) => {
+      const at = i - (i % 6)
+      return [0, 3].every((o) => Math.abs(groundAt(lines[at + o], lines[at + o + 2]) - lies(lines[at + o], lines[at + o + 2])) < 0.004)
+    }) : lines)
+    const minor = lineGeometry(settled(contours.minor))
+    const major = lineGeometry(settled(contours.major))
     const built: WallMeshes[] = []
     const fences: { key: string; parts: FencePart[] }[] = []
     const pillars: { key: string; parts: PillarPart[] }[] = []
@@ -490,9 +521,18 @@
           parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
         }
       })
+    const counters = floors
+      .filter((floor) => (floor.counters ?? []).length > 0)
+      .map((floor) => {
+        const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
+        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor)) }
+      })
+    counterMeshes = counters
     groundGeometry = ground
     roadMeshes = roadParts
     pavingMeshes = pavingParts
+    carportMeshes = carportParts
+    retainingMeshes = retainingParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -507,11 +547,14 @@
     return () => {
       for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
+      for (const counter of counters) for (const part of counter.parts) part.geometry.dispose()
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
       for (const part of pavingParts) part.geometry.dispose()
+      for (const part of carportParts) part.geometry.dispose()
+      for (const part of retainingParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -529,10 +572,10 @@
         roof.meshes.top?.dispose()
         roof.meshes.under?.dispose()
         roof.meshes.edges?.dispose()
-        roof.gable.body?.dispose()
+        for (const gable of roof.gables) gable.body?.dispose()
         roof.panels?.dispose()
         for (const part of roof.gutters) part.geometry.dispose()
-        roof.gable.faces?.dispose()
+        for (const gable of roof.gables) gable.faces?.dispose()
       }
       for (const stair of stairs) stair.geometry.dispose()
     }
@@ -578,9 +621,15 @@
       const built = buildRoofMeshes(floor, roof, reach)
       if (!built.top) continue
       const spec = coveringOf(roof)
-      const gable = below
-        ? buildGableGeometries(below, roofInfills(below, floor, roof, reach))
-        : { body: null, faces: null }
+      // A gable is plastered and painted with the wall it stands on, on the face that looks outside.
+      const outside = below ? outsideFaces(below) : null
+      const gables = below
+        ? roofInfills(below, floor, roof, reach).map((infill) => {
+            const side = outside?.(infill.wall, 1) ? 1 : -1
+            const finish = resolveFinish(doc, infill.wall, side, outside?.(infill.wall, side) ?? true)
+            return { ...buildGableGeometries(below, [infill]), colour: finish.colour }
+          })
+        : []
       const grade = below ? supportGrade(below, pad) : outlineGrade(floor, pad)
       const supportDatum = below?.datumHeight ?? floor.datumHeight - FLOOR_TO_FLOOR
       meshes.push({
@@ -588,7 +637,7 @@
         meshes: built,
         texture: coveringTexture(spec),
         colour: spec.colour,
-        gable,
+        gables,
         panels: panelGeometry(solar.panelSpots.filter((spot) => spot.floorId === floor.id)),
         gutters: buildGutterParts(
           eaves,
@@ -766,7 +815,7 @@
   }
 
   function configureSunLight(light: import('three').DirectionalLight) {
-    light.target.position.set(plotCenter.x, plotCenter.y, plotCenter.z)
+    light.target.position.set(plotCenter.x, plotCenter.y, across(plotCenter.z))
     light.shadow.mapSize.set(2048, 2048)
     light.shadow.camera.near = 1
     light.shadow.camera.far = 40 + shadowReach * 2
@@ -786,8 +835,8 @@
     const lifted = liftAboveGround(
       camera.position.y,
       controls.target.y,
-      bilinearHeight(displayField, camera.position.x, camera.position.z),
-      bilinearHeight(displayField, controls.target.x, controls.target.z),
+      bilinearHeight(displayField, camera.position.x, across(camera.position.z)),
+      bilinearHeight(displayField, controls.target.x, across(controls.target.z)),
     )
     camera.position.y = lifted.cameraY
     controls.target.y = lifted.targetY
@@ -804,7 +853,7 @@
       makeDefault
       position={cameraPosition}
       oncreate={(ref) => {
-        ref.lookAt(focus.x, plotCenter.y, focus.z)
+        ref.lookAt(focus.x, plotCenter.y, across(focus.z))
       }}
     >
       <OrbitControls
@@ -819,7 +868,7 @@
       />
     </T.PerspectiveCamera>
 
-    <ReviewSky {sun} centre={plotCenter} />
+    <ReviewSky {sun} centre={{ x: plotCenter.x, y: plotCenter.y, z: across(plotCenter.z) }} />
     <ReviewCutaway depth={cutDepth} shape={cutShape} />
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
@@ -831,6 +880,8 @@
       }}
     />
 
+    <!-- The model, drawn with z turned over so that it matches the plan rather than mirroring it. -->
+    <T.Group scale.z={-1}>
     {#if groundGeometry}
       <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial vertexColors roughness={0.95} />
@@ -839,6 +890,16 @@
     {#each roadMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each retainingMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each carportMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.8} side={DoubleSide} transparent={part.opacity < 1} opacity={part.opacity} />
       </T.Mesh>
     {/each}
     {#each pavingMeshes as part (part.geometry.uuid)}
@@ -893,6 +954,15 @@
       </T.Group>
     {/each}
 
+    {#each counterMeshes.filter((counter) => shownFloor(counter.key)) as counter (counter.key)}
+      <T.Group userData={halfCut(counter.datum)}>
+        {#each counter.parts as part (part.geometry.uuid)}
+          <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={part.colour} roughness={0.6} />
+          </T.Mesh>
+        {/each}
+      </T.Group>
+    {/each}
     {#each fixtureMeshes.filter((fitting) => shownFloor(fitting.key)) as fitting (fitting.key)}
       <T.Group userData={halfCut(fitting.datum)}>
       {#each fitting.parts as part (part.geometry.uuid)}
@@ -967,16 +1037,18 @@
           <T.MeshStandardMaterial color="#1e2a44" metalness={0.4} roughness={0.25} side={DoubleSide} />
         </T.Mesh>
       {/if}
-      {#if roof.gable.body}
-        <T.Mesh geometry={roof.gable.body} position.y={roof.y} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#6e6256" />
-        </T.Mesh>
-      {/if}
-      {#if roof.gable.faces}
-        <T.Mesh geometry={roof.gable.faces} position.y={roof.y} castShadow receiveShadow>
-          <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
-        </T.Mesh>
-      {/if}
+      {#each roof.gables as gable, i (i)}
+        {#if gable.body}
+          <T.Mesh geometry={gable.body} position.y={roof.y} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={gable.colour ?? '#6e6256'} roughness={0.92} />
+          </T.Mesh>
+        {/if}
+        {#if gable.faces}
+          <T.Mesh geometry={gable.faces} position.y={roof.y} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={gable.colour ?? '#c4b5a0'} roughness={0.92} />
+          </T.Mesh>
+        {/if}
+      {/each}
     {/each}
 
     {#each walls === 'hidden' ? [] : wallMeshes.filter((wall) => shownFloor(wall.floorId)) as wall (wall.key)}
@@ -1056,6 +1128,7 @@
         <T.LineBasicMaterial color={box.colour} depthTest={false} transparent opacity={0.9} />
       </T.LineSegments>
     {/each}
+    </T.Group>
     </ReviewInteractivity>
   </Canvas>
   {#if chosenWall}

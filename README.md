@@ -74,6 +74,9 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 - **Several buildings:** a plot can hold more than one building, each with its own storeys and roof.
 - **Fittings:** sockets, switches, lights, sanitary ware, geysers, gas appliances and bottles, and rainwater tanks. A room can be fitted out in one step, and tanks snap under downpipes.
 - **Paving:** driveways, paths and patios are drawn on the ground as rectangles or outlines, in concrete, cement or clay pavers, gravel or grass blocks. An apron round the house is a project setting.
+- **Counters:** kitchen counters drawn along the inside face of a wall, and islands and bars standing free, with a choice of worktop and cupboards on the wall above. **Lay out this room** on a room's panel closes the plan in on that room and veils the rest.
+- **Retaining walls:** drawn point to point along the foot of a bank, in retaining blocks, brick or concrete. What each holds back is read from the ground as it lies. Review builds retaining blocks (Löffelstein) course by course, leaning back up the bank with a stepped top, and draws the ground in to meet the top and the foot of the wall. Over a metre is flagged as needing an engineer.
+- **Carports:** a roof on posts, standing free, for one, two or three cars, under steel sheeting or shade cloth. R turns it before you place it, and its corners snap to the house, the plot and paving.
 - **Road access:** mark which sides of the plot face a street.
 - **Logical walls:** these divide or close off a space without building anything. They can carry a fence or supports, and a roof may rest on them.
 - **Storeys:** add up to four. Each upper storey stands only on the rooms enclosed below it, so a roof or a floor never floats over open ground.
@@ -92,7 +95,7 @@ Double-click a wall to open it as a flat elevation. Place and size windows and d
 Each face of a wall is left exposed, bagged or plastered, and plastered and bagged faces take a paint colour. The project sets the finish outside and inside, and any face can differ. Skirting, cornice, fittings and gutters are set here as well.
 
 On a logical wall, Focus is where you choose what gets built along it:
-- **Fences:** steel palisade, welded mesh, precast concrete or timber slats, at any height from 600 to 3000 mm.
+- **Fences:** steel palisade, welded mesh, precast concrete, timber slats or a low plastered half wall, at any height from 300 to 3000 mm.
 - **Supports:** a classical precast column, a pier in the project's own block, a steel post or a treated timber pole, at a spacing you set.
 
 <p>

@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { cornerById } from '../model/geom'
 import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
 import type { Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
+import { settleAgainstCounters } from './counters'
 import { wallReach } from './outline'
 import { floorWorldDatum, groundPad, levelField, padBleed, pointInRing, ringDistance, wallDatum, type LevelPad, type Ring } from './pad'
 import { floorCells, ringLabelPoint, type WallSide } from './spaces'
@@ -205,9 +206,13 @@ export function placeFixture(
       const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
       if (!pointInRing(ring, mid.x + n.x * 0.01, mid.z + n.z * 0.01)) n = { x: -n.x, z: -n.z }
       const half = size.width / 2
-      const s = Math.min(edge - half, Math.max(half, dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)))
+      const raw = dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)
+      // A kitchen fitting settles against the counters on this wall: a sink flush with one, a stove beside one.
+      const s = Math.min(edge - half, Math.max(half, settleAgainstCounters(floor, kind, a, t, n, raw, half)))
       const fixture = against({ x: a.x + t.x * s, z: a.z + t.z * s }, n, kind, spec.y, setup)
-      consider(fixture, fixtureFootprint(fixture).every((point) => pointInRing(ring, point.x, point.z)))
+      // Judged from where it stood before a counter drew it along the wall.
+      const drawn = s - Math.min(edge - half, Math.max(half, raw))
+      consider(fixture, fixtureFootprint(fixture).every((point) => pointInRing(ring, point.x, point.z)), { x: fixture.x - t.x * drawn, z: fixture.z - t.z * drawn })
     }
   }
   if (spec.outside || either) {

@@ -39,8 +39,12 @@ export function bilinearHeight(
   return h0 * (1 - fv) + h1 * fv
 }
 
-// The ground as a mesh; colourAt, if given, tints each point (as linear RGB, 0 to 1).
-export function buildGroundGeometry(field: Heightfield, colourAt?: (x: number, z: number) => [number, number, number]): BufferGeometry {
+// Where the ground is drawn more finely than the survey, and its height there.
+export type GroundDetail = { fine: (x: number, z: number) => boolean; heightAt: (x: number, z: number) => number; divisions?: number }
+
+// The ground as a mesh; colourAt, if given, tints each point (as linear RGB, 0 to 1). A cell that detail calls fine
+// is cut into smaller squares and takes its heights from detail; that must agree with the survey round its edge.
+export function buildGroundGeometry(field: Heightfield, colourAt?: (x: number, z: number) => [number, number, number], detail?: GroundDetail): BufferGeometry {
   const positions: number[] = []
   const colours: number[] = []
   const indices: number[] = []
@@ -60,7 +64,29 @@ export function buildGroundGeometry(field: Heightfield, colourAt?: (x: number, z
       const i10 = i00 + 1
       const i01 = i00 + cols
       const i11 = i01 + 1
-      indices.push(i00, i01, i10, i10, i01, i11)
+      const x0 = field.originX + c * field.cellSize
+      const z0 = field.originZ + r * field.cellSize
+      if (!detail?.fine(x0 + field.cellSize / 2, z0 + field.cellSize / 2)) {
+        indices.push(i00, i01, i10, i10, i01, i11)
+        continue
+      }
+      const n = detail.divisions ?? 8
+      const first = positions.length / 3
+      for (let v = 0; v <= n; v++) {
+        for (let u = 0; u <= n; u++) {
+          const x = x0 + (u / n) * field.cellSize
+          const z = z0 + (v / n) * field.cellSize
+          positions.push(x, detail.heightAt(x, z), z)
+          if (colourAt) colours.push(...colourAt(x, z))
+        }
+      }
+      for (let v = 0; v < n; v++) {
+        for (let u = 0; u < n; u++) {
+          const j00 = first + v * (n + 1) + u
+          const j01 = j00 + n + 1
+          indices.push(j00, j01, j00 + 1, j00 + 1, j01, j01 + 1)
+        }
+      }
     }
   }
   const geometry = new BufferGeometry()
