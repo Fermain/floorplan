@@ -4,7 +4,8 @@ import { counterRing } from '../model/counters'
 import { addCounter, addFixture, addWallRing, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterFace, counterIssues, counterTotals } from './counters'
+import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, counterTotals } from './counters'
+import { placeFixture } from './fixtures'
 
 // A room from (4, 4) to (10, 9), in cavity brick 262 mm thick.
 function room(): Document {
@@ -137,5 +138,54 @@ describe('counters', () => {
     expect(counterIssues(through).map((issue) => issue.text)).toEqual(['A counter runs through the electric stove. Stop the counter at its side, or move one of them.'])
     const beside = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 2 }).document
     expect(counterIssues(beside)).toEqual([])
+  })
+
+  it('draw a sink flush with a counter and a stove to its side when those are placed', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    // A counter along the south wall from x = 5 to 8.
+    doc = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 3 }).document
+    const floor = floorOf(doc)
+    const left = (placed: { fixture: { x: number; z: number; dx: number; dz: number; kind: string } }, width: number) => placed.fixture.x - width / 2
+    // A sink dropped 100 mm shy of the counter's start sits flush with it, inside the counter.
+    const sink = placeFixture(floor, { x: 5.7, z: 4.6 }, 'sink', { x: 0, z: 1 })
+    expect(sink.problem).toBeNull()
+    expect(left(sink, 1.2)).toBeCloseTo(5, 6)
+    // A stove dropped in the middle of the counter goes to the nearer end, outside it.
+    const stove = placeFixture(floor, { x: 7.4, z: 4.6 }, 'stove', { x: 0, z: 1 })
+    expect(left(stove, 0.6)).toBeCloseTo(8, 6)
+    // Well clear of the counter, a fitting goes where it is put.
+    const clear = placeFixture(floor, { x: 9.1, z: 4.6 }, 'stove', { x: 0, z: 1 })
+    expect(clear.fixture.x).toBeCloseTo(9.1, 6)
+    // And with no counters, nothing changes.
+    expect(placeFixture(floorOf(room()), { x: 5.7, z: 4.6 }, 'sink', { x: 0, z: 1 }).fixture.x).toBeCloseTo(5.7, 6)
+  })
+
+  it('are carried along their wall, or to another, by the point they were picked up by', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    doc = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 2 }).document
+    const floor = floorOf(doc)
+    const counter = floor.counters![0]
+    // Picked up 0.5 m along it and carried 1 m along the wall.
+    const slid = counterCarried(floor, counter, { x: 6.52, z: 4.4 }, 0.5, 0.9)!
+    expect(slid).toMatchObject({ dx: 1, dz: 0 })
+    // It lands within 25 mm of where it was carried to, a whole number of 50 mm steps from the wall's corner.
+    expect(Math.abs(slid.x - 6.02)).toBeLessThanOrEqual(0.025 + 1e-9)
+    const fromCorner = (slid.x - 4) / 0.05
+    expect(Math.abs(fromCorner - Math.round(fromCorner))).toBeLessThan(1e-6)
+    expect(slid.z).toBeCloseTo(backZ, 6)
+    // Carried past the end of the wall, it stops at the corner.
+    const end = counterCarried(floor, counter, { x: 9.9, z: 4.4 }, 0.5, 0.9)!
+    const far = counterRing({ ...counter, ...end }).map((p) => p.x)
+    expect(Math.max(...far)).toBeLessThanOrEqual(10)
+    // Carried to the west wall, it turns to stand against that, still with the room in front of it.
+    const turned = counterCarried(floor, counter, { x: 4.3, z: 7 }, 0.5, 0.9)!
+    expect(Math.abs(turned.dz)).toBeCloseTo(1, 6)
+    expect(Math.max(...counterRing({ ...counter, ...turned }).map((p) => p.x))).toBeGreaterThan(4.6)
+    // In the middle of the room there is no wall to stand against.
+    expect(counterCarried(floor, counter, { x: 7, z: 6.5 }, 0.5, 0.9)).toBeNull()
   })
 })

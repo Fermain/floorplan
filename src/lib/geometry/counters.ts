@@ -47,6 +47,46 @@ export type FaceSpan = { from: number; to: number; stop: boolean; kind: FixtureK
 // left, how far the face goes each way from that point, and the kitchen fittings standing against it.
 export type CounterFace = { wallId: string; point: Point; dir: Point; before: number; after: number; spans: FaceSpan[] }
 
+// Where a kitchen fitting sliding along a wall settles against the counters on that wall. It is given by how far
+// its middle is along the wall from a point on the wall's face, the way along the wall and the way into the room.
+// A stove or a washing machine stands beside a counter, never in it; a sink unit sits flush with a counter's end,
+// inside it or butted up to it.
+export function settleAgainstCounters(floor: Floor, kind: FixtureKind, origin: Point, along: Point, into: Point, at: number, half: number, snap = 0.2): number {
+  const stop = COUNTER_STOPS.includes(kind)
+  if (!stop && !COUNTER_JOINS.includes(kind)) return at
+  let best: { s: number; d: number } | null = null
+  const consider = (s: number) => {
+    const d = Math.abs(s - at)
+    if (d <= snap && (!best || d < best.d)) best = { s, d }
+  }
+  const runs: [number, number][] = []
+  for (const counter of floor.counters ?? []) {
+    if (counter.kind !== 'base') continue
+    // On this wall: running along it, with its back on the face.
+    if (Math.abs(counter.dx * along.z - counter.dz * along.x) > 0.02) continue
+    const back = (counter.x - origin.x) * into.x + (counter.z - origin.z) * into.z
+    if (Math.abs(back) > 0.15) continue
+    const start = (counter.x - origin.x) * along.x + (counter.z - origin.z) * along.z
+    const end = start + (counter.dx * along.x + counter.dz * along.z) * counter.length
+    const [from, to] = [Math.min(start, end), Math.max(start, end)]
+    runs.push([from, to])
+    consider(from - half)
+    consider(to + half)
+    if (!stop) {
+      consider(from + half)
+      consider(to - half)
+    }
+  }
+  let settled = (best as { s: number; d: number } | null)?.s ?? at
+  if (stop) {
+    // Dropped on a counter, it goes to the nearer end of it.
+    for (const [from, to] of runs) {
+      if (settled > from - half + 1e-6 && settled < to + half - 1e-6) settled = settled - (from - half) < to + half - settled ? from - half : to + half
+    }
+  }
+  return settled
+}
+
 // The kitchen fittings standing against a face, as stretches along it.
 function faceSpans(floor: Floor, point: Point, dir: Point): FaceSpan[] {
   const out = { x: -dir.z, z: dir.x }
@@ -128,6 +168,16 @@ export function counterAlongFace(face: CounterFace, p: Point, depth: number, sna
     length: Math.abs(t),
     depth,
   }
+}
+
+// A counter against a wall, picked up and carried: it goes to the wall face nearest the pointer and slides along
+// it, keeping the point it was picked up by under the pointer, to the nearest 50 mm and no further than the wall.
+export function counterCarried(floor: Floor, counter: Counter, pointer: Point, grabAlong: number, reach: number): Pick<Counter, 'x' | 'z' | 'dx' | 'dz'> | null {
+  const face = counterFace(floor, pointer, reach)
+  if (!face || face.before + face.after < counter.length - 1e-6) return null
+  // In 50 mm steps from the end of the wall, so that it lands a round distance from the corner.
+  const start = Math.max(-face.before, Math.min(face.after - counter.length, step(face.before - grabAlong) - face.before))
+  return { x: face.point.x + face.dir.x * start, z: face.point.z + face.dir.z * start, dx: face.dir.x, dz: face.dir.z }
 }
 
 // A free-standing counter from one corner to the opposite one, square to the given direction.

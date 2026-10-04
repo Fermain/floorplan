@@ -79,7 +79,7 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, snapCarport } from '../../lib/geometry/carports'
-  import { counterAlongFace, counterAt, counterBetween, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
+  import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
   import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
@@ -223,6 +223,8 @@
   let selectedBend = $state<number | null>(null)
   // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
   // A fitting being dragged in Select: where it would land, re-snapped to the walls as it goes.
+  // A counter being dragged: where along it (and across it) it was picked up, and where it would be set down.
+  let counterMove = $state<{ id: string; grabAlong: number; grabOut: number; preview: Counter | null } | null>(null)
   let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
   let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
@@ -922,6 +924,14 @@
       const worktop = counterAt(activeFloor, plan)
       if (worktop) {
         chooseSelection({ counter: worktop.id })
+        // A counter can be dragged: along its wall or to another, or anywhere if it stands free.
+        counterMove = {
+          id: worktop.id,
+          grabAlong: (plan.x - worktop.x) * worktop.dx + (plan.z - worktop.z) * worktop.dz,
+          grabOut: (plan.x - worktop.x) * -worktop.dz + (plan.z - worktop.z) * worktop.dx,
+          preview: null,
+        }
+        svgEl?.setPointerCapture(event.pointerId)
         return
       }
       const fixture = fixtureAt(plan.x, plan.z)
@@ -1082,6 +1092,21 @@
       if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
       return
     }
+    if (counterMove) {
+      const moving = counterMove
+      const item = activeFloor?.counters?.find((entry) => entry.id === moving.id)
+      if (!activeFloor || !item) return
+      if (item.kind === 'base') {
+        const carried = counterCarried(activeFloor, item, plan, moving.grabAlong, Math.max(0.9, s(0.6)))
+        if (carried) counterMove = { ...moving, preview: { ...item, ...carried } }
+      } else {
+        const snap = (value: number) => Math.round(value * 20) / 20
+        const x = snap(plan.x - item.dx * moving.grabAlong + item.dz * moving.grabOut)
+        const z = snap(plan.z - item.dz * moving.grabAlong - item.dx * moving.grabOut)
+        counterMove = { ...moving, preview: { ...item, x, z } }
+      }
+      return
+    }
     if (fixtureMove) {
       const moving = fixtureMove
       const floor = levelFloors.find((item) => item.id === moving.floorId)
@@ -1130,6 +1155,13 @@
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
+    }
+    const carried = counterMove
+    if (carried) {
+      counterMove = null
+      const next = carried.preview
+      if (next && activeFloor) applyResult(documentStore.updateCounter(activeFloor.id, carried.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz }))
+      return
     }
     const moved = fixtureMove
     if (moved) {
@@ -3179,7 +3211,7 @@
     {/snippet}
     <g class="counters" pointer-events="none">
       {#each activeFloor?.counters ?? [] as counter (counter.id)}
-        {@render counterShape(counter, selectedCounter === counter.id ? 'picked' : 'set')}
+        {@render counterShape(counterMove?.id === counter.id && counterMove.preview ? counterMove.preview : counter, selectedCounter === counter.id ? 'picked' : 'set')}
       {/each}
       {#if counterDraft && counterDraft.counter.length > 0}
         {@render counterShape(counterDraft.counter, counterDraft.problem ? 'refused' : 'draft')}
