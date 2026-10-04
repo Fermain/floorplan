@@ -3,7 +3,7 @@ import { takeoff } from '../cost/quantities'
 import { addRetainingWall, removeRetainingWall, updateRetainingWall } from '../model/mutations'
 import type { Document, RetainingWall } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildRetainingParts, groundOf, measureRetaining, retainingAt, retainingIssues, retainingSamples, retainingTotals } from './retaining'
+import { buildRetainingParts, groundOf, measureRetaining, pinchedGround, RETAINING_BLOCK, retainingAt, retainingIssues, retainingSamples, retainingTotals } from './retaining'
 
 // A bank across the plot: the ground steps up by `rise` over a metre either side of x = 8.
 function banked(rise: number): Document {
@@ -69,11 +69,48 @@ describe('retaining walls', () => {
     expect(retainingAt(doc, { x: 8.2, z: 9 }, 0.3)?.id).toBe(doc.retaining![0].id)
     expect(retainingAt(doc, { x: 9, z: 9 }, 0.3)).toBeNull()
     expect(retainingAt(doc, { x: 8, z: 13 }, 0.3)).toBeNull()
-    const parts = buildRetainingParts(doc, groundOf(doc))
-    expect(parts).toHaveLength(1)
-    const ys = Array.from(parts[0].geometry.getAttribute('position').array).filter((_, i) => i % 3 === 1)
-    expect(Math.max(...ys)).toBeCloseTo(0.85, 1)
-    expect(Math.min(...ys)).toBeLessThan(0)
+  })
+
+  it('are built in level courses, so the top steps rather than following the ground', () => {
+    // Ground that climbs along the wall as well as across it.
+    const ground = (x: number, z: number) => (x > 8 ? 1 : 0) * (0.4 + (z - 6) * 0.1)
+    const doc = addRetainingWall(banked(0.8), along).document
+    for (const type of ['blocks', 'masonry', 'concrete'] as const) {
+      const built = buildRetainingParts(updateRetainingWall(doc, doc.retaining![0].id, { type }).document, ground)
+      // Blocks come with the soil in their tops as a part of its own.
+      expect(built).toHaveLength(type === 'blocks' ? 2 : 1)
+      const ys = Array.from(built[0].geometry.getAttribute('position').array).filter((_, i) => i % 3 === 1)
+      const tops = [...new Set(ys.filter((y) => y > 0.1).map((y) => Math.round(y * 1000) / 1000))]
+      expect(tops.length).toBeGreaterThan(1)
+      expect(tops.every((y) => Math.abs(y / RETAINING_BLOCK.height - Math.round(y / RETAINING_BLOCK.height)) < 1e-6)).toBe(true)
+      expect(Math.max(...ys)).toBeCloseTo(1, 1)
+      expect(Math.min(...ys)).toBeLessThan(0)
+    }
+  })
+
+  it('lean back up the bank when built of blocks, a course at a time', () => {
+    const doc = addRetainingWall(banked(0.8), along).document
+    const xs = Array.from(buildRetainingParts(doc, (x) => (x > 8 ? 0.8 : 0))[0].geometry.getAttribute('position').array).filter((_, i) => i % 3 === 0)
+    // Five courses from one bedded under the ground to the top: four steps of 50 mm up the bank, which is to the east.
+    expect(Math.max(...xs)).toBeCloseTo(8 + RETAINING_BLOCK.depth / 2 + 4 * RETAINING_BLOCK.setback, 2)
+    expect(Math.min(...xs)).toBeCloseTo(8 - RETAINING_BLOCK.depth / 2, 2)
+  })
+
+  it('draw the ground in to the top and the foot of the wall, and nowhere else', () => {
+    const doc = addRetainingWall({ ...banked(0.8), retaining: undefined }, { ...along, type: 'concrete' }).document
+    const slope = (x: number) => Math.max(0, Math.min(1, (x - 7) / 2)) * 0.8
+    const lies = (x: number) => slope(x)
+    const ground = pinchedGround(doc, lies)
+    // Level with the top just behind the wall and with its foot just in front, halfway along.
+    expect(ground(8.05, 9)).toBeCloseTo(0.8, 1)
+    expect(ground(7.95, 9)).toBeCloseTo(0, 1)
+    // A metre out, past either end and at the very end, the ground is as it lies.
+    expect(ground(9.2, 9)).toBeCloseTo(slope(9.2))
+    expect(ground(6.8, 9)).toBeCloseTo(slope(6.8))
+    expect(ground(8.05, 12.5)).toBeCloseTo(slope(8.05))
+    expect(ground(8.05, 12)).toBeCloseTo(slope(8.05))
+    // With no wall there is nothing to draw in.
+    expect(pinchedGround(banked(0.8), lies)).toBe(lies)
   })
 
   it('are priced by their face, with a drain behind them', () => {

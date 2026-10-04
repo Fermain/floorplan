@@ -50,7 +50,7 @@
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
-  import { buildRetainingParts, type RetainingPart } from '../../lib/geometry/retaining'
+  import { buildRetainingParts, pinchedGround, retainingDistance, RETAINING_GROUND_REACH_M, type RetainingPart } from '../../lib/geometry/retaining'
   import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
@@ -416,18 +416,32 @@
     const lawn = new Color(LAWN)
     const veld = new Color(VELD)
     const tint = new Color()
-    const ground = buildGroundGeometry(surroundings, (x, z) => {
-      const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
-      tint.copy(lawn).lerp(veld, out)
-      return [tint.r, tint.g, tint.b]
-    })
+    // The ground as it lies, and as it is drawn: brought in to meet the top and the foot of each retaining wall.
+    const lies = (x: number, z: number) => bilinearHeight(surroundings, x, z)
+    const groundAt = pinchedGround(doc, lies)
+    const held = (doc.retaining ?? []).length > 0
+    const nearWall = RETAINING_GROUND_REACH_M + surroundings.cellSize * 0.75
+    const ground = buildGroundGeometry(
+      surroundings,
+      (x, z) => {
+        const out = pointInRing(ring, x, z) ? 0 : Math.min(1, ringDistance(ring, x, z) / 4)
+        tint.copy(lawn).lerp(veld, out)
+        return [tint.r, tint.g, tint.b]
+      },
+      held ? { fine: (x, z) => retainingDistance(doc, x, z) < nearWall, heightAt: groundAt, divisions: Math.max(2, Math.round(surroundings.cellSize / 0.125)) } : undefined,
+    )
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
-    const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
-    const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
-    const carportParts = buildCarportParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
-    const retainingParts = buildRetainingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
-    const minor = lineGeometry(contours.minor)
-    const major = lineGeometry(contours.major)
+    const roadParts = buildRoadParts(doc.plot, groundAt)
+    const pavingParts = buildPavingParts(doc, groundAt)
+    const carportParts = buildCarportParts(doc, groundAt)
+    const retainingParts = buildRetainingParts(doc, lies)
+    // A contour is left out where the ground under it has been drawn in to a wall.
+    const settled = (lines: Float32Array) => (held ? lines.filter((_, i) => {
+      const at = i - (i % 6)
+      return [0, 3].every((o) => Math.abs(groundAt(lines[at + o], lines[at + o + 2]) - lies(lines[at + o], lines[at + o + 2])) < 0.004)
+    }) : lines)
+    const minor = lineGeometry(settled(contours.minor))
+    const major = lineGeometry(settled(contours.major))
     const built: WallMeshes[] = []
     const fences: { key: string; parts: FencePart[] }[] = []
     const pillars: { key: string; parts: PillarPart[] }[] = []

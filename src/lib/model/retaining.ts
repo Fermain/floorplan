@@ -4,7 +4,7 @@ import type { Document, RetainingType, RetainingWall } from './types'
 export type RetainingSpec = { id: RetainingType; name: string; text: string; colour: string; thickness: number }
 
 export const RETAINING_TYPES: readonly RetainingSpec[] = [
-  { id: 'blocks', name: 'Retaining blocks', text: 'Dry-stacked concrete retaining blocks, stepped back up the bank and filled with soil. Can be planted.', colour: '#a9a69e', thickness: 0.45 },
+  { id: 'blocks', name: 'Retaining blocks', text: 'Löffelstein-type concrete retaining blocks, dry-stacked, each course stepped back up the bank and filled with soil. Can be planted.', colour: '#a9a69e', thickness: 0.45 },
   { id: 'masonry', name: 'Brick or block wall', text: 'A reinforced masonry wall on a concrete footing, with weep holes and a drain behind it.', colour: '#9c7c66', thickness: 0.29 },
   { id: 'concrete', name: 'Concrete wall', text: 'A reinforced concrete wall cast on a footing, with weep holes and a drain behind it.', colour: '#b6b3ac', thickness: 0.25 },
 ]
