@@ -176,9 +176,17 @@ export function verulam(): Document {
   b.room(0, at(9, (HALL_W + HALL_E) / 2), 'Corridor', 'passage', false)
   b.room(0, at(9.2, HALL_E + 0.3), 'Storage', 'other', false)
 
-  // The patio is a rectangle 2.8 m deep along the front, outside the front door, under the house's roof.
-  b.walls(0, [at(N, W), at(N, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
+  // The patio is a rectangle 2.8 m deep along the front, outside the front door, under the house's roof. Brick
+  // columns carry the roof, with a half wall between them and a way through opposite the front door.
+  const patio = [at(N, W), at(N, W - PATIO), at(0.3, W - PATIO), at(2.3, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)]
+  b.walls(0, patio, { skin: 'logical' })
   b.room(0, at(3, W - PATIO / 2), 'Patio', 'other', false)
+  for (let i = 0; i < patio.length - 1; i++) {
+    const edge = b.wallAt(0, { x: (patio[i].x + patio[i + 1].x) / 2, z: (patio[i].z + patio[i + 1].z) / 2 }).id
+    b.apply(mutations.setSupport(b.doc, b.floor(0).id, edge, { type: 'pier', spacing: 2.5 }), 'patio columns')
+    // No wall across the way through.
+    if (i !== 2) b.apply(mutations.setFence(b.doc, b.floor(0).id, edge, { type: 'half-wall', height: 0.9 }), 'patio wall')
+  }
 
   // Two double carports, 5.5 × 5.2 m, each standing free on its own posts under a low hipped roof (they are
   // fabric in life, which cannot be drawn). One is off the north face of the main house, stopping 3 m short of
@@ -207,10 +215,11 @@ export function verulam(): Document {
     b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, mid).id, { type: 'palisade', height: 1.8 }), 'boundary fence')
   }
 
-  // Tiled gables over the cottage, its ridge running north to south, and over the main house with its patio;
+  // Tiled gables over the cottage, its ridge running north to south, and over the main house with its patio, its
+  // ridge running the length of the house;
   // low hips over the carports.
   b.cover({ x: x0, z: z0 }, { pitchDeg: 17.5, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
-  b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'gable', covering: 'concrete-tile' })
+  b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
   const carportRoof = { pitchDeg: 8, eaves: 0.2, form: 'hip', covering: 'ibr' } as const
   b.cover(houseCarport[0], carportRoof)
   b.cover(cottageCarport, carportRoof)
@@ -248,10 +257,32 @@ export function verulam(): Document {
   // The main house has its own hot water, between the kitchen and the bathroom.
   b.fixture(0, 'solar-geyser', at(8.6, 6.4), { x: -u.x, z: -u.z })
 
-  // The gravel drive comes in at the gate and down to the cottage's front door.
-  b.paving([[3, deep - inset], [6.5, deep - inset], [15.5, 32.5], [12.5, 32]], 'gravel')
-  // A second arm runs along the top of the stand to the main house's carport.
-  b.paving([[5, deep - inset], [5, deep - inset - 3.2], [houseCarport[2].x, houseCarport[2].z], [houseCarport[1].x, houseCarport[1].z]], 'gravel')
+  // The cottage's gravel drive runs from the gate down the west side to its carport. The main house's drive runs
+  // down the slope from the patio, the way the front doors face, to meet it.
+  const drive = { x: 3, wide: 3.5, turn: 3 }
+  b.paving(
+    [
+      [drive.x, deep - inset],
+      [drive.x + drive.wide, deep - inset],
+      [drive.x + drive.wide, cottageCarport.z + CAR_DEEP + drive.turn],
+      [cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP + drive.turn],
+      [cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP],
+      [cottageCarport.x, cottageCarport.z + CAR_DEEP],
+      [drive.x, cottageCarport.z + CAR_DEEP + drive.turn],
+    ],
+    'gravel',
+  )
+  const down = 12.4
+  const [top0, top1] = [at(-0.2, W - PATIO), at(2.8, W - PATIO)]
+  b.paving(
+    [
+      [top0.x, top0.z],
+      [top1.x, top1.z],
+      [round(top1.x - v.x * down), round(top1.z - v.z * down)],
+      [round(top0.x - v.x * down), round(top0.z - v.z * down)],
+    ],
+    'gravel',
+  )
   b.apply(mutations.setRainfall(b.doc, 1000), 'rainfall')
   return b.doc
 }
