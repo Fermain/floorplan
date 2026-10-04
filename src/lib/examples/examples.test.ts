@@ -72,8 +72,11 @@ describe('example projects', () => {
     expect(level(14, 26)).toBeCloseTo(3.6, 1)
     expect(level(28, 37)).toBeCloseTo(6.4, 1)
     expect(doc.plot.roads ?? []).toEqual([])
-    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchenette', 'Living', 'Bedroom', 'En suite', 'Deck', 'Lounge', 'Kitchen', 'Bedroom 1', 'Bedroom 2', 'Guest room', 'Bathroom', 'Corridor', 'Patio', 'Carport']))
-    expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(3)
+    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchenette', 'Living', 'Bedroom', 'En suite', 'Deck', 'Lounge', 'Kitchen', 'Bedroom 1', 'Bedroom 2', 'Guest room', 'Bathroom', 'Corridor', 'Patio', 'Carport', 'Cottage carport']))
+    expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(4)
+    // One long eave down each side of the main house's gable: a downpipe at each end, not one at every room.
+    const mainRoof = doc.building.floors.filter((floor) => floor.roof?.form === 'gable').at(-1)!
+    expect(gutterLayout(doc).downpipes.filter((pipe) => pipe.roofFloorId === mainRoof.id).length).toBeLessThanOrEqual(6)
     expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
     // Every wall stays on the stand.
     for (const corner of ground.corners) {

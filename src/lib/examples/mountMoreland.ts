@@ -51,7 +51,7 @@ export function mountMoreland(): Document {
     const tx = Math.min(1, Math.max(0, x / wide))
     const tz = Math.min(1, Math.max(0, z / deep))
     const slope = (corner.sw * (1 - tx) + corner.se * tx) * (1 - tz) + (corner.nw * (1 - tx) + corner.ne * tx) * tz
-    const lower = ease(Math.hypot(outside(x, 5, 22), outside(z, 13.5, 35)))
+    const lower = ease(Math.hypot(outside(x, 2.5, 22), outside(z, 13.5, 35)))
     const s = (x - centre.x) * u.x + (z - centre.z) * u.z
     const t = (x - centre.x) * v.x + (z - centre.z) * v.z
     const upper = ease(Math.hypot(outside(s, -16, 10.5), outside(t, -7.6, 6.5)))
@@ -107,7 +107,7 @@ export function mountMoreland(): Document {
   b.walls(0, [{ x: x0 + 3, z: gz0 }, { x: x0 + 9, z: gz0 }, { x: x0 + 9, z: z0 - 1.2 }], { skin: 'logical' })
   const floor = () => b.floor(0)
   for (const p of [{ x: x0, z: z0 - 3 }, { x: x0 + 1.5, z: gz0 }, { x: x0 + 6, z: gz0 }, { x: x0 + 9, z: z0 - 3.6 }]) {
-    b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, p).id, { type: 'precast', height: 1.2 }), 'garden wall')
+    b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, p).id, { type: 'half-wall', height: 1 }), 'garden wall')
   }
 
   // The main house. The open-plan lounge and kitchen fill the north end; a corridor runs south from it, 3 m in
@@ -164,11 +164,16 @@ export function mountMoreland(): Document {
   b.walls(0, [at(N, W), at(N, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
   b.room(0, at(3, W - PATIO / 2), 'Patio', 'other', false)
 
-  // The carport stands against the north face, stopping 3.5 m short of the house's east end.
-  const [CAR_OUT, CAR_GAP] = [5.5, 0.05]
-  const carport = [at(N - CAR_GAP, W), at(N - CAR_GAP - CAR_OUT, W), at(N - CAR_GAP - CAR_OUT, E - 3.5), at(N - CAR_GAP, E - 3.5)]
-  b.walls(0, carport, { skin: 'logical', closed: true })
-  b.room(0, at(N - 3, 2), 'Carport', 'garage', false)
+  // Two double carports, 5.5 × 5.2 m, each standing free on its own posts under a low hipped roof (they are
+  // fabric in life, which cannot be drawn). One is off the north face of the main house, stopping 3 m short of
+  // its east end; the other is on the west side of the cottage.
+  const [CAR_WIDE, CAR_DEEP, CAR_GAP] = [5.5, 5.2, 0.6]
+  const houseCarport = [at(N - CAR_GAP, E - 3), at(N - CAR_GAP - CAR_DEEP, E - 3), at(N - CAR_GAP - CAR_DEEP, E - 3 - CAR_WIDE), at(N - CAR_GAP, E - 3 - CAR_WIDE)]
+  b.walls(0, houseCarport, { skin: 'logical', closed: true })
+  b.room(0, at(N - CAR_GAP - CAR_DEEP / 2, E - 3 - CAR_WIDE / 2), 'Carport', 'garage', false)
+  const cottageCarport = { x: x0 - CAR_GAP - CAR_WIDE, z: z0 + 3.5 }
+  b.rect(0, cottageCarport.x, cottageCarport.z, cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP, { skin: 'logical' })
+  b.room(0, { x: cottageCarport.x + CAR_WIDE / 2, z: cottageCarport.z + CAR_DEEP / 2 }, 'Cottage carport', 'garage', false)
 
   // A palisade fence 300 mm inside the boundary, with a 3.5 m gate in the north side, 3 m from the north-west corner.
   const inset = 0.3
@@ -186,11 +191,13 @@ export function mountMoreland(): Document {
     b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, mid).id, { type: 'palisade', height: 1.8 }), 'boundary fence')
   }
 
-  // A tiled gable over the cottage, its ridge running north to south; tiled hips over the main house with its
-  // patio, and over the carport.
+  // Tiled gables over the cottage, its ridge running north to south, and over the main house with its patio;
+  // low hips over the carports.
   b.cover({ x: x0, z: z0 }, { pitchDeg: 17.5, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
-  b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'hip', covering: 'concrete-tile' })
-  b.cover(carport[1], { pitchDeg: 17.5, eaves: 0.3, form: 'hip', covering: 'concrete-tile' })
+  b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'gable', covering: 'concrete-tile' })
+  const carportRoof = { pitchDeg: 8, eaves: 0.2, form: 'hip', covering: 'ibr' } as const
+  b.cover(houseCarport[0], carportRoof)
+  b.cover(cottageCarport, carportRoof)
 
   // The deck is timber; the patio is paved.
   for (const space of floor().spaces ?? []) {
@@ -227,8 +234,8 @@ export function mountMoreland(): Document {
 
   // The gravel drive comes in at the gate and down to the cottage's front door.
   b.paving([[3, deep - inset], [6.5, deep - inset], [15.5, 32.5], [12.5, 32]], 'gravel')
-  // A second arm runs along the top of the stand to the carport.
-  b.paving([[5, deep - inset], [5, deep - inset - 3.2], [17.9, 46.3], [19.2, 48.4]], 'gravel')
+  // A second arm runs along the top of the stand to the main house's carport.
+  b.paving([[5, deep - inset], [5, deep - inset - 3.2], [houseCarport[2].x, houseCarport[2].z], [houseCarport[1].x, houseCarport[1].z]], 'gravel')
   b.apply(mutations.setRainfall(b.doc, 1000), 'rainfall')
   return b.doc
 }

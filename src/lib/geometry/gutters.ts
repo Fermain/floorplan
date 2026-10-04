@@ -127,12 +127,13 @@ export function gutterLayout(doc: Document): GutterLayout {
     const below = supportingFloor(doc, floor)
     const faces = roofFacesForFloor(floor, roof, masonryReach(below?.walls ?? []))
     const off = new Set(roof.noGutter ?? [])
-    const mine: GutterPiece[] = []
+    const found: GutterPiece[] = []
     for (const edge of eaveEdges(faces)) {
       for (const piece of splitByWalls(roof, below, edge)) {
-        mine.push({ roofFloorId: floor.id, wallId: piece.wallId, a: piece.a, b: piece.b, out: edge.out, on: !piece.wallId || !off.has(piece.wallId) })
+        found.push({ roofFloorId: floor.id, wallId: piece.wallId, a: piece.a, b: piece.b, out: edge.out, on: !piece.wallId || !off.has(piece.wallId) })
       }
     }
+    const mine = tidy(found)
     pieces.push(...mine)
     // Downpipes at the ends of each run of gutter, and one more for every 12 m of a long run.
     const spots: { x: number; z: number; top: number }[] = []
@@ -169,16 +170,65 @@ export function gutterLayout(doc: Document): GutterLayout {
   return { pieces, downpipes: linkTanks(doc, downpipes) }
 }
 
-// Pieces joined end to end along one eave make a run.
-function runs(pieces: GutterPiece[]): GutterPiece[][] {
-  const out: GutterPiece[][] = []
+type Lined = { piece: GutterPiece; from: number; to: number }
+
+// The pieces sorted onto the eave lines they lie along, each turned to run the same way along its line.
+function eaveLines(pieces: GutterPiece[]): { along: { x: number; z: number }; items: Lined[] }[] {
+  const TOUCH = 0.01
+  const lines: { out: { x: number; z: number }; along: { x: number; z: number }; offset: number; y: number; items: Lined[] }[] = []
   for (const piece of pieces) {
-    const run = out.find((items) => {
-      const last = items[items.length - 1]
-      return Math.hypot(last.b.x - piece.a.x, last.b.z - piece.a.z) < 1e-3 && Math.abs(last.out.x - piece.out.x) + Math.abs(last.out.z - piece.out.z) < 1e-3
-    })
-    if (run) run.push(piece)
-    else out.push([piece])
+    const along = { x: -piece.out.z, z: piece.out.x }
+    const at = (p: RoofVertex) => p.x * along.x + p.z * along.z
+    const turned = at(piece.b) >= at(piece.a) ? piece : { ...piece, a: piece.b, b: piece.a }
+    const offset = piece.a.x * piece.out.x + piece.a.z * piece.out.z
+    let line = lines.find(
+      (item) => Math.abs(item.out.x - piece.out.x) + Math.abs(item.out.z - piece.out.z) < 1e-3 && Math.abs(item.offset - offset) < TOUCH && Math.abs(item.y - piece.a.y) < TOUCH,
+    )
+    if (!line) {
+      line = { out: piece.out, along, offset, y: piece.a.y, items: [] }
+      lines.push(line)
+    }
+    line.items.push({ piece: turned, from: at(turned.a), to: at(turned.b) })
+  }
+  for (const line of lines) line.items.sort((p, q) => p.from - q.from || q.to - p.to)
+  return lines
+}
+
+// A roof over several rooms has a face for each, and their eaves can lie over one another along the same line.
+// Keep one piece of gutter for each stretch of eave: the first to cover it, cut back where another already does.
+function tidy(pieces: GutterPiece[]): GutterPiece[] {
+  const MIN = 0.02
+  const out: GutterPiece[] = []
+  for (const line of eaveLines(pieces)) {
+    let reach = -Infinity
+    for (const { piece, from, to } of line.items) {
+      if (to <= reach + MIN) continue
+      const start = Math.max(from, reach)
+      const shift = start - from
+      const a = shift > 0 ? { x: piece.a.x + line.along.x * shift, y: piece.a.y, z: piece.a.z + line.along.z * shift } : piece.a
+      out.push({ ...piece, a })
+      reach = to
+    }
+  }
+  return out
+}
+
+// Pieces joined end to end along one eave make a run, in order along it.
+function runs(pieces: GutterPiece[]): GutterPiece[][] {
+  const TOUCH = 0.01
+  const out: GutterPiece[][] = []
+  for (const line of eaveLines(pieces)) {
+    let run: GutterPiece[] = []
+    let reach = -Infinity
+    for (const item of line.items) {
+      if (run.length > 0 && item.from > reach + TOUCH) {
+        out.push(run)
+        run = []
+      }
+      run.push(item.piece)
+      reach = Math.max(reach, item.to)
+    }
+    if (run.length > 0) out.push(run)
   }
   return out
 }

@@ -124,6 +124,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'fence:palisade': 650,
   'fence:mesh': 320,
   'fence:precast': 420,
+  'fence:half-wall': 650,
   'fence:timber': 560,
 }
 

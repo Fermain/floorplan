@@ -39,7 +39,7 @@ export type WallSkin = 'single' | 'double' | 'logical'
 
 export type WallSystemId = 'clay-cavity' | 'clay-solid' | 'clay-single' | 'maxi-140' | 'block-140' | 'block-90'
 
-export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber'
+export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber' | 'half-wall'
 
 export type Fence = {
   type: FenceType

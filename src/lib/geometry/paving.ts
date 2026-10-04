@@ -91,7 +91,10 @@ export function apronPolygons(doc: Document): DeckPolygon[] {
   if (!(apronWidth > 0)) return []
   const ground = doc.building.floors.find((floor) => floor.index === 0)
   if (!ground || ground.walls.length === 0) return []
-  return wallFootprints(ground).map((footprint) => ({
+  // Round what is built: a patio, deck or carport marked off by lines with nothing on them gets no apron.
+  const built = { ...ground, walls: ground.walls.filter((wall) => wall.skin !== 'logical') }
+  if (built.walls.length === 0) return []
+  return wallFootprints(built).map((footprint) => ({
     outer: withinPlot(offsetEdges(footprint.outer, footprint.outer.map(() => apronWidth)), doc.plot.ring),
     holes: [footprint.outer],
   }))
