@@ -1,6 +1,6 @@
 # Example projects
 
-The home page offers a copy of each house listed in `index.ts`. Opening one saves a copy to the browser, so the
+The project list offers a copy of each house listed in `index.ts`. Opening one saves a copy to the browser, so the
 example itself never changes.
 
 ## Adding one

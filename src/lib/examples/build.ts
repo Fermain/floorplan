@@ -143,6 +143,14 @@ export class Builder {
     return this.apply(mutations.addStorey(this.doc, this.floor(index).id, corner?.id), `storey over ${index}`)
   }
 
+  // A roof straight over the building that has a corner at the given point: a new storey for that building alone,
+  // with the roof on it. For a plot with several buildings, where a storey index names more than one floor.
+  cover(at: Point, roof: Roof): this {
+    this.storey(0, at)
+    const top = this.doc.building.floors.at(-1)!
+    return this.apply(mutations.setRoof(this.doc, top.id, roof), `roof over ${at.x}, ${at.z}`)
+  }
+
   roof(index: number, roof: Roof): this {
     return this.apply(mutations.setRoof(this.doc, this.floor(index).id, roof), `roof on storey ${index}`)
   }

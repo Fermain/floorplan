@@ -64,7 +64,7 @@
 
   function go(next: StepId) {
     problem = ''
-    void goto(`${resolve('/new')}?step=${next}`)
+    void goto(`${resolve('/app/new')}?step=${next}`)
   }
 
   // Double-clicking a choice picks it and moves on.
@@ -139,6 +139,10 @@
 
   const mm = (m: number) => Math.round(m * 1000)
 </script>
+
+<svelte:head>
+  <title>New project · Floorplan</title>
+</svelte:head>
 
 <div class="flex min-h-dvh flex-col bg-muted/40">
   <header class="flex items-center gap-2 border-b bg-background px-2 py-2 sm:gap-3 sm:px-3">

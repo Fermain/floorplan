@@ -61,6 +61,12 @@
     return 'plan'
   })
 
+  // The tab's title: the view, then the project, so several open projects can be told apart.
+  const pageTitle = $derived.by(() => {
+    const view = (page.route.id ?? '').includes('/wall/') ? 'Focus' : (sections.find((section) => section.id === active)?.label ?? 'Plan')
+    return `${view} · ${session.project?.name ?? 'Project'} · Floorplan`
+  })
+
   const saveLabel = $derived(
     session.saveState === 'saving'
       ? 'Saving…'
@@ -145,6 +151,10 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 </script>
+
+<svelte:head>
+  <title>{pageTitle}</title>
+</svelte:head>
 
 <div class="flex h-dvh flex-col overflow-hidden bg-muted/40">
   <header class="z-20 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 border-b bg-background px-2 py-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-3 md:py-2">
