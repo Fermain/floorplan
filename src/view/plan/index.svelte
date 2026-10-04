@@ -79,12 +79,12 @@
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
-  import { carportAt, snapCarport } from '../../lib/geometry/carports'
+  import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
   import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
-  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
+  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
@@ -232,6 +232,8 @@
   // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
   // A fitting being dragged in Select: where it would land, re-snapped to the walls as it goes.
   // A counter being dragged: where along it (and across it) it was picked up, and where it would be set down.
+  // A carport being dragged: where it was picked up, and where it would land.
+  let carportMove = $state<{ id: string; grabX: number; grabZ: number; preview: Carport | null; problem: string | null } | null>(null)
   let counterMove = $state<{ id: string; grabAlong: number; grabOut: number; preview: Counter | null } | null>(null)
   let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
   let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
@@ -946,7 +948,10 @@
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
-      const worktop = counterAt(activeFloor, plan)
+      // A fitting set into a counter is picked before the counter it stands in.
+      const hit = fixtureAt(plan.x, plan.z)
+      const setIn = hit && levelFixtures.find((item) => item.fixture.id === hit.id)?.fixture
+      const worktop = setIn && counterUnder(activeFloor.counters, setIn.x, setIn.z) ? null : counterAt(activeFloor, plan)
       if (worktop) {
         chooseSelection({ counter: worktop.id })
         // A counter can be dragged: along its wall or to another, or anywhere if it stands free.
@@ -1006,6 +1011,8 @@
       const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
       if (parked) {
         chooseSelection({ carport: parked.id })
+        carportMove = { id: parked.id, grabX: plan.x - parked.x, grabZ: plan.z - parked.z, preview: null, problem: null }
+        svgEl?.setPointerCapture(event.pointerId)
         return
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
@@ -1122,6 +1129,19 @@
       if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
       return
     }
+    if (carportMove) {
+      const moving = carportMove
+      const item = document.carports?.find((entry) => entry.id === moving.id)
+      if (!item) return
+      const loose = { ...item, x: plan.x - moving.grabX, z: plan.z - moving.grabZ }
+      // Nothing happens until it has been carried a little way, so a click to pick it does not nudge it.
+      if (!moving.preview && Math.hypot(loose.x - item.x, loose.z - item.z) < s(0.15)) return
+      // Its corners snap to everything but itself.
+      const others = { ...document, carports: (document.carports ?? []).filter((entry) => entry.id !== item.id) }
+      const preview = { ...loose, ...snapCarport(others, loose, s(0.4)) }
+      carportMove = { ...moving, preview, problem: carportProblem(others, preview) }
+      return
+    }
     if (counterMove) {
       const moving = counterMove
       const item = activeFloor?.counters?.find((entry) => entry.id === moving.id)
@@ -1186,6 +1206,13 @@
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
     }
+    const parked = carportMove
+    if (parked) {
+      carportMove = null
+      const next = parked.preview
+      if (next) applyResult(documentStore.updateCarport(parked.id, { x: next.x, z: next.z }))
+      return
+    }
     const carried = counterMove
     if (carried) {
       counterMove = null
@@ -1197,7 +1224,7 @@
     if (moved) {
       fixtureMove = null
       const next = moved.preview
-      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz }))
+      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz, ...(next.builtIn ? { builtIn: true } : {}) }))
       return
     }
     const dragging = serviceDrag
@@ -1921,6 +1948,7 @@
   function setupOf(fixture: Fixture) {
     if (fixture.kind === 'gas-cylinder') return { bottles: fixture.bottles, bottleKg: fixture.bottleKg, cage: fixture.cage }
     if (fixture.kind === 'water-tank') return { litres: fixture.litres }
+    if (fixture.builtIn) return { builtIn: true }
     return {}
   }
   // Gas pipes run round the outside of the ground floor; the chosen appliance or bottles pick out their own.
@@ -2248,6 +2276,7 @@
     }
   }
 
+  const carportWarnings = $derived(carportIssues(document))
   const chosenCarport = $derived(selectedCarport ? (document.carports?.find((item) => item.id === selectedCarport) ?? null) : null)
 
   function removeChosenCarport() {
@@ -2836,7 +2865,7 @@
   </div>
   <svg
     bind:this={svgEl}
-    class="canvas"
+    class="canvas paper"
     class:panning={spaceHeld || panning !== null}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
@@ -3001,7 +3030,11 @@
     {#if activeStoreyIndex === 0}
       <g class="carports" pointer-events="none">
         {#each document.carports ?? [] as carport (carport.id)}
-          {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
+          {#if carportMove?.id === carport.id && carportMove.preview}
+            {@render carportShape(carportMove.preview, carportMove.problem ? 'refused' : 'picked')}
+          {:else}
+            {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
+          {/if}
         {/each}
         {#if carportGhost}
           {@render carportShape(carportGhost.carport, carportGhost.problem ? 'refused' : 'ghost')}
@@ -3346,7 +3379,9 @@
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
-          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {#if !counterUnder(activeFloor?.counters, shown.x, shown.z)}
+            <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {/if}
         {/each}
         {#if fixtureGhost}
           <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
@@ -3381,6 +3416,15 @@
           <circle cx={mark.point.x} cy={mark.point.z} r={s(0.09)} fill="#2563eb" />
         {/if}
       {/if}
+    </g>
+    <!-- A sink or a hob set into a counter is drawn over it. -->
+    <g class="fixtures set-in" pointer-events="none">
+      {#each levelFixtures as item (item.fixture.id)}
+        {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+        {#if counterUnder(activeFloor?.counters, shown.x, shown.z)}
+          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+        {/if}
+      {/each}
     </g>
     {#if focusedCells}
       <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
@@ -4001,6 +4045,9 @@
           </Select.Root>
         </div>
         <Button variant="outline" onclick={turnChosenCarport}><RotateCw />Turn a quarter turn</Button>
+        {#each carportWarnings.filter((issue) => issue.carportId === chosenCarport?.id) as issue (issue.id)}
+          <p class="text-amber-700">{issue.text}</p>
+        {/each}
         <Button variant="destructive" onclick={removeChosenCarport}>Remove</Button>
       </ContextPanel>
     {/if}
@@ -4305,6 +4352,8 @@
     min-width: 0;
     min-height: 0;
     touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
     cursor: crosshair;
   }
 

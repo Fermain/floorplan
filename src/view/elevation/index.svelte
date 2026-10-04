@@ -62,6 +62,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
   import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
+  import { groundLine, type GroundLine } from '../../lib/geometry/groundLine'
+  import { buildCounterParts, countersOnWall, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixtureStandAboveDatum, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
@@ -211,9 +213,21 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     })
   })
 
+  // The counters against the face in view, with the sinks and hobs set into them.
+  const faceCounters = $derived(floor && wall && !logical ? countersOnWall(floor, wall.id, side) : [])
   const fittingParts = $derived.by((): FixturePart[] =>
-    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture)) : [],
+    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture), faceCounters) : [],
   )
+  const counterParts = $derived.by((): CounterPart[] =>
+    floor && faceCounters.length > 0 ? buildCounterParts(faceCounters, floor.datumHeight + finishedFloor(floor), shownFittings) : [],
+  )
+
+  $effect(() => {
+    const parts = counterParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
 
   $effect(() => {
     const parts = fittingParts
@@ -229,6 +243,14 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     const { count, kg, cage } = bottleSetup(fixture)
     return { bottles: count, bottleKg: kg, cage }
   }
+
+  // The ground along this wall, turned to run the way the face in view does.
+  const ground = $derived.by((): GroundLine | null => {
+    const line = floor && wall ? groundLine(doc, floor, wall) : null
+    if (!line || side === 1 || !frame) return line
+    const turn = (points: [number, number][]) => points.map(([u, v]): [number, number] => [frame.length - u, v]).reverse()
+    return { ...line, finished: turn(line.finished), natural: turn(line.natural) }
+  })
 
   function viewU(u: number): number {
     return side === -1 && frame ? frame.length - u : u
@@ -1372,7 +1394,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
         {/if}
       </div>
       <div
-        class="viewport"
+        class="viewport paper"
         class:elevation={locked}
         class:placing={locked && mode === 'place'}
         onpointerdown={onViewportPointerDown}
@@ -1394,6 +1416,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
           ...fenceParts,
           ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
           ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
+          ...counterParts.map((part) => ({ ...part, opacity: 1 })),
           ...gutterParts,
           ...finishParts,
           ...trimParts,
@@ -1409,6 +1432,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
           openings={logical ? [] : shownOpenings(displayWall.openings)}
           selectedId={selectedOpeningId}
           floorLevel={floor?.index === 0 && !logical ? SURFACE_BED_TOP_ABOVE_DATUM_M : null}
+          {ground}
           fittings={fittingMarks}
           {conduits}
           {ports}
@@ -1491,6 +1515,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   .viewport {
     position: relative;
+    background: var(--background);
     flex: 1;
     min-height: 0;
     width: 100%;

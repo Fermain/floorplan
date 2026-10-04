@@ -153,6 +153,8 @@ export type Fixture = {
   cage?: boolean
   // Rainwater tanks only: how much the tank holds.
   litres?: TankLitres
+  // Stoves only: a hob set into a worktop with an oven under it, rather than a stove standing in a gap.
+  builtIn?: boolean
 }
 
 export type Floor = {

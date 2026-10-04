@@ -74,7 +74,7 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 - **Several buildings:** a plot can hold more than one building, each with its own storeys and roof.
 - **Fittings:** sockets, switches, lights, sanitary ware, geysers, gas appliances and bottles, and rainwater tanks. A room can be fitted out in one step, and tanks snap under downpipes.
 - **Paving:** driveways, paths and patios are drawn on the ground as rectangles or outlines, in concrete, cement or clay pavers, gravel or grass blocks. An apron round the house is a project setting.
-- **Counters:** kitchen counters drawn along the inside face of a wall, and islands and bars standing free, with a choice of worktop and cupboards on the wall above. **Lay out this room** on a room's panel closes the plan in on that room and veils the rest.
+- **Counters:** kitchen counters drawn along the inside face of a wall, and islands and bars standing free, with a choice of worktop and cupboards on the wall above. **Lay out this room** on a room's panel closes the plan in on that room and veils the rest. A sink placed in a counter is set into its worktop, a stove can be built in as a hob with an oven under it, and both can go in an island. Counters show on their wall in Focus and move with their room.
 - **Retaining walls:** drawn point to point along the foot of a bank, in retaining blocks, brick or concrete. What each holds back is read from the ground as it lies. Review builds retaining blocks (Löffelstein) course by course, leaning back up the bank with a stepped top, and draws the ground in to meet the top and the foot of the wall. Over a metre is flagged as needing an engineer.
 - **Carports:** a roof on posts, standing free, for one, two or three cars, under steel sheeting or shade cloth. R turns it before you place it, and its corners snap to the house, the plot and paving.
 - **Road access:** mark which sides of the plot face a street.
@@ -114,6 +114,8 @@ Roofs come in hip, gable or mono-pitch forms, covered in concrete tiles, clay ti
 Review shows the design on its terrain, levelled under each building, with fences following the ground. Switch between midsummer and midwinter and move the time of day in SAST to see where the sun and shadows fall for the plot's latitude.
 
 Moving in close cuts the building open in front of the camera, so you can see inside. Walls can also be cut to half height or hidden, and the storeys above a chosen one lifted off. Click a wall to open it in Focus, or a fitting to change it.
+
+**Services** fades the building to a ghost and draws the pipes and cables in it: drains, cold and hot water, lighting, plugs, the stove and geyser circuits, and gas, each in its own colour with its length. The routes are indicative.
 
 <img src="static/shots/review-farm.jpg" alt="Three houses, a garage and carports on a sloping stand, with the road behind" width="100%">
 

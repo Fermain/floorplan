@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   counterKindSpec,
   counterRing,
+  counterUnder,
   counterTopSpec,
   WALL_UNIT_BOTTOM_M,
   WALL_UNIT_DEPTH_M,
@@ -51,9 +52,10 @@ export type CounterFace = { wallId: string; point: Point; dir: Point; before: nu
 // its middle is along the wall from a point on the wall's face, the way along the wall and the way into the room.
 // A stove or a washing machine stands beside a counter, never in it; a sink unit sits flush with a counter's end,
 // inside it or butted up to it.
-export function settleAgainstCounters(floor: Floor, kind: FixtureKind, origin: Point, along: Point, into: Point, at: number, half: number, snap = 0.2): number {
-  const stop = COUNTER_STOPS.includes(kind)
-  if (!stop && !COUNTER_JOINS.includes(kind)) return at
+export function settleAgainstCounters(floor: Floor, kind: FixtureKind, origin: Point, along: Point, into: Point, at: number, half: number, snap = 0.2, builtIn = false): number {
+  // A built-in hob sits in the counter the way a sink does.
+  const stop = COUNTER_STOPS.includes(kind) && !builtIn
+  if (!stop && !COUNTER_JOINS.includes(kind) && !builtIn) return at
   let best: { s: number; d: number } | null = null
   const consider = (s: number) => {
     const d = Math.abs(s - at)
@@ -92,8 +94,8 @@ function faceSpans(floor: Floor, point: Point, dir: Point): FaceSpan[] {
   const out = { x: -dir.z, z: dir.x }
   const spans: FaceSpan[] = []
   for (const fixture of floor.fixtures ?? []) {
-    const stop = COUNTER_STOPS.includes(fixture.kind)
-    if (!stop && !COUNTER_JOINS.includes(fixture.kind)) continue
+    const stop = COUNTER_STOPS.includes(fixture.kind) && !fixture.builtIn
+    if (!stop && !COUNTER_JOINS.includes(fixture.kind) && !fixture.builtIn) continue
     const ring = fixtureFootprint(fixture)
     const depths = ring.map((p) => (p.x - point.x) * out.x + (p.z - point.z) * out.z)
     // Against this face: its back within a hand's width of the face, and none of it behind the wall.
@@ -139,6 +141,29 @@ export function counterFace(floor: Floor, p: Point, reach: number): CounterFace 
   if (!best) return null
   const { d: _d, ...face } = best
   return { ...face, spans: faceSpans(floor, face.point, face.dir) }
+}
+
+// The counters standing against one side of a wall, for showing on that wall in Focus.
+export function countersOnWall(floor: Floor, wallId: string, side: 1 | -1): Counter[] {
+  const wall = floor.walls.find((item) => item.id === wallId)
+  const a = wall && cornerById(floor.corners, wall.startCornerId)
+  const b = wall && cornerById(floor.corners, wall.endCornerId)
+  if (!wall || !a || !b) return []
+  const length = Math.hypot(b.x - a.x, b.z - a.z)
+  if (length < 1e-6) return []
+  const t = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
+  const n = { x: -t.z * side, z: t.x * side }
+  const half = wallThickness(systemOf(wall)) / 2
+  return (floor.counters ?? []).filter((counter) => {
+    if (counter.kind !== 'base') return false
+    // Its front faces away from this side of the wall, and its back is on the face.
+    if (-counter.dz * n.x + counter.dx * n.z < 0.9) return false
+    const mx = counter.x + (counter.dx * counter.length) / 2
+    const mz = counter.z + (counter.dz * counter.length) / 2
+    const along = (mx - a.x) * t.x + (mz - a.z) * t.z
+    const off = (mx - a.x) * n.x + (mz - a.z) * n.z
+    return along > -0.05 && along < length + 0.05 && Math.abs(off - half) < 0.12
+  })
 }
 
 const step = (value: number) => Math.round(value * 20) / 20
@@ -215,7 +240,7 @@ export type CounterIssue = { id: string; text: string; floorId: string }
 export function counterIssues(doc: Document): CounterIssue[] {
   const issues: CounterIssue[] = []
   for (const floor of doc.building.floors) {
-    const standing = (floor.fixtures ?? []).filter((fixture: Fixture) => COUNTER_STOPS.includes(fixture.kind))
+    const standing = (floor.fixtures ?? []).filter((fixture: Fixture) => COUNTER_STOPS.includes(fixture.kind) && !fixture.builtIn)
     for (const counter of floor.counters ?? []) {
       const ring = counterRing(counter)
       for (const fixture of standing) {
@@ -237,15 +262,16 @@ const CARCASS_COLOUR = '#ece8df'
 const PLINTH_COLOUR = '#3f4448'
 const PLINTH_M = 0.1
 
-function slab(counter: Counter, back: number, front: number, y0: number, y1: number, endOver = 0): BufferGeometry {
+// A box in a counter's own frame: from one distance along it to another, from one depth out from its back to another.
+function block(counter: Counter, from: number, to: number, back: number, front: number, y0: number, y1: number): BufferGeometry {
   const dir = new Vector3(counter.dx, 0, counter.dz)
   const out = new Vector3(-counter.dz, 0, counter.dx)
   const geometry = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4().makeBasis(dir, new Vector3(0, 1, 0), out)
-  matrix.scale(new Vector3(counter.length + endOver * 2, y1 - y0, front - back))
+  matrix.scale(new Vector3(to - from, y1 - y0, front - back))
   matrix.setPosition(
     new Vector3(counter.x, 0, counter.z)
-      .addScaledVector(dir, counter.length / 2)
+      .addScaledVector(dir, (from + to) / 2)
       .addScaledVector(out, (back + front) / 2)
       .setY((y0 + y1) / 2),
   )
@@ -253,19 +279,66 @@ function slab(counter: Counter, back: number, front: number, y0: number, y1: num
   return geometry
 }
 
+// A cut-out in a counter, in its own frame, for a sink set into it.
+type Hole = { from: number; to: number; back: number; front: number }
+
+// A slab of a counter with the holes left out of it.
+function slab(counter: Counter, back: number, front: number, y0: number, y1: number, endOver = 0, holes: Hole[] = []): BufferGeometry[] {
+  const pieces: BufferGeometry[] = []
+  let at = -endOver
+  for (const hole of [...holes].sort((a, b) => a.from - b.from)) {
+    const from = Math.max(at, hole.from)
+    const to = Math.min(counter.length + endOver, hole.to)
+    if (to - from < 0.01) continue
+    if (from - at > 0.001) pieces.push(block(counter, at, from, back, front, y0, y1))
+    if (hole.back - back > 0.001) pieces.push(block(counter, from, to, back, hole.back, y0, y1))
+    if (front - hole.front > 0.001) pieces.push(block(counter, from, to, hole.front, front, y0, y1))
+    at = to
+  }
+  if (counter.length + endOver - at > 0.001) pieces.push(block(counter, at, counter.length + endOver, back, front, y0, y1))
+  return pieces
+}
+
+// Where a sink's bowls go through a worktop, in the sink's own frame: along it from its middle, and out from its back.
+export const SINK_BOWLS = { along: 0.38, back: 0.1, front: 0.48, deep: 0.18 }
+
+// The holes the sinks standing in a counter cut through it.
+function sinkHoles(counter: Counter, fixtures: Fixture[]): Hole[] {
+  const holes: Hole[] = []
+  for (const fixture of fixtures) {
+    if (fixture.kind !== 'sink' || counterUnder([counter], fixture.x, fixture.z) === null) continue
+    const depth = fixtureSpec(fixture.kind).depth
+    const side = { x: fixture.dz, z: -fixture.dx }
+    const corners = [-SINK_BOWLS.along, SINK_BOWLS.along].flatMap((along) =>
+      [SINK_BOWLS.back, SINK_BOWLS.front].map((out) => ({
+        x: fixture.x + side.x * along + fixture.dx * (out - depth / 2),
+        z: fixture.z + side.z * along + fixture.dz * (out - depth / 2),
+      })),
+    )
+    const along = corners.map((p) => (p.x - counter.x) * counter.dx + (p.z - counter.z) * counter.dz)
+    const out = corners.map((p) => (p.x - counter.x) * -counter.dz + (p.z - counter.z) * counter.dx)
+    holes.push({ from: Math.min(...along), to: Math.max(...along), back: Math.min(...out), front: Math.max(...out) })
+  }
+  return holes
+}
+
 // The counters of a storey for Review, standing on its floor: a plinth, the cupboards, the worktop over them, and
 // any cupboards on the wall above.
-export function buildCounterParts(counters: Counter[], floorY: number): CounterPart[] {
+export function buildCounterParts(counters: Counter[], floorY: number, fixtures: Fixture[] = []): CounterPart[] {
   const groups = new Map<string, BufferGeometry[]>()
-  const push = (colour: string, geometry: BufferGeometry) => groups.set(colour, [...(groups.get(colour) ?? []), geometry])
+  const push = (colour: string, geometries: BufferGeometry[]) => groups.set(colour, [...(groups.get(colour) ?? []), ...geometries])
   for (const counter of counters) {
     const { height } = counterKindSpec(counter.kind)
     const top = floorY + height
     const free = counter.kind !== 'base'
     // A counter against a wall has its plinth set back at the front only; one standing free, on both sides.
     push(PLINTH_COLOUR, slab(counter, free ? 0.05 : 0, counter.depth - 0.05, floorY, floorY + PLINTH_M))
-    push(CARCASS_COLOUR, slab(counter, 0, counter.depth, floorY + PLINTH_M, top - WORKTOP_M))
-    push(counterTopSpec(counter.top).colour, slab(counter, free ? -WORKTOP_OVERHANG_M : 0, counter.depth + WORKTOP_OVERHANG_M, top - WORKTOP_M, top, free ? WORKTOP_OVERHANG_M : 0))
+    // A sink set into the counter goes through the worktop and into the cupboard under it.
+    const holes = sinkHoles(counter, fixtures)
+    const under = top - WORKTOP_M - SINK_BOWLS.deep
+    push(CARCASS_COLOUR, slab(counter, 0, counter.depth, floorY + PLINTH_M, holes.length > 0 ? under : top - WORKTOP_M))
+    if (holes.length > 0) push(CARCASS_COLOUR, slab(counter, 0, counter.depth, under, top - WORKTOP_M, 0, holes))
+    push(counterTopSpec(counter.top).colour, slab(counter, free ? -WORKTOP_OVERHANG_M : 0, counter.depth + WORKTOP_OVERHANG_M, top - WORKTOP_M, top, free ? WORKTOP_OVERHANG_M : 0, holes))
     if (counter.wallUnits) push(CARCASS_COLOUR, slab(counter, 0, WALL_UNIT_DEPTH_M, floorY + WALL_UNIT_BOTTOM_M, floorY + WALL_UNIT_TOP_M))
   }
   const parts: CounterPart[] = []
