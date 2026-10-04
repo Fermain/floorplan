@@ -4,6 +4,7 @@
   import { untrack } from 'svelte'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
+  import { settings } from '$lib/state/settings.svelte'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Redo2 from '@lucide/svelte/icons/redo-2'
   import Undo2 from '@lucide/svelte/icons/undo-2'
@@ -58,6 +59,12 @@
     if (route.includes('/checks')) return 'checks'
     if (route.includes('/project')) return 'project'
     return 'plan'
+  })
+
+  // The tab's title: the view, then the project, so several open projects can be told apart.
+  const pageTitle = $derived.by(() => {
+    const view = (page.route.id ?? '').includes('/wall/') ? 'Focus' : (sections.find((section) => section.id === active)?.label ?? 'Plan')
+    return `${view} · ${session.project?.name ?? 'Project'} · Floorplan`
   })
 
   const saveLabel = $derived(
@@ -144,6 +151,10 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 </script>
+
+<svelte:head>
+  <title>{pageTitle}</title>
+</svelte:head>
 
 <div class="flex h-dvh flex-col overflow-hidden bg-muted/40">
   <header class="z-20 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 border-b bg-background px-2 py-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-3 md:py-2">
@@ -233,7 +244,7 @@
       {/if}
     </div>
   </main>
-  {#if statusLine.text}
+  {#if statusLine.text && (statusLine.error || settings.hints)}
     <!-- A status bar under the drawing rather than a note floating over it, so it never covers the controls.
          One line; a tap or click opens a long message out in full. -->
     <footer

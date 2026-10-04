@@ -5,6 +5,7 @@ import { gasLayout } from '../geometry/gas'
 import { gutterLayout } from '../geometry/gutters'
 import { plumbingLayout } from '../geometry/plumbing'
 import { powerLayout } from '../geometry/power'
+import { buildingChecks } from '../geometry/sans'
 import type { Document } from '../model/types'
 import { isDocument } from '../state/projects'
 import { EXAMPLES } from '.'
@@ -46,6 +47,18 @@ describe('example projects', () => {
       return sum + x * nz - nx * z
     }, 0)
     expect(Math.abs(twice) / 2).toBeCloseTo(2025, 0)
+  })
+
+  it('the multi generation farmhouse has three dwellings, a garage and two carports, each under its own roof', async () => {
+    const doc = await byId('multi-generation')
+    const ground = doc.building.floors.find((floor) => floor.index === 0)!
+    expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(6)
+    expect((ground.spaces ?? []).filter((space) => space.type === 'kitchen')).toHaveLength(3)
+    expect((ground.spaces ?? []).filter((space) => space.type === 'garage')).toHaveLength(3)
+    expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
+    expect(powerLayout(doc).panels).toBe(16)
+    expect(doc.paving).toHaveLength(5)
+    expect(ground.walls.some((wall) => wall.finish)).toBe(true)
   })
 
   it('the city house fits its narrow stand', async () => {

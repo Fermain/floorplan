@@ -1,204 +1,205 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
-  import Ellipsis from '@lucide/svelte/icons/ellipsis'
-  import Plus from '@lucide/svelte/icons/plus'
-  import Upload from '@lucide/svelte/icons/upload'
-  import { onMount } from 'svelte'
+  import { asset, resolve } from '$app/paths'
+  import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import { Button } from '$lib/components/ui/button'
-  import * as Card from '$lib/components/ui/card'
-  import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
-  import type { Document } from '$lib/model/types'
-  import { resolve } from '$app/paths'
-  import { sectionHref } from '$lib/routes/links'
-  import {
-    deleteProject,
-    isDocument,
-    lastProjectId,
-    listProjects,
-    openProject,
-    saveProject,
-    type ProjectSummary,
-  } from '$lib/state/projects'
-  import { session } from '$lib/state/session.svelte'
-  import { EXAMPLES, type Example } from '$lib/examples'
-  import PlanThumbnail from '$lib/components/project/PlanThumbnail.svelte'
 
-  let projects = $state<ProjectSummary[]>([])
-  // Each example, built or loaded once for its thumbnail; opening one saves a copy to edit.
-  let examples = $state.raw<Record<string, Document>>({})
-  let opening = $state<string | null>(null)
+  const REPO = 'https://github.com/Fermain/floorplan'
+  const app = resolve('/app')
+  const start = `${resolve('/app/new')}?step=site`
 
-  async function loadExamples() {
-    const loaded = await Promise.all(EXAMPLES.map(async (example) => [example.id, await example.load()] as const))
-    examples = Object.fromEntries(loaded)
-  }
+  // The tour down the page: one view of the app at a time, each with a picture of the same farmhouse.
+  const tour = [
+    {
+      id: 'plan',
+      title: 'Plan',
+      lead: 'Draw on a real plot, to real sizes.',
+      points: [
+        'A plot with its true shape, slope, north point and street.',
+        'Walls drawn corner to corner, snapping to each other and to whole bricks and blocks.',
+        'Rooms form where walls close, with their net areas and floor finishes.',
+        'Several buildings on one plot, up to four storeys each, with stairs laid out to the regulations.',
+        'Driveways, paths, patios and an apron round the house.',
+      ],
+      image: 'plan.jpg',
+      alt: 'Plan of three houses, two carports and a garage round a gravel yard, with named rooms and paving',
+    },
+    {
+      id: 'focus',
+      title: 'Focus',
+      lead: 'Open any wall face-on and build it course by course.',
+      points: [
+        'Windows and doors sit on the courses, with lintels over them.',
+        'Whole and cut units are counted as you work.',
+        'Each face is left exposed, bagged or plastered, and painted.',
+        'Sockets, switches, pipes and fittings are placed on the wall they belong to.',
+      ],
+      image: 'focus.jpg',
+      alt: 'A plastered and painted cottage wall seen face-on, with a window and a dimension chain',
+    },
+    {
+      id: 'review',
+      title: 'Review',
+      lead: 'See it stand on its ground, in the sun.',
+      points: [
+        'The model sits on the terrain, levelled under each building.',
+        'Midsummer and midwinter sun at any hour, for the latitude of the plot.',
+        'A cutaway opens the house as you move in; walls can be cut to half height or hidden.',
+        'Roofs, gutters, solar panels, tanks, fences and paving are all there.',
+      ],
+      image: 'review-farm.jpg',
+      alt: 'Three houses, a garage and carports on a sloping stand, seen from above with the road behind',
+    },
+    {
+      id: 'quantities',
+      title: 'Quantities',
+      lead: 'A bill of quantities that keeps up with the drawing.',
+      points: [
+        'Bricks and blocks, mortar, lintels, concrete, roofing, plaster and paint.',
+        'Electrical, plumbing, gas, paving and fencing.',
+        'Every rate is yours to change, and so are the assumptions behind the figures.',
+        'Download the sheet as CSV.',
+      ],
+      image: 'quantities.jpg',
+      alt: 'A ruled sheet of masonry, mortar and lintel quantities with rates and an estimated total',
+    },
+    {
+      id: 'checks',
+      title: 'Checks',
+      lead: 'The regulations, measured as you go.',
+      points: [
+        'Daylight, ventilation, floor area and width for each habitable room (SANS 10400 Parts O and C).',
+        'Glazing against floor area for the whole house (Part XA).',
+        'Circuits, board size and cable; drainage falls, hot water runs and rainwater.',
+        'Load shedding: tick the circuits to keep on and get an inverter, battery and panel count.',
+      ],
+      image: 'checks.jpg',
+      alt: 'Room checks listed in a sheet, each with its daylight, ventilation, area and width against the minimum',
+    },
+  ]
 
-  async function openExample(example: Example) {
-    opening = example.id
-    try {
-      const document = structuredClone(examples[example.id] ?? (await example.load()))
-      const saved = await saveProject(null, example.name, document)
-      if (saved.ok) await goto(sectionHref(saved.project.id, 'plan'))
-      else problem = 'The example could not be saved.'
-    } finally {
-      opening = null
-    }
-  }
-  let last = $state<string | null>(null)
-  let loaded = $state(false)
-  let problem = $state('')
-
-  async function refresh() {
-    projects = await listProjects()
-    last = await lastProjectId()
-    loaded = true
-  }
-
-  onMount(() => {
-    void session.close().then(refresh)
-    void loadExamples()
-  })
-
-  const recent = $derived(projects.find((project) => project.id === last) ?? null)
-
-  const updated = new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
-
-  async function duplicate(project: ProjectSummary) {
-    const opened = await openProject(project.id)
-    if (!opened.ok) return
-    await saveProject(null, `${project.name} copy`, opened.document)
-    await refresh()
-  }
-
-  async function remove(project: ProjectSummary) {
-    if (!window.confirm(`Delete “${project.name}”? This cannot be undone.`)) return
-    await deleteProject(project.id)
-    await refresh()
-  }
-
-  async function importFile(event: Event) {
-    const input = event.currentTarget
-    if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
-    const file = input.files[0]
-    input.value = ''
-    try {
-      const parsed: unknown = JSON.parse(await file.text())
-      if (!isDocument(parsed)) {
-        problem = 'That file is not a floorplan project.'
-        return
-      }
-      const saved = await saveProject(null, file.name.replace(/\.json$/i, ''), parsed as Document)
-      if (saved.ok) await goto(sectionHref(saved.project.id, 'plan'))
-    } catch {
-      problem = 'That file could not be read.'
-    }
-  }
+  const technology = [
+    { name: 'SvelteKit and Svelte 5', text: 'A single-page app built to static files. There is no server to run.' },
+    { name: 'three.js with Threlte', text: 'The 3D Review, its sun and shadows, and the cutaway.' },
+    { name: 'Geometry in TypeScript', text: 'Walls, roofs, stairs, services and takeoff are plain functions with tests beside them.' },
+    { name: 'Tailwind and shadcn-svelte', text: 'A plain, dense interface that works on a phone.' },
+    { name: 'IndexedDB', text: 'Projects save in your browser as you work. Nothing is uploaded.' },
+    { name: 'Open source', text: 'The code, the example houses and the rates are on GitHub.' },
+  ]
 </script>
 
-<div class="min-h-dvh bg-muted/40">
-  <div class="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Floorplan</h1>
-        <p class="text-sm text-muted-foreground">Brick-by-brick house design, priced and checked as you draw.</p>
-      </div>
-      <div class="flex gap-2">
-        <Button variant="outline" onclick={() => document.getElementById('project-file')?.click()}>
-          <Upload />
-          Open file
-        </Button>
-        <Button href={`${resolve('/new')}?step=site`}><Plus />New project</Button>
-        <input id="project-file" class="hidden" type="file" accept=".json,application/json" onchange={importFile} />
-      </div>
-    </div>
+<svelte:head>
+  <title>Floorplan: house design, priced and checked as you draw</title>
+</svelte:head>
 
-    {#if problem}
-      <p class="text-sm text-destructive">{problem}</p>
-    {/if}
+<div class="min-h-dvh bg-background text-foreground">
+  <header class="sticky top-0 z-20 flex items-center justify-between gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur sm:px-6">
+    <a class="text-sm font-semibold" href={resolve('/')}>Floorplan</a>
+    <nav class="flex items-center gap-1 text-sm" aria-label="Site">
+      <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-sm:hidden" href="#tour">Features</a>
+      <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-sm:hidden" href="#technology">Technology</a>
+      <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground" href={REPO} rel="noreferrer">GitHub</a>
+      <Button size="sm" class="ml-1" href={app}>Open the app</Button>
+    </nav>
+  </header>
 
-    {#if recent}
-      <Card.Root>
-        <Card.Header>
-          <Card.Description>Continue where you left off</Card.Description>
-          <Card.Title class="text-xl">{recent.name}</Card.Title>
-          <Card.Description>Edited {updated.format(recent.updatedAt)}</Card.Description>
-        </Card.Header>
-        <Card.Footer>
-          <Button href={sectionHref(recent.id, 'plan')}>Open</Button>
-        </Card.Footer>
-      </Card.Root>
-    {/if}
-
-    <Card.Root>
-      <Card.Header>
-        <Card.Title>Projects</Card.Title>
-        <Card.Description>Saved in this browser. Changes save as you work.</Card.Description>
-      </Card.Header>
-      <Card.Content class="p-0">
-        {#if loaded && projects.length === 0}
-          <p class="px-4 pb-6 text-sm text-muted-foreground sm:px-6">No projects yet. Start one with New project.</p>
-        {/if}
-        <ul class="divide-y">
-          {#each projects as project (project.id)}
-            <li class="flex items-center gap-3 px-4 py-3 sm:px-6">
-              <a class="min-w-0 flex-1" href={sectionHref(project.id, 'plan')}>
-                <div class="truncate font-medium">{project.name}</div>
-                <div class="text-xs text-muted-foreground">Edited {updated.format(project.updatedAt)}</div>
-              </a>
-              <Button variant="outline" size="sm" href={sectionHref(project.id, 'plan')}>Open</Button>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button {...props} variant="ghost" size="icon-sm" aria-label="More for {project.name}">
-                      <Ellipsis />
-                    </Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end">
-                  <DropdownMenu.Item onclick={() => void duplicate(project)}>Duplicate</DropdownMenu.Item>
-                  <DropdownMenu.Separator />
-                  <DropdownMenu.Item variant="destructive" onclick={() => void remove(project)}>Delete</DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </li>
-          {/each}
-        </ul>
-      </Card.Content>
-    </Card.Root>
-
-    <section class="grid gap-3" aria-labelledby="examples-heading">
-      <div>
-        <h2 id="examples-heading" class="text-lg font-semibold">Examples</h2>
-        <p class="text-sm text-muted-foreground">Open a copy of a finished house to see how it is put together, or to start from it.</p>
-      </div>
-      <div class="grid gap-4 sm:grid-cols-2">
-        {#each EXAMPLES as example (example.id)}
-          <Card.Root class="overflow-hidden">
-            <div class="aspect-[4/3] border-b bg-background p-3">
-              {#if examples[example.id]}
-                <PlanThumbnail document={examples[example.id]} class="h-full w-full" />
-              {/if}
-            </div>
-            <Card.Header>
-              <Card.Title>{example.name}</Card.Title>
-              <Card.Description>{example.place}</Card.Description>
-            </Card.Header>
-            <Card.Content class="grid gap-3 text-sm">
-              <p>{example.description}</p>
-              <div class="flex flex-wrap gap-1.5">
-                {#each example.highlights as highlight (highlight)}
-                  <span class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{highlight}</span>
-                {/each}
-              </div>
-            </Card.Content>
-            <Card.Footer>
-              <Button variant="outline" disabled={opening !== null} onclick={() => void openExample(example)}>
-                {opening === example.id ? 'Opening…' : 'Open a copy'}
-              </Button>
-            </Card.Footer>
-          </Card.Root>
-        {/each}
+  <main>
+    <section class="border-b bg-muted/40">
+      <div class="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[5fr_7fr] lg:items-center lg:py-16">
+        <div class="grid gap-5">
+          <h1 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+            Design a house brick by brick. Know what it costs before you build.
+          </h1>
+          <p class="max-w-xl text-base text-muted-foreground">
+            Floorplan is a design tool for small, low-cost houses in South Africa. Draw on a sloping plot in real bricks
+            and blocks, and get a bill of quantities and the SANS 10400 checks as you go.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <Button href={app}>Open the app<ArrowRight /></Button>
+            <Button variant="outline" href={start}>Start a new project</Button>
+          </div>
+          <ul class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <li>Runs in your browser</li>
+            <li>No account</li>
+            <li>Projects stay on your machine</li>
+            <li>Free and open source</li>
+          </ul>
+        </div>
+        <img
+          class="w-full rounded-md border shadow-sm"
+          src={asset('/shots/review.jpg')}
+          width="1456"
+          height="771"
+          alt="A face-brick farmhouse with solar panels, a painted cottage and a carport, seen in the 3D Review"
+        />
       </div>
     </section>
-  </div>
+
+    <section id="tour" class="scroll-mt-12" aria-label="Features">
+      {#each tour as item, index (item.id)}
+        <div class="border-b {index % 2 === 1 ? 'bg-muted/40' : ''}">
+          <div class="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[4fr_8fr] lg:items-start lg:py-14">
+            <div class="grid gap-3 {index % 2 === 1 ? 'lg:order-2' : ''}">
+              <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{item.title}</p>
+              <h2 class="text-xl font-semibold tracking-tight text-balance">{item.lead}</h2>
+              <ul class="grid gap-1.5 text-sm text-muted-foreground">
+                {#each item.points as point (point)}
+                  <li class="border-l-2 pl-3">{point}</li>
+                {/each}
+              </ul>
+            </div>
+            <img class="w-full rounded-md border shadow-sm" src={asset(`/shots/${item.image}`)} width="1456" height="771" loading="lazy" alt={item.alt} />
+          </div>
+        </div>
+      {/each}
+    </section>
+
+    <section class="border-b" aria-labelledby="examples-heading">
+      <div class="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[4fr_8fr] lg:items-start lg:py-14">
+        <div class="grid gap-3">
+          <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Examples</p>
+          <h2 id="examples-heading" class="text-xl font-semibold tracking-tight text-balance">Start from a finished house.</h2>
+          <p class="text-sm text-muted-foreground">
+            Five example projects come with the app, from a tight city house to the multi generation farmhouse in these
+            pictures: three homes, a garage and two carports, with solar, rainwater, a septic tank, paving and paint.
+            Open a copy and change it, or start from an empty plot.
+          </p>
+          <div><Button variant="outline" href={app}>See the examples<ArrowRight /></Button></div>
+        </div>
+        <img class="w-full rounded-md border shadow-sm" src={asset('/shots/home.jpg')} width="1456" height="771" loading="lazy" alt="The project picker, with the examples listed beside a preview and an estimate for each" />
+      </div>
+    </section>
+
+    <section id="technology" class="scroll-mt-12 border-b bg-muted/40" aria-labelledby="technology-heading">
+      <div class="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:py-14">
+        <div class="grid gap-2">
+          <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Technology</p>
+          <h2 id="technology-heading" class="text-xl font-semibold tracking-tight">How it is built.</h2>
+        </div>
+        <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+          {#each technology as item (item.name)}
+            <div class="border-t pt-3">
+              <dt class="text-sm font-semibold">{item.name}</dt>
+              <dd class="text-sm text-muted-foreground">{item.text}</dd>
+            </div>
+          {/each}
+        </dl>
+      </div>
+    </section>
+
+    <section class="border-b">
+      <div class="mx-auto grid max-w-7xl gap-4 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-center">
+        <p class="max-w-3xl text-sm text-muted-foreground">
+          Floorplan helps you think a design through and get a rough idea of its cost. It does not replace an architect,
+          an engineer or plan approval. Rates are examples, not quotes, and the checks are a guide to SANS 10400 that
+          must be confirmed against the standard.
+        </p>
+        <Button href={app}>Open the app<ArrowRight /></Button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-4 text-sm text-muted-foreground sm:px-6">
+    <span>Floorplan</span>
+    <a class="hover:text-foreground" href={REPO} rel="noreferrer">Source on GitHub</a>
+  </footer>
 </div>

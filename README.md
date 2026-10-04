@@ -6,21 +6,31 @@ Brick-by-brick house design in the browser, priced and checked as you draw.
 
 Floorplan is a design tool for small, low-cost houses in South Africa. You draw on a real-shaped, sloping plot. Walls are courses of real bricks and blocks, and the drawing gives you a bill of quantities and the SANS 10400 deemed-to-satisfy checks as you go. It runs entirely in your browser: there is no account, and your projects stay on your machine.
 
-![A two-storey block house with a column-supported balcony under a clay tile hip roof, seen from the garden](docs/images/review-garden.jpg)
+![A face-brick farmhouse with solar panels, a painted cottage and a carport, seen in the 3D Review](static/shots/review.jpg)
 
-*The house in the pictures was drawn from a blank project on the app's gentle north-facing sample plot. It is a 12 × 8 m house in 140 mm hollow block, with a covered balcony, a stair, a carport and boundary fencing.*
+*Most of the pictures show the **Multi generation farmhouse**, one of the examples that come with the app: a face-brick family house between two painted cottages, with a double garage, two carports, solar panels, rainwater tanks, a septic tank and paving. Open a copy from the app's project list to look round it.*
 
 > [!IMPORTANT]
 > Floorplan helps you think through a design and get a rough idea of its cost. It does not replace an architect, an engineer or plan approval. Rates are examples, not quotes. The checks are a guide to SANS 10400 and must be confirmed against the standard.
 
 ## Contents
 
+- [Where things are](#where-things-are)
 - [A tour of the features](#a-tour-of-the-features)
 - [Your data](#your-data)
 - [Keyboard and mouse](#keyboard-and-mouse)
 - [Known limits](#known-limits)
 - [Running it locally](#running-it-locally)
 - [How the code is organised](#how-the-code-is-organised)
+
+## Where things are
+
+- **[floorplan.ferma.in](https://floorplan.ferma.in)** is an introduction to the app.
+- **[floorplan.ferma.in/app](https://floorplan.ferma.in/app)** is the app itself. It opens on your projects and the examples.
+
+<img src="static/shots/home.jpg" alt="The project picker: projects and examples in one list, each with an estimate, and a preview of the one picked" width="100%">
+
+The list shows your projects and the examples together, each with its estimated cost. Pick one to see its plan, plot and floor area beside the list; double-click or press Enter to open it. **Settings** has the switch for tips in the status bar and a backup of every project to one file.
 
 ## A tour of the features
 
@@ -57,10 +67,14 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 
 ### Plan
 
-<img src="docs/images/plan-ground.jpg" alt="Ground floor plan with named rooms and their net areas" width="100%">
+<img src="static/shots/plan.jpg" alt="Plan of three houses, two carports and a garage round a gravel yard, with named rooms, floor finishes and paving" width="100%">
 
 - **Drawing:** click corner to corner to draw walls, or tap Shift to draw a rectangle. A new wall becomes the grid reference, so the next one lines up with it.
-- **Rooms:** they form wherever walls close, and each shows its net area. Name them and give them a type, such as bedroom, kitchen or bathroom. Rooms can be grouped, so an open-plan living and dining area counts as one.
+- **Rooms:** they form wherever walls close, and each shows its net area. Name them and give them a type, such as bedroom, kitchen or bathroom. Rooms can be grouped, so an open-plan living and dining area counts as one. Each room's floor finish (screed, tiles, timber, vinyl or carpet) is drawn to scale.
+- **Several buildings:** a plot can hold more than one building, each with its own storeys and roof.
+- **Fittings:** sockets, switches, lights, sanitary ware, geysers, gas appliances and bottles, and rainwater tanks. A room can be fitted out in one step, and tanks snap under downpipes.
+- **Paving:** driveways, paths and patios are drawn on the ground as rectangles or outlines, in concrete, cement or clay pavers, gravel or grass blocks. An apron round the house is a project setting.
+- **Road access:** mark which sides of the plot face a street.
 - **Logical walls:** these divide or close off a space without building anything. They can carry a fence or supports, and a roof may rest on them.
 - **Storeys:** add up to four. Each upper storey stands only on the rooms enclosed below it, so a roof or a floor never floats over open ground.
 - **Stairs:** the Stair tool shows the whole flight, laid out to SANS 10400 Part M. It sits flush against a wall face, side-on or end-on, and tucks into corners. R turns it round.
@@ -75,12 +89,14 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 
 Double-click a wall to open it as a flat elevation. Place and size windows and doors on the courses, read the dimension chain, and see the count of whole and cut units, openings and lintels change as you work. You can change a wall's system here too.
 
+Each face of a wall is left exposed, bagged or plastered, and plastered and bagged faces take a paint colour. The project sets the finish outside and inside, and any face can differ. Skirting, cornice, fittings and gutters are set here as well.
+
 On a logical wall, Focus is where you choose what gets built along it:
 - **Fences:** steel palisade, welded mesh, precast concrete or timber slats, at any height from 600 to 3000 mm.
 - **Supports:** a classical precast column, a pier in the project's own block, a steel post or a treated timber pole, at a spacing you set.
 
 <p>
-  <img src="docs/images/focus-wall.jpg" width="49%" alt="Coursed block wall in Focus with a window, a sliding door and lintels">
+  <img src="static/shots/focus.jpg" width="49%" alt="A plastered and painted cottage wall in Focus with a window and its dimension chain">
   <img src="docs/images/focus-balcony.jpg" width="49%" alt="Balcony edge in Focus with classical columns and a palisade balustrade">
 </p>
 
@@ -88,11 +104,15 @@ On a logical wall, Focus is where you choose what gets built along it:
 
 Roofs come in hip, gable or mono-pitch forms, covered in concrete tiles, clay tiles, IBR or corrugated sheeting. They have real thickness and eaves. Gable ends are built up in the same block as the wall beneath, cut to the roof line. On the plan, the roof shows its ridges and hips.
 
-<img src="docs/images/plan-site.jpg" alt="Site plan with the house, carport and boundary fence lines" width="100%">
+<img src="static/shots/plan-site.jpg" alt="Site plan of the farm stand with its buildings, drive, yard and the road along one side" width="100%">
 
 ### Review: the 3D model and the sun
 
 Review shows the design on its terrain, levelled under each building, with fences following the ground. Switch between midsummer and midwinter and move the time of day in SAST to see where the sun and shadows fall for the plot's latitude.
+
+Moving in close cuts the building open in front of the camera, so you can see inside. Walls can also be cut to half height or hidden, and the storeys above a chosen one lifted off. Click a wall to open it in Focus, or a fitting to change it.
+
+<img src="static/shots/review-farm.jpg" alt="Three houses, a garage and carports on a sloping stand, with the road behind" width="100%">
 
 <p>
   <img src="docs/images/review-street.jpg" width="32%" alt="Street view through the palisade fence">
@@ -107,14 +127,13 @@ The **Quantities** page counts materials straight from the drawing:
 - Mortar as cement bags and sand.
 - Lintels by stock length, and windows and doors by size.
 - Surface bed, strip footings, suspended slabs and stairs in concrete.
-- Floor finishes, roof covering (with a tile count), supports, pad footings and fencing.
+- Floor finishes, plaster, bagging and paint, roof covering (with a tile count), supports, pad footings and fencing.
+- Electrical, plumbing and gas: cable, conduit, boards, pipes, fittings and chases.
+- Paving by area, with the layers under it and its edging.
 
-Every rate is editable, and the assumptions behind the numbers are too (waste, mortar allowance, mix, footing size). Download the table as CSV.
+The page is a sheet. Type your own rate over any example rate; Enter and the arrow keys move down and up the column. The assumptions behind the numbers (waste, mortar allowance, mix, footing size) sit beside it. Download the sheet as CSV.
 
-<p>
-  <img src="docs/images/quantities-masonry.jpg" width="49%" alt="Masonry, mortar and lintel lines with an estimated total">
-  <img src="docs/images/quantities-supports.jpg" width="49%" alt="Supports and fencing lines">
-</p>
+<img src="static/shots/quantities.jpg" alt="The quantities sheet: masonry, mortar and lintel lines with rates, amounts and an estimated total" width="100%">
 
 ### Checks
 
@@ -124,17 +143,27 @@ The **Checks** page measures each habitable room against SANS 10400 deemed-to-sa
 - Floor area and width (Part C).
 - The whole building's glazing-to-floor ratio against the Part XA threshold for a fenestration calculation.
 
+It also lays out the services from the fittings on the plan, as a guide for the trades:
+- **Electrical:** circuits, breakers, cable sizes and the board.
+- **Load shedding and solar:** tick the circuits to keep on and it sizes an inverter, a battery and the panels on the sunnier roof faces.
+- **Plumbing:** the drain's fall to the sewer or septic tank, the water main, hot water runs and the rainwater a roof yields.
+- **Gas:** appliances, pipe runs and the bottles' clearances.
+- **Wall finishes:** single-leaf outside walls left exposed to the rain.
+
+Each section says how many things it has to attend to and lists them first.
+
 While you draw, the plan also warns about:
 - Upper walls that don't land on a wall below.
 - Straight walls longer than 8 m, which want a movement joint.
 - Rooms that fall short.
 
-<img src="docs/images/checks.jpg" alt="Checks table listing daylight, ventilation, floor area and width per room" width="100%">
+<img src="static/shots/checks.jpg" alt="The Checks page: each room's daylight, ventilation, floor area and width against the minimum, with a list of sections beside it" width="100%">
 
 ## Your data
 
-- **Storage:** projects save automatically in your browser's storage as you work, and appear on the home page. Clearing site data removes them, so download a copy of anything you want to keep.
-- **Download:** the project menu can export the plan as SVG or download the whole project as a JSON file. **Open file** on the home page loads a project file back in.
+- **Storage:** projects save automatically in your browser's storage as you work, and appear in the project list. Clearing site data removes them, so keep a backup of anything you want to keep.
+- **Backup:** **Settings** in the project list writes every project to one file, and restores from one, adding the projects beside those already there.
+- **Download:** the project menu can export the plan as SVG or download the whole project as a JSON file. **Open file** in the project list loads a project file back in.
 - **Import:** on the Project page you can bring in a plot boundary (GeoJSON or KML, in metres) and ground levels (a heightfield JSON file). You can also set the latitude, longitude and north bearing used for the sun.
 
 Nothing is sent to a server.
@@ -156,10 +185,11 @@ Nothing is sent to a server.
 
 ## Known limits
 
-- **One building shape per storey:** a building has up to four storeys, and walls are straight.
+- **Straight walls:** a building has up to four storeys, and walls are straight.
 - **Fixed storey height:** it's 2.4 m, so parapets and double-height spaces can't be drawn yet.
 - **Placed stairs:** they can be turned or deleted, but not dragged.
-- **Not yet counted:** foundations below the footing, reinforcement, plaster, roof timbers and labour.
+- **Not yet counted:** foundations below the footing, reinforcement and roof timbers. Labour is counted only for painting.
+- **Services are indicative:** circuits, pipes and gas runs are laid out as a guide to cost. Registered electricians, plumbers and gas installers design and certify the real thing.
 - **Sample data:** the sample plots are made up. Real cadastral and elevation data has to be imported as files.
 
 ## Running it locally
@@ -186,10 +216,12 @@ It's a SvelteKit single-page app (Svelte 5 runes, static adapter). The 3D views 
 
 | Path | Holds |
 | --- | --- |
-| `src/routes` | Pages: home, new project, and each project's Plan, Focus, Review, Quantities, Checks and Project |
+| `src/routes` | The introduction at `/`, and the app under `/app`: the project list, new project, and each project's Plan, Focus, Review, Quantities, Checks and Project |
+| `static/shots` | Screenshots used by the introduction and this README |
 | `src/view` | The large editors: `plan`, `elevation` (Focus), `review` and `quantities` |
 | `src/lib/model` | The document types and every edit, as pure functions that return a new document or a reason for refusing |
-| `src/lib/geometry` | Walls, openings, rooms, slabs, roofs, gables, stairs, fences, supports, terrain and SANS checks |
+| `src/lib/geometry` | Walls, openings, rooms, slabs, roofs, gables, stairs, fences, supports, paving, finishes, services, terrain and SANS checks |
+| `src/lib/examples` | The example projects, most of them built in code through the same edits a person makes |
 | `src/lib/cost` | The quantity takeoff and example rates |
 | `src/lib/plot` | Sample plots and GeoJSON, KML and heightfield import |
 | `src/lib/solar` | Sun position for the Review lighting |

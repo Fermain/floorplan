@@ -23,6 +23,16 @@ export const EXAMPLES: readonly Example[] = [
     load: async () => (await import('./pretoria-stoep-house.json')).default as unknown as Document,
   },
   {
+    id: 'multi-generation',
+    name: 'Multi generation farmhouse',
+    place: 'Mpumalanga, on a farm stand of nearly half a hectare',
+    description:
+      'Three homes on one stand: a face-brick family house between two painted cottages, each cottage with its own carport, a double garage on the drive, sixteen panels and two rainwater tanks on the main roof, a septic tank, and paved drive, yard, paths and patio.',
+    highlights: ['Three dwellings', 'Garage and two carports', 'Solar and rainwater', 'Paving and paint'],
+    author: 'Floorplan',
+    load: async () => (await import('./multiGeneration')).multiGeneration(),
+  },
+  {
     id: 'eco-off-grid',
     name: 'Off-grid farmhouse',
     place: 'Limpopo, on a rolling hectare',
