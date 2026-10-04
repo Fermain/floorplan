@@ -2,6 +2,9 @@
   import ReviewScene from './ReviewScene.svelte'
   import Snowflake from '@lucide/svelte/icons/snowflake'
   import Sun from '@lucide/svelte/icons/sun'
+  import Scan from '@lucide/svelte/icons/scan'
+  import { Toggle } from '$lib/components/ui/toggle'
+  import { runLength, SERVICE_KINDS, serviceRuns } from '../../lib/geometry/serviceRuns'
   import { Separator } from '$lib/components/ui/separator'
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -85,6 +88,13 @@
   let cutaway = $state('box-near')
   const chosenCut = $derived(CUTAWAYS.find((item) => item.value === cutaway) ?? CUTAWAYS[1])
   let walls = $state<WallView>('full')
+  // Services: the building fades and the pipes and cables in it are drawn.
+  let xray = $state(false)
+  const serviceLegend = $derived.by(() => {
+    if (!xray) return []
+    const runs = serviceRuns(documentStore.document)
+    return SERVICE_KINDS.map((kind) => ({ ...kind, length: runs.filter((run) => run.kind === kind.id).reduce((sum, run) => sum + runLength(run), 0) })).filter((kind) => kind.length > 0)
+  })
   let upTo = $state('all')
   const storeys = $derived(
     [...new Set(documentStore.document.building.floors.filter((floor) => floor.walls.length > 0).map((floor) => floor.index))].sort((a, b) => a - b),
@@ -158,10 +168,27 @@
           </Select.Content>
         </Select.Root>
       {/if}
+      <Toggle size="sm" variant="outline" bind:pressed={xray} aria-label="Show services" title="Fade the building to show the pipes and cables in it">
+        <Scan />Services
+      </Toggle>
     </div>
+    {#if xray}
+      <div class="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+        {#each serviceLegend as kind (kind.id)}
+          <span class="flex items-center gap-1.5">
+            <span class="inline-block h-1 w-4 rounded-full" style:background={kind.colour}></span>
+            {kind.name}
+            <span class="text-muted-foreground tabular-nums">{Math.round(kind.length)} m</span>
+          </span>
+        {:else}
+          <span class="text-muted-foreground">No services yet: place fittings on the plan and they are routed here.</span>
+        {/each}
+        <span class="text-muted-foreground">Indicative routes, not a drawing to build from.</span>
+      </div>
+    {/if}
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} {walls} upTo={upTo === 'all' ? null : Number(upTo)} />
+    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} {walls} upTo={upTo === 'all' ? null : Number(upTo)} {xray} />
   </div>
 </div>
 

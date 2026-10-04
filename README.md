@@ -115,6 +115,8 @@ Review shows the design on its terrain, levelled under each building, with fence
 
 Moving in close cuts the building open in front of the camera, so you can see inside. Walls can also be cut to half height or hidden, and the storeys above a chosen one lifted off. Click a wall to open it in Focus, or a fitting to change it.
 
+**Services** fades the building to a ghost and draws the pipes and cables in it: drains, cold and hot water, lighting, plugs, the stove and geyser circuits, and gas, each in its own colour with its length. The routes are indicative.
+
 <img src="static/shots/review-farm.jpg" alt="Three houses, a garage and carports on a sloping stand, with the road behind" width="100%">
 
 <p>
