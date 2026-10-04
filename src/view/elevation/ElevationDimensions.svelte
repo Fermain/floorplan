@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import type { GroundLine } from '../../lib/geometry/groundLine'
   import type { Opening } from '../../lib/model/types'
   import { elevationWindow } from './elevation'
 
@@ -14,13 +15,15 @@
     openings: Opening[]
     selectedId: string | null
     floorLevel: number | null
+    // The ground along the wall, already turned to the side in view.
+    ground?: GroundLine | null
     fittings?: Fitting[]
     conduits?: { u: number; bottom: number; top: number; clash?: boolean }[]
     ports?: { u: number; v: number; r: number; kind: 'waste' | 'cold' | 'hot' | 'gas' }[]
     pipes?: { kind: 'waste' | 'cold' | 'hot' | 'gas'; points: [number, number][]; clash?: boolean }[]
   }
 
-  let { length, height, head, openings, selectedId, floorLevel, fittings = [], conduits = [], ports = [], pipes = [] }: Props = $props()
+  let { length, height, head, openings, selectedId, floorLevel, ground = null, fittings = [], conduits = [], ports = [], pipes = [] }: Props = $props()
 
   let width = $state(0)
   let tall = $state(0)
@@ -141,10 +144,30 @@
         </text>
       </g>
     {/if}
+    {#if ground}
+      {@const line = (points: [number, number][]) => points.map(([u, v]) => `${u},${y(v)}`).join(' ')}
+      {@const start = ground.finished[0]}
+      {@const end = ground.natural[ground.natural.length - 1]}
+      <g class="ground">
+        <!-- The ground as surveyed, where levelling the pad has cut into it or filled over it. -->
+        {#if ground.cut > 0.02 || ground.fill > 0.02}
+          <polyline class="natural" points={line(ground.natural)} />
+          <text class="natural" x={length + 0.34} y={y(end[1]) + font * 0.35} font-size={font}>
+            natural{ground.cut > 0.02 ? ` · cut ${mm(ground.cut)}` : ''}{ground.fill > 0.02 ? ` · fill ${mm(ground.fill)}` : ''}
+          </text>
+        {/if}
+        <polyline points={line(ground.finished)} />
+        <text x={-0.28} y={y(start[1]) + font * 1.1} font-size={font}>Ground</text>
+      </g>
+    {/if}
     {#if floorLevel !== null}
       <g class="ffl">
         <line x1={-0.3} y1={y(floorLevel)} x2={length + 0.3} y2={y(floorLevel)} />
-        <text x={-0.28} y={y(floorLevel) - font * 0.35} font-size={font}>FFL +{mm(floorLevel)}</text>
+        <text x={-0.28} y={y(floorLevel) - font * 0.35} font-size={font}>
+          FFL +{mm(floorLevel - (ground ? ground.highest : 0))}
+        </text>
+        <!-- The damp-proof course goes in at floor level, which wants to be 150 mm clear of the ground. -->
+        <text class:low={ground !== null && floorLevel - ground.highest < 0.149} x={length + 0.34} y={y(floorLevel) - font * 0.35} font-size={font}>DPC</text>
       </g>
     {/if}
   {/if}
@@ -265,5 +288,30 @@
 
   .ffl text {
     fill: #166534;
+  }
+
+  .ffl text.low {
+    fill: #b45309;
+  }
+
+  .ground polyline {
+    fill: none;
+    stroke: #78350f;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .ground polyline.natural {
+    stroke: #a8a29e;
+    stroke-width: 1px;
+    stroke-dasharray: 3 3;
+  }
+
+  .ground text {
+    fill: #78350f;
+  }
+
+  .ground text.natural {
+    fill: #78716c;
   }
 </style>
