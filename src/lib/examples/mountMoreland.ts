@@ -71,33 +71,32 @@ export function mountMoreland(): Document {
   // The cottage, 9 × 9 m, square to the boundaries, its gable ends to the north and south.
   const [x0, z0] = [9.5, 21.5]
   b.rect(0, x0, z0, x0 + 9, z0 + 9, block)
-  // A full-height wall cuts a 3 m slice off the west side: the bedroom, with its en suite at the front end.
-  b.walls(0, [{ x: x0 + 3, z: z0 }, { x: x0 + 3, z: z0 + 9 }], { systemId: 'block-90', skin: 'single' })
-  b.walls(0, [{ x: x0, z: z0 + 6 }, { x: x0 + 3, z: z0 + 6 }], { systemId: 'block-90', skin: 'single' })
-  // The rest is one open room. The kitchenette is the 3 × 3 m in its south-east corner, open to the north; lines
-  // with nothing built on them mark it off. Its bar is not drawn.
-  b.walls(0, [{ x: x0 + 6, z: z0 }, { x: x0 + 6, z: z0 + 3 }, { x: x0 + 9, z: z0 + 3 }], { skin: 'logical' })
+  // A full-height wall cuts a 3 m slice off the east side: the bedroom at the front, its en suite (3 × 3 m) behind.
+  b.walls(0, [{ x: x0 + 6, z: z0 }, { x: x0 + 6, z: z0 + 9 }], { systemId: 'block-90', skin: 'single' })
+  b.walls(0, [{ x: x0 + 6, z: z0 + 3 }, { x: x0 + 9, z: z0 + 3 }], { systemId: 'block-90', skin: 'single' })
+  // The rest is one open room, 6 × 9 m. The kitchenette is the 3 × 3 m in its south-east corner, against the
+  // en suite and open to the north; lines with nothing built on them mark it off. Its bar is not drawn.
+  b.walls(0, [{ x: x0 + 3, z: z0 }, { x: x0 + 3, z: z0 + 3 }, { x: x0 + 6, z: z0 + 3 }], { skin: 'logical' })
 
-  // The front gable: a window, double doors and a window. The back: double doors from the bedroom onto the deck,
-  // a window to the living area and one over the kitchenette.
-  b.opening(0, 'window', { x: x0 + 1.5, z: z0 + 9 }, 0.9)
+  // The front gable: a window, double doors and a window. The back: double doors onto the deck, and the
+  // kitchenette's window.
+  b.opening(0, 'window', { x: x0 + 1.8, z: z0 + 9 })
   b.opening(0, 'door', { x: x0 + 4.5, z: z0 + 9 }, 1.6)
   b.opening(0, 'window', { x: x0 + 7.4, z: z0 + 9 })
   b.opening(0, 'door', { x: x0 + 1.6, z: z0 }, 1.6)
   b.opening(0, 'window', { x: x0 + 4.5, z: z0 })
-  b.opening(0, 'window', { x: x0 + 7.5, z: z0 })
-  // Two windows down the west side, in the bedroom, and two on the east.
+  // Two windows down the west side, in the living area, and one each for the bedroom and the en suite on the east.
   b.opening(0, 'window', { x: x0, z: z0 + 4.4 })
   b.opening(0, 'window', { x: x0, z: z0 + 1.8 })
   b.opening(0, 'window', { x: x0 + 9, z: z0 + 6 }, 1.6)
-  b.opening(0, 'window', { x: x0 + 9, z: z0 + 1.5 }, 0.9)
-  b.opening(0, 'internal-door', { x: x0 + 3, z: z0 + 4.5 })
-  b.opening(0, 'internal-door', { x: x0 + 1.5, z: z0 + 6 })
+  b.opening(0, 'window', { x: x0 + 9, z: z0 + 1.5 }, 0.6)
+  b.opening(0, 'internal-door', { x: x0 + 6, z: z0 + 7.5 })
+  b.opening(0, 'internal-door', { x: x0 + 7.5, z: z0 + 3 })
 
-  b.room(0, { x: x0 + 7.5, z: z0 + 1.5 }, 'Kitchenette', 'kitchen')
-  b.room(0, { x: x0 + 5, z: z0 + 6 }, 'Living', 'living')
-  b.room(0, { x: x0 + 1.5, z: z0 + 3 }, 'Bedroom', 'bedroom')
-  b.room(0, { x: x0 + 1.5, z: z0 + 7.5 }, 'En suite', 'bathroom')
+  b.room(0, { x: x0 + 4.5, z: z0 + 1.5 }, 'Kitchenette', 'kitchen')
+  b.room(0, { x: x0 + 3, z: z0 + 6 }, 'Living', 'living')
+  b.room(0, { x: x0 + 7.5, z: z0 + 6 }, 'Bedroom', 'bedroom')
+  b.room(0, { x: x0 + 7.5, z: z0 + 1.5 }, 'En suite', 'bathroom')
 
   // The deck behind the cottage: 3 m wide and 6 m out, down the west side of the walled garden.
   const gap = 0.05
@@ -213,15 +212,15 @@ export function mountMoreland(): Document {
 
   // No sewer in the village: a septic tank in the low south-west corner, with the drain taken round the walled garden.
   b.apply(mutations.setSewerType(b.doc, 'septic'), 'septic tank')
-  b.apply(mutations.setServicePoint(b.doc, 'sewer', { x: 7, z: 12 }), 'septic tank spot')
-  b.apply(mutations.setSoakaway(b.doc, { x: 6, z: 6 }), 'soakaway')
+  b.apply(mutations.setServicePoint(b.doc, 'sewer', { x: 8, z: 9.5 }), 'septic tank spot')
+  b.apply(mutations.setSoakaway(b.doc, { x: 6, z: 5.5 }), 'soakaway')
   b.apply(mutations.setServiceBends(b.doc, 'sewer', [{ x: 20.3, z: 28.75 }, { x: 20.3, z: 14.5 }]), 'drain round the garden')
   const geyser = floor().fixtures?.find((fixture) => fixture.kind === 'geyser')
   if (geyser) {
     b.apply(mutations.setFixtureKind(b.doc, floor().id, geyser.id, 'solar-geyser'), 'solar geyser')
-    b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: x0 + 3.3, z: z0 + 4.2 }), 'geyser in the middle')
+    b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: x0 + 5.7, z: z0 + 3.4 }), 'geyser in the middle')
   }
-  b.fixture(0, 'db-board', { x: x0 + 8.7, z: z0 + 7.6 }, { x: -1, z: 0 })
+  b.fixture(0, 'db-board', { x: x0 + 0.3, z: z0 + 7 }, { x: 1, z: 0 })
 
   // The main house has its own hot water, between the kitchen and the bathroom.
   b.fixture(0, 'solar-geyser', at(11, 4.5), { x: v.x, z: v.z })
