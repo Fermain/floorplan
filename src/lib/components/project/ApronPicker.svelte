@@ -3,6 +3,8 @@
   import * as Select from '$lib/components/ui/select'
   import { PAVING, PAVING_LIST } from '$lib/geometry/paving'
   import type { PavingSurface } from '$lib/model/types'
+  import SwatchPicker from './SwatchPicker.svelte'
+  import { pavingSwatch } from './swatches'
 
   // The apron laid round the outside of the house: how wide, and what of.
   let { width = $bindable(), surface = $bindable() }: { width: number; surface: PavingSurface } = $props()
@@ -29,15 +31,18 @@
     </Select.Root>
   </div>
   <div class="grid gap-1.5">
-    <Label for="apron-surface-choice">Surface</Label>
-    <Select.Root type="single" value={surface} onValueChange={(next) => next && (surface = next as PavingSurface)} disabled={width === 0}>
-      <Select.Trigger id="apron-surface-choice" class="w-full">{PAVING[surface].name}</Select.Trigger>
-      <Select.Content>
-        {#each PAVING_LIST as spec (spec.id)}
-          <Select.Item value={spec.id} label={spec.name} />
-        {/each}
-      </Select.Content>
-    </Select.Root>
+    <div class="flex items-baseline justify-between gap-2">
+      <Label>Surface</Label>
+      <span class="text-sm text-muted-foreground">{width === 0 ? 'None' : PAVING[surface].name}</span>
+    </div>
+    <SwatchPicker
+      label="Apron surface"
+      options={PAVING_LIST.map((spec) => ({ id: spec.id, name: spec.name, swatch: pavingSwatch(spec.id) }))}
+      value={width === 0 ? null : surface}
+      onchange={(next) => (surface = next)}
+      disabled={width === 0}
+      compact
+    />
   </div>
   <p class="text-sm text-muted-foreground sm:col-span-2">
     A strip along every outside wall, sloping away to carry rain clear of the foundations. Draw driveways, paths and

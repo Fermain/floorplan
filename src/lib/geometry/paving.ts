@@ -222,6 +222,62 @@ export function snapPavingPoint(p: Point, targets: { points: Point[]; edges: [Po
   return { point: { x: Math.round(p.x * 20) / 20, z: Math.round(p.z * 20) / 20 }, snapped: false }
 }
 
+export type PavingTrace = { x1: number; z1: number; x2: number; z2: number }
+
+// A corner with the guides that explain where it landed, as wall drawing shows them: a cross on a corner it
+// snapped to, the side it is sliding along, or a line back to each corner it has lined up with. Lining up is
+// along and across the drawing grid, against the snap targets and any corners already drawn.
+export function guidePavingPoint(
+  p: Point,
+  targets: { points: Point[]; edges: [Point, Point][] },
+  radius: number,
+  options: { axis?: Point; nodes?: Point[]; align?: number } = {},
+): { point: Point; snapped: boolean; traces: PavingTrace[] } {
+  const base = snapPavingPoint(p, targets, radius)
+  if (base.snapped) {
+    const at = base.point
+    const corner = targets.points.some((q) => Math.hypot(q.x - at.x, q.z - at.z) < 1e-6)
+    if (corner) {
+      const arm = radius * 1.4
+      return {
+        ...base,
+        traces: [
+          { x1: at.x - arm, z1: at.z, x2: at.x + arm, z2: at.z },
+          { x1: at.x, z1: at.z - arm, x2: at.x, z2: at.z + arm },
+        ],
+      }
+    }
+    const side = targets.edges.find(([a, b]) => {
+      const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
+      return Math.abs(((at.x - a.x) * (b.z - a.z) - (at.z - a.z) * (b.x - a.x)) / length) < 1e-6
+    })
+    return { ...base, traces: side ? [{ x1: side[0].x, z1: side[0].z, x2: side[1].x, z2: side[1].z }] : [] }
+  }
+  const axis = options.axis ?? { x: 1, z: 0 }
+  const length = Math.hypot(axis.x, axis.z) || 1
+  const u = { x: axis.x / length, z: axis.z / length }
+  const v = { x: -u.z, z: u.x }
+  const reach = options.align ?? radius
+  const along = (q: Point) => q.x * u.x + q.z * u.z
+  const across = (q: Point) => q.x * v.x + q.z * v.z
+  let s = along(p)
+  let t = across(p)
+  let sNode: { node: Point; d: number } | null = null
+  let tNode: { node: Point; d: number } | null = null
+  for (const node of [...(options.nodes ?? []), ...targets.points]) {
+    const ds = Math.abs(along(node) - s)
+    const dt = Math.abs(across(node) - t)
+    if (ds <= reach && (!sNode || ds < sNode.d - 1e-9)) sNode = { node, d: ds }
+    if (dt <= reach && (!tNode || dt < tNode.d - 1e-9)) tNode = { node, d: dt }
+  }
+  const step = (value: number) => Math.round(value * 20) / 20
+  s = sNode ? along(sNode.node) : step(s)
+  t = tNode ? across(tNode.node) : step(t)
+  const point = { x: u.x * s + v.x * t, z: u.z * s + v.z * t }
+  const traces = [sNode, tNode].flatMap((hit) => (hit ? [{ x1: hit.node.x, z1: hit.node.z, x2: point.x, z2: point.z }] : []))
+  return { point, snapped: traces.length > 0, traces }
+}
+
 // A rectangle from two opposite corners, square to the given direction.
 export function pavingRectangle(a: Point, b: Point, axis: Point = { x: 1, z: 0 }): [number, number][] {
   const length = Math.hypot(axis.x, axis.z) || 1

@@ -10,6 +10,7 @@
     Float32BufferAttribute,
     Path,
     Shape,
+    ShapeGeometry,
   } from 'three'
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
   import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../../lib/geometry/deck'
@@ -36,6 +37,9 @@
   import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
   import { coveringOf } from '../../lib/geometry/coverings'
   import { coveringTexture } from './roofTexture'
+  import { floorTexture } from './floorTexture'
+  import { floorFinishSpec } from '../../lib/model/floorFinishes'
+  import { layoutSpaces } from '../../lib/geometry/spaces'
   import type { CanvasTexture } from 'three'
   import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
@@ -45,7 +49,7 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
-  import { buildFixtureParts, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
   import ContextPanel from '../shared/ContextPanel.svelte'
@@ -110,6 +114,7 @@
   type StairMesh = { key: string; storey: number; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
+  const FLOOR_COVER_LIFT_M = 0.006
 
   let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
@@ -123,6 +128,9 @@
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
   let floorSlabs = $state<FloorSlab[]>([])
+  // The finish laid in each room: tiles, boards, carpet, lying just over the slab or deck.
+  type FloorCover = { key: string; storey: number; geometry: BufferGeometry; y: number; colour: string; texture: CanvasTexture | null }
+  let floorCovers = $state<FloorCover[]>([])
   let roofMeshes = $state<RoofMesh[]>([])
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
@@ -465,6 +473,7 @@
       }
     }
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
+    const covers = floors.flatMap((floor) => coversFor(floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) + finishedFloor(floor)))
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
     const trims = floors.map((floor) => {
@@ -488,6 +497,7 @@
     contourMajor = major
     wallMeshes = built
     floorSlabs = slabs
+    floorCovers = covers
     roofMeshes = roofs
     stairMeshes = stairs
     fenceMeshes = fences
@@ -514,6 +524,7 @@
         for (const skin of wall.skins) skin.geometry.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
+      for (const cover of covers) cover.geometry.dispose()
       for (const roof of roofs) {
         roof.meshes.top?.dispose()
         roof.meshes.under?.dispose()
@@ -653,6 +664,35 @@
       })
     })
     return slabs
+  }
+
+  // A thin sheet over each named room, in its floor finish, with any stair well cut out of it.
+  function coversFor(floor: Floor, datum: number): FloorCover[] {
+    if (floor.roof) return []
+    const voids = stairVoids(doc, floor)
+    const covers: FloorCover[] = []
+    for (const resolved of layoutSpaces(floor).spaces) {
+      if (resolved.space.finish === 'none') continue
+      const spec = floorFinishSpec(resolved.space.finish)
+      resolved.cells.forEach((cell, index) => {
+        if (cell.net.length < 3) return
+        const shape = ringShape(cell.net)
+        for (const hole of voids) {
+          if (hole.length >= 3 && hole.every((point) => pointInRing(cell.net, point.x, point.z))) shape.holes.push(ringPath(hole))
+        }
+        const geometry = new ShapeGeometry(shape)
+        geometry.rotateX(-Math.PI / 2)
+        covers.push({
+          key: `cover-${floor.id}-${resolved.space.id}-${index}`,
+          storey: floor.index,
+          geometry,
+          y: datum + FLOOR_COVER_LIFT_M,
+          colour: spec.colour,
+          texture: floorTexture(spec),
+        })
+      })
+    }
+    return covers
   }
 
   function decksFor(
@@ -816,6 +856,19 @@
         <T.LineBasicMaterial color="#1a120c" />
       </T.LineSegments>
     {/if}
+
+    {#each floorCovers.filter((cover) => shown(cover.storey)) as cover (cover.key)}
+      <T.Mesh geometry={cover.geometry} position.y={cover.y} receiveShadow>
+        <T.MeshStandardMaterial
+          map={cover.texture}
+          color={cover.texture ? '#ffffff' : cover.colour}
+          roughness={0.85}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
+        />
+      </T.Mesh>
+    {/each}
 
     {#each floorSlabs.filter((slab) => shown(slab.storey)) as slab (slab.key)}
       <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>

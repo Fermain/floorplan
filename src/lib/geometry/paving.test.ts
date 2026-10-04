@@ -5,7 +5,7 @@ import { deriveRooms } from '../model/rooms'
 import type { Document } from '../model/types'
 import { takeoff } from '../cost/quantities'
 import { wallReach } from './outline'
-import { apronPolygons, buildPavingParts, pavingAt, pavingPieces, pavingRectangle, pavingSnapTargets, snapPavingPoint } from './paving'
+import { apronPolygons, buildPavingParts, guidePavingPoint, pavingAt, pavingPieces, pavingRectangle, pavingSnapTargets, snapPavingPoint } from './paving'
 
 // An 8 m by 6 m house from (4, 4) to (12, 10).
 function house(): Document {
@@ -114,5 +114,29 @@ describe('drawing paving', () => {
       }
       part.geometry.dispose()
     }
+  })
+})
+
+describe('guides while drawing paving', () => {
+  const targets = pavingSnapTargets(addPaving(house(), driveway, 'concrete').document)
+
+  it('marks a corner it snaps to with a cross, and a side with the side itself', () => {
+    const corner = guidePavingPoint({ x: 13.2, z: 2.1 }, targets, 0.5)
+    expect(corner.point).toEqual({ x: 13, z: 2 })
+    expect(corner.traces).toHaveLength(2)
+    const side = guidePavingPoint({ x: 14.5, z: 2.2 }, targets, 0.5)
+    expect(side.traces).toEqual([{ x1: 13, z1: 2, x2: 16, z2: 2 }])
+  })
+
+  it('lines a free corner up with others, and with corners already drawn', () => {
+    // Out in the open, 100 mm off the line of the driveway's far side.
+    const lined = guidePavingPoint({ x: 18, z: 8.1 }, targets, 0.3, { align: 0.3 })
+    expect(lined.point.z).toBeCloseTo(8)
+    expect(lined.snapped).toBe(true)
+    expect(lined.traces.some((trace) => trace.z1 === 8 && trace.z2 === 8)).toBe(true)
+    const drawn = guidePavingPoint({ x: 17.52, z: 14.1 }, { points: [], edges: [] }, 0.3, { nodes: [{ x: 17.5, z: 12 }], align: 0.2 })
+    expect(drawn.point).toEqual({ x: 17.5, z: 14.1 })
+    expect(drawn.traces).toEqual([{ x1: 17.5, z1: 12, x2: 17.5, z2: 14.1 }])
+    expect(guidePavingPoint({ x: 17.52, z: 14.13 }, { points: [], edges: [] }, 0.3)).toEqual({ point: { x: 17.5, z: 14.15 }, snapped: false, traces: [] })
   })
 })

@@ -1275,7 +1275,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
               <Select.Content>
                 <Select.Item value="project" label="As the project" />
                 {#each PAINTS as paint (paint.id)}
-                  <Select.Item value={paint.id} label={paint.name} />
+                  <Select.Item value={paint.id} label={paint.name}>
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={paint.colour}></span>
+                    {paint.name}
+                  </Select.Item>
                 {/each}
                 <Select.Item value={NO_PAINT} label="Unpainted" />
               </Select.Content>
