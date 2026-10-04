@@ -12,6 +12,7 @@ import {
 } from './openings'
 import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { carportProblem } from './carports'
+import { counterProblem } from './counters'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -34,6 +35,7 @@ import {
 import type {
   CostAssumptions,
   Carport,
+  Counter,
   Document,
   FaceFinish,
   FaceTrim,
@@ -1056,6 +1058,34 @@ export function removePaving(document: Document, id: string): MutationResult {
   if (paving.length > 0) return ok({ ...document, paving })
   const { paving: _gone, ...rest } = document
   return ok(rest)
+}
+
+export function addCounter(document: Document, floorId: string, counter: Omit<Counter, 'id'>): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const problem = counterProblem(counter)
+  if (problem) return fail(document, problem)
+  return ok(replaceFloor(document, { ...floor, counters: [...(floor.counters ?? []), { ...counter, id: newId('counter') }] }))
+}
+
+export function updateCounter(document: Document, floorId: string, id: string, patch: Partial<Omit<Counter, 'id'>>): MutationResult {
+  const floor = getFloor(document, floorId)
+  const current = floor?.counters?.find((item) => item.id === id)
+  if (!floor || !current) return fail(document, 'counter not found')
+  const next = { ...current, ...patch }
+  if (next.kind !== 'base') delete next.wallUnits
+  const problem = counterProblem(next)
+  if (problem) return fail(document, problem)
+  return ok(replaceFloor(document, { ...floor, counters: (floor.counters ?? []).map((item) => (item.id === id ? next : item)) }))
+}
+
+export function removeCounter(document: Document, floorId: string, id: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor?.counters?.some((item) => item.id === id)) return fail(document, 'counter not found')
+  const counters = floor.counters.filter((item) => item.id !== id)
+  if (counters.length > 0) return ok(replaceFloor(document, { ...floor, counters }))
+  const { counters: _gone, ...rest } = floor
+  return ok(replaceFloor(document, rest))
 }
 
 export function addCarport(document: Document, carport: Omit<Carport, 'id'>): MutationResult {

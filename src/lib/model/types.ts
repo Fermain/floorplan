@@ -166,6 +166,7 @@ export type Floor = {
   spaces?: Space[]
   stairs?: Stair[]
   fixtures?: Fixture[]
+  counters?: Counter[]
   outline?: { x: number; z: number }[][]
   roof?: Roof
 }
@@ -253,6 +254,25 @@ export type SiteServices = {
   backupHours?: number
   solarPanels?: number
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
+}
+
+// A run of kitchen counter: cupboards under a worktop. It is placed by the start of its back edge, the way it
+// runs, and its length; its depth comes out to the left of the way it runs, so a counter drawn along a wall runs
+// with the room on its left.
+export type CounterKind = 'base' | 'island' | 'bar'
+export type CounterTop = 'laminate' | 'granite' | 'timber'
+export type Counter = {
+  id: string
+  x: number
+  z: number
+  dx: number
+  dz: number
+  length: number
+  depth: number
+  kind: CounterKind
+  top: CounterTop
+  // Cupboards on the wall above it.
+  wallUnits?: boolean
 }
 
 // A carport: a roof on posts with no walls, standing free on the ground. It is placed by its middle and the way

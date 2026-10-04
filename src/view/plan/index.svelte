@@ -14,6 +14,8 @@
   import Plug from '@lucide/svelte/icons/plug'
   import Grid2x2 from '@lucide/svelte/icons/grid-2x2'
   import CarFront from '@lucide/svelte/icons/car-front'
+  import ChefHat from '@lucide/svelte/icons/chef-hat'
+  import Maximize2 from '@lucide/svelte/icons/maximize-2'
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import FixtureSymbol from './FixtureSymbol.svelte'
@@ -77,6 +79,9 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, snapCarport } from '../../lib/geometry/carports'
+  import { counterAlongFace, counterAt, counterBetween, counterFace, type CounterFace } from '../../lib/geometry/counters'
+  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
+  import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
@@ -129,7 +134,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'draw-counter' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -186,6 +191,14 @@
   let selectedEdge = $state<number | null>(null)
   // Paving: the area picked ('apron' for the strip round the house), and one being drawn, corner by corner.
   let selectedPaving = $state<string | null>(null)
+  // Counters: the one picked; the kind and worktop of the next; and where the one being drawn was started, on a
+  // wall face for a counter against a wall or at a corner for one standing free.
+  let selectedCounter = $state<string | null>(null)
+  let counterKind = $state<CounterKind>('base')
+  let counterTop = $state<CounterTop>('laminate')
+  let counterStart = $state<{ face: CounterFace | null; point: { x: number; z: number } } | null>(null)
+  // The room being laid out on its own, by the id of its space; the rest of the plan is veiled.
+  let focusedRoom = $state<string | null>(null)
   // Carports: the one picked, and the size, roof and turn of the next one to be placed.
   let selectedCarport = $state<string | null>(null)
   let carportBays = $state<Carport['bays']>(2)
@@ -764,6 +777,12 @@
   }
 
   function cancelDraw() {
+    if (tool === 'draw-counter') {
+      if (counterStart) counterStart = null
+      else setTool('select')
+      errorMessage = null
+      return
+    }
     if (tool === 'draw-carport') {
       setTool('select')
       errorMessage = null
@@ -823,7 +842,9 @@
     bend?: number | null
     paving?: string | null
     carport?: string | null
+    counter?: string | null
   }) {
+    selectedCounter = next.counter ?? null
     selectedPaving = next.paving ?? null
     selectedCarport = next.carport ?? null
     selectedCell = next.cell ?? null
@@ -890,9 +911,19 @@
       return
     }
 
+    if (tool === 'draw-counter') {
+      counterClick(plan)
+      return
+    }
+
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
+      const worktop = counterAt(activeFloor, plan)
+      if (worktop) {
+        chooseSelection({ counter: worktop.id })
+        return
+      }
       const fixture = fixtureAt(plan.x, plan.z)
       if (fixture) {
         chooseSelection({ fixture })
@@ -1984,6 +2015,93 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // A counter against a wall is drawn along the wall's face: click where it starts, then where it ends. One standing
+  // free (an island or a bar) is drawn corner to corner, square to the drawing grid.
+  function counterStartAt(plan: { x: number; z: number }) {
+    const face = counterKind === 'base' && activeFloor ? counterFace(activeFloor, plan, Math.max(0.35, s(0.45))) : null
+    return { face, point: face?.point ?? { x: Math.round(plan.x * 20) / 20, z: Math.round(plan.z * 20) / 20 } }
+  }
+  const counterHover = $derived(tool === 'draw-counter' && pointerPlan && !counterStart ? counterStartAt(pointerPlan) : null)
+  const counterDraft = $derived.by((): { counter: Omit<Counter, 'id'>; problem: string | null } | null => {
+    const start = counterStart
+    const at = pointerPlan
+    if (tool !== 'draw-counter' || !start || !at) return null
+    const spec = counterKindSpec(counterKind)
+    let shape
+    if (start.face) shape = counterAlongFace(start.face, at, spec.depth)
+    else {
+      shape = counterBetween(start.point, at, pavingAxis)
+      // A bar keeps its own depth; an island takes the depth it is drawn to.
+      if (counterKind === 'bar' || shape.depth < 0.3) shape = { ...shape, depth: spec.depth }
+    }
+    const counter = { ...shape, kind: counterKind, top: counterTop }
+    return { counter, problem: counterProblem(counter) }
+  })
+
+  function counterClick(plan: { x: number; z: number }) {
+    if (!activeFloor) return
+    if (!counterStart) {
+      const start = counterStartAt(plan)
+      if (counterKind === 'base' && !start.face) {
+        errorMessage = 'A counter stands against a wall. Click on the inside face of one, or choose Island or Bar.'
+        return
+      }
+      errorMessage = null
+      counterStart = start
+      return
+    }
+    const draft = counterDraft
+    if (!draft || draft.problem) return
+    if (applyResult(documentStore.addCounter(activeFloor.id, draft.counter))) {
+      const added = documentStore.document.building.floors.find((floor) => floor.id === activeFloor.id)?.counters?.at(-1)
+      counterStart = null
+      if (added) chooseSelection({ counter: added.id })
+    }
+  }
+
+  const chosenCounter = $derived(selectedCounter && activeFloor ? (activeFloor.counters?.find((item) => item.id === selectedCounter) ?? null) : null)
+
+  function patchChosenCounter(patch: Partial<Omit<Counter, 'id'>>) {
+    if (chosenCounter && activeFloor) applyResult(documentStore.updateCounter(activeFloor.id, chosenCounter.id, patch))
+  }
+
+  function removeChosenCounter() {
+    if (chosenCounter && activeFloor && applyResult(documentStore.removeCounter(activeFloor.id, chosenCounter.id))) chooseSelection({})
+  }
+
+  // Laying out one room on its own: the view closes in on it and the rest of the plan is veiled.
+  const focusedCells = $derived.by(() => {
+    if (!focusedRoom) return null
+    for (const entry of levelLayouts) {
+      const found = entry.layout.spaces.find((resolved) => resolved.space.id === focusedRoom)
+      if (found) return { name: found.space.name, rings: found.cells.map((cell) => cell.ring) }
+    }
+    return null
+  })
+
+  function focusRoom(spaceId: string, rings: { x: number; z: number }[][]) {
+    const points = rings.flat().map((p) => toScreen(p.x, p.z))
+    if (points.length === 0) return
+    const xs = points.map((p) => p.x)
+    const ys = points.map((p) => p.y)
+    const [w, h] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]
+    const aspect = canvasSize.width / Math.max(1, canvasSize.height)
+    const baseW = fitBox.w / fitBox.h < aspect ? fitBox.h * aspect : fitBox.w
+    focusedRoom = spaceId
+    centre = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 }
+    zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
+  }
+
+  function leaveRoom() {
+    focusedRoom = null
+    fitView()
+  }
+
+  $effect(() => {
+    // The room focused on may be renamed, but if it goes, so does the focus.
+    if (focusedRoom && !focusedCells) focusedRoom = null
+  })
+
   // A carport being placed follows the pointer, square to the drawing grid; R turns it a quarter turn.
   const carportGhost = $derived.by((): { carport: Omit<Carport, 'id'>; problem: string | null } | null => {
     const at = pointerPlan
@@ -2152,6 +2270,7 @@
     if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     if (chosenPaving) return { label: chosenPaving.apron ? 'Remove the apron' : 'Delete paving', run: removeChosenPaving }
     if (chosenCarport) return { label: 'Delete carport', run: removeChosenCarport }
+    if (chosenCounter) return { label: 'Delete counter', run: removeChosenCounter }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -2179,6 +2298,18 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-counter') {
+      const spec = counterKindSpec(counterKind)
+      if (!counterStart) {
+        return counterKind === 'base'
+          ? `${spec.name}, ${spec.depth * 1000} mm deep. Click on the inside face of a wall where it starts.`
+          : `${spec.name}. Click one corner, then the opposite one.`
+      }
+      const draft = counterDraft
+      if (!draft) return 'Click where it ends. Esc to start again.'
+      const size = `${Math.round(draft.counter.length * 1000)} × ${Math.round(draft.counter.depth * 1000)} mm`
+      return draft.problem ? `${size}: ${draft.problem}.` : `${size}. Click to set it. Esc to start again.`
+    }
     if (tool === 'draw-carport') {
       const ghost = carportGhost
       const size = carportSize({ bays: carportBays })
@@ -2340,7 +2471,50 @@
       <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
         <CarFront /><span class="hidden sm:inline">Carport</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-counter" aria-label="Counters" title="Counters: kitchen cupboards and worktops" class="max-sm:px-2">
+        <ChefHat /><span class="hidden sm:inline">Counters</span>
+      </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if focusedCells}
+      <Button size="sm" variant="outline" title="Back to the whole plan" onclick={leaveRoom}>
+        <Maximize2 />{focusedCells.name}: whole plan
+      </Button>
+    {/if}
+    {#if tool === 'draw-counter'}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={counterKind}
+        onValueChange={(next) => {
+          if (next) {
+            counterKind = next as CounterKind
+            counterStart = null
+          }
+        }}
+        aria-label="Kind of counter"
+      >
+        {#each COUNTER_KINDS as spec (spec.id)}
+          <ToggleGroup.Item value={spec.id} title={spec.text}>{spec.name}</ToggleGroup.Item>
+        {/each}
+      </ToggleGroup.Root>
+      <Select.Root type="single" value={counterTop} onValueChange={(next) => next && (counterTop = next as CounterTop)}>
+        <Select.Trigger size="sm" class="w-36" aria-label="Worktop">
+          <span class="flex items-center gap-2">
+            <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={counterTopSpec(counterTop).colour}></span>
+            {counterTopSpec(counterTop).name}
+          </span>
+        </Select.Trigger>
+        <Select.Content>
+          {#each COUNTER_TOPS as spec (spec.id)}
+            <Select.Item value={spec.id} label={spec.name}>
+              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+              {spec.name}
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    {/if}
     {#if tool === 'draw-carport'}
       <ToggleGroup.Root
         type="single"
@@ -2987,6 +3161,46 @@
           <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
         {/if}
       </g>
+    {#snippet counterShape(counter: Omit<Counter, 'id'>, state: 'set' | 'picked' | 'draft' | 'refused')}
+      {@const ring = counterRing(counter)}
+      {@const colour = state === 'refused' ? '#dc2626' : state === 'set' ? '#44403c' : '#2563eb'}
+      <polygon
+        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+        fill={counterTopSpec(counter.top).colour}
+        fill-opacity={state === 'draft' || state === 'refused' ? 0.55 : 0.92}
+        stroke={colour}
+        stroke-width={s(state === 'set' ? 0.02 : 0.045)}
+      />
+      {#if counter.wallUnits}
+        <!-- Cupboards on the wall above: a dashed line 350 mm out from the wall. -->
+        {@const back = counterRing({ ...counter, depth: 0.35 })}
+        <line x1={back[3].x} y1={back[3].z} x2={back[2].x} y2={back[2].z} stroke={colour} stroke-width={s(0.015)} stroke-dasharray={dash(0.1, 0.07)} />
+      {/if}
+    {/snippet}
+    <g class="counters" pointer-events="none">
+      {#each activeFloor?.counters ?? [] as counter (counter.id)}
+        {@render counterShape(counter, selectedCounter === counter.id ? 'picked' : 'set')}
+      {/each}
+      {#if counterDraft && counterDraft.counter.length > 0}
+        {@render counterShape(counterDraft.counter, counterDraft.problem ? 'refused' : 'draft')}
+      {/if}
+      {#if tool === 'draw-counter'}
+        {@const mark = counterStart ?? counterHover}
+        {#if mark && (mark.face || counterKind !== 'base')}
+          <circle cx={mark.point.x} cy={mark.point.z} r={s(0.09)} fill="#2563eb" />
+        {/if}
+      {/if}
+    </g>
+    {#if focusedCells}
+      <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
+      <path
+        d="M -1000 -1000 H 2000 V 2000 H -1000 Z {focusedCells.rings.map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}"
+        fill="var(--background)"
+        fill-opacity="0.86"
+        fill-rule="evenodd"
+        pointer-events="none"
+      />
+    {/if}
       <g class="room-labels" pointer-events="none">
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
@@ -3460,6 +3674,61 @@
         </ContextPanel>
       {/if}
     {/if}
+    {#if chosenCounter && !roofFloor}
+      <ContextPanel
+        label="Counter"
+        title={counterKindSpec(chosenCounter.kind).name}
+        description="{Math.round(chosenCounter.length * 1000)} × {Math.round(chosenCounter.depth * 1000)} mm, {counterKindSpec(chosenCounter.kind).height * 1000} mm high."
+        onclose={() => chooseSelection({})}
+      >
+        <div class="grid gap-1.5">
+          <Label>Worktop</Label>
+          <SwatchPicker
+            label="Worktop"
+            options={COUNTER_TOPS.map((spec) => ({ id: spec.id, name: spec.name, swatch: spec.colour }))}
+            value={chosenCounter.top}
+            onchange={(next) => patchChosenCounter({ top: next })}
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="grid gap-1.5">
+            <Label for="counter-length">Length (mm)</Label>
+            <Input
+              id="counter-length"
+              type="number"
+              min="300"
+              step="50"
+              value={Math.round(chosenCounter.length * 1000)}
+              onchange={(event) => patchChosenCounter({ length: Number(event.currentTarget.value) / 1000 })}
+            />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="counter-depth">Depth (mm)</Label>
+            <Input
+              id="counter-depth"
+              type="number"
+              min="300"
+              max="1500"
+              step="50"
+              value={Math.round(chosenCounter.depth * 1000)}
+              onchange={(event) => patchChosenCounter({ depth: Number(event.currentTarget.value) / 1000 })}
+            />
+          </div>
+        </div>
+        {#if chosenCounter.kind === 'base'}
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              class="size-4 accent-primary"
+              checked={chosenCounter.wallUnits ?? false}
+              onchange={(event) => patchChosenCounter({ wallUnits: event.currentTarget.checked })}
+            />
+            Cupboards on the wall above
+          </label>
+        {/if}
+        <Button variant="destructive" onclick={removeChosenCounter}>Remove</Button>
+      </ContextPanel>
+    {/if}
     {#if chosenCarport && !roofFloor}
       {@const size = carportSize(chosenCarport)}
       <ContextPanel
@@ -3613,6 +3882,17 @@
             <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
           <div class="grid gap-1.5 border-t pt-3">
+            <Button
+              variant="outline"
+              onclick={() => {
+                const kitchen = resolved.space.type === 'kitchen'
+                focusRoom(resolved.space.id, resolved.cells.map((cell) => cell.ring))
+                chooseSelection({})
+                if (kitchen) setTool('draw-counter')
+              }}
+            >
+              <Maximize2 />Lay out this room
+            </Button>
             <Button variant="outline" onclick={suggestForSelectedRoom}><Plug />Suggest fittings</Button>
             <p class="text-xs text-muted-foreground">
               {selectedRoomFixtures > 0

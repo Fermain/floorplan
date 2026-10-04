@@ -50,6 +50,7 @@
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
+  import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
@@ -123,6 +124,7 @@
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
+  let counterMeshes = $state<{ key: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -502,6 +504,13 @@
           parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
         }
       })
+    const counters = floors
+      .filter((floor) => (floor.counters ?? []).length > 0)
+      .map((floor) => {
+        const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
+        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor)) }
+      })
+    counterMeshes = counters
     groundGeometry = ground
     roadMeshes = roadParts
     pavingMeshes = pavingParts
@@ -520,6 +529,7 @@
     return () => {
       for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
+      for (const counter of counters) for (const part of counter.parts) part.geometry.dispose()
       for (const pillar of pillars) for (const part of pillar.parts) part.geometry.dispose()
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
@@ -920,6 +930,15 @@
       </T.Group>
     {/each}
 
+    {#each counterMeshes.filter((counter) => shownFloor(counter.key)) as counter (counter.key)}
+      <T.Group userData={halfCut(counter.datum)}>
+        {#each counter.parts as part (part.geometry.uuid)}
+          <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+            <T.MeshStandardMaterial color={part.colour} roughness={0.6} />
+          </T.Mesh>
+        {/each}
+      </T.Group>
+    {/each}
     {#each fixtureMeshes.filter((fitting) => shownFloor(fitting.key)) as fitting (fitting.key)}
       <T.Group userData={halfCut(fitting.datum)}>
       {#each fitting.parts as part (part.geometry.uuid)}
