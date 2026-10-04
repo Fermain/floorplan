@@ -2865,7 +2865,7 @@
   </div>
   <svg
     bind:this={svgEl}
-    class="canvas"
+    class="canvas paper"
     class:panning={spaceHeld || panning !== null}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
