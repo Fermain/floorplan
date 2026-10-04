@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { CARPORT_CLEAR_M, CARPORT_POST_M, carportPosts, carportRing, carportRoofSpec, carportSize } from '../model/carports'
 import type { Carport, Document } from '../model/types'
 import { pavingSnapTargets, snapPavingPoint } from './paving'
+import { floorCells } from './spaces'
 
 type Point = { x: number; z: number }
 
@@ -27,6 +28,35 @@ export function carportAt(doc: Document, p: Point): Carport | null {
     if (pointInRing(carportRing(carport), p)) return carport
   }
   return null
+}
+
+function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
+  const side = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x)
+  return side(a, b, c) * side(a, b, d) < -1e-9 && side(c, d, a) * side(c, d, b) < -1e-9
+}
+
+// Whether two outlines share ground: sides that only touch do not count.
+function overlap(a: Point[], b: Point[]): boolean {
+  const middle = (ring: Point[]) => ({ x: ring.reduce((sum, p) => sum + p.x, 0) / ring.length, z: ring.reduce((sum, p) => sum + p.z, 0) / ring.length })
+  if (pointInRing(b, middle(a)) || pointInRing(a, middle(b))) return true
+  return a.some((p, i) => b.some((q, j) => crosses(p, a[(i + 1) % a.length], q, b[(j + 1) % b.length])))
+}
+
+export type CarportIssue = { id: string; carportId: string; text: string }
+
+// Carports that stand where something else already does: over a room of the house, or over another carport.
+export function carportIssues(doc: Document): CarportIssue[] {
+  const carports = doc.carports ?? []
+  if (carports.length === 0) return []
+  const ground = doc.building.floors.find((floor) => floor.index === 0)
+  const rooms = ground ? floorCells(ground).map((cell) => cell.net) : []
+  const issues: CarportIssue[] = []
+  carports.forEach((carport, i) => {
+    const ring = carportRing(carport)
+    if (rooms.some((room) => room.length >= 3 && overlap(ring, room))) issues.push({ id: `carport-room:${carport.id}`, carportId: carport.id, text: 'A carport stands over a room of the house. Move it clear, or butt it up to the wall.' })
+    if (carports.some((other, j) => j < i && overlap(ring, carportRing(other)))) issues.push({ id: `carport-carport:${carport.id}`, carportId: carport.id, text: 'Two carports stand over the same ground.' })
+  })
+  return issues
 }
 
 // Where a carport lands when its middle is put at a point: its corners snap to the plot, the house, paving and

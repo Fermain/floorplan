@@ -79,7 +79,7 @@
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
-  import { carportAt, snapCarport } from '../../lib/geometry/carports'
+  import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
@@ -232,6 +232,8 @@
   // Dragging the connection (end) or a bend; a new bend is inserted at `insert` before it is dragged.
   // A fitting being dragged in Select: where it would land, re-snapped to the walls as it goes.
   // A counter being dragged: where along it (and across it) it was picked up, and where it would be set down.
+  // A carport being dragged: where it was picked up, and where it would land.
+  let carportMove = $state<{ id: string; grabX: number; grabZ: number; preview: Carport | null; problem: string | null } | null>(null)
   let counterMove = $state<{ id: string; grabAlong: number; grabOut: number; preview: Counter | null } | null>(null)
   let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
   let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
@@ -1006,6 +1008,8 @@
       const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
       if (parked) {
         chooseSelection({ carport: parked.id })
+        carportMove = { id: parked.id, grabX: plan.x - parked.x, grabZ: plan.z - parked.z, preview: null, problem: null }
+        svgEl?.setPointerCapture(event.pointerId)
         return
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
@@ -1122,6 +1126,19 @@
       if (pointInPlot(document.plot, plan.x, plan.z)) serviceDrag = { ...serviceDrag, point: { x: plan.x, z: plan.z }, moved: true }
       return
     }
+    if (carportMove) {
+      const moving = carportMove
+      const item = document.carports?.find((entry) => entry.id === moving.id)
+      if (!item) return
+      const loose = { ...item, x: plan.x - moving.grabX, z: plan.z - moving.grabZ }
+      // Nothing happens until it has been carried a little way, so a click to pick it does not nudge it.
+      if (!moving.preview && Math.hypot(loose.x - item.x, loose.z - item.z) < s(0.15)) return
+      // Its corners snap to everything but itself.
+      const others = { ...document, carports: (document.carports ?? []).filter((entry) => entry.id !== item.id) }
+      const preview = { ...loose, ...snapCarport(others, loose, s(0.4)) }
+      carportMove = { ...moving, preview, problem: carportProblem(others, preview) }
+      return
+    }
     if (counterMove) {
       const moving = counterMove
       const item = activeFloor?.counters?.find((entry) => entry.id === moving.id)
@@ -1185,6 +1202,13 @@
     const svg = event.currentTarget
     if (svg instanceof SVGSVGElement && svg.hasPointerCapture(event.pointerId)) {
       svg.releasePointerCapture(event.pointerId)
+    }
+    const parked = carportMove
+    if (parked) {
+      carportMove = null
+      const next = parked.preview
+      if (next) applyResult(documentStore.updateCarport(parked.id, { x: next.x, z: next.z }))
+      return
     }
     const carried = counterMove
     if (carried) {
@@ -2248,6 +2272,7 @@
     }
   }
 
+  const carportWarnings = $derived(carportIssues(document))
   const chosenCarport = $derived(selectedCarport ? (document.carports?.find((item) => item.id === selectedCarport) ?? null) : null)
 
   function removeChosenCarport() {
@@ -3001,7 +3026,11 @@
     {#if activeStoreyIndex === 0}
       <g class="carports" pointer-events="none">
         {#each document.carports ?? [] as carport (carport.id)}
-          {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
+          {#if carportMove?.id === carport.id && carportMove.preview}
+            {@render carportShape(carportMove.preview, carportMove.problem ? 'refused' : 'picked')}
+          {:else}
+            {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
+          {/if}
         {/each}
         {#if carportGhost}
           {@render carportShape(carportGhost.carport, carportGhost.problem ? 'refused' : 'ghost')}
@@ -4001,6 +4030,9 @@
           </Select.Root>
         </div>
         <Button variant="outline" onclick={turnChosenCarport}><RotateCw />Turn a quarter turn</Button>
+        {#each carportWarnings.filter((issue) => issue.carportId === chosenCarport?.id) as issue (issue.id)}
+          <p class="text-amber-700">{issue.text}</p>
+        {/each}
         <Button variant="destructive" onclick={removeChosenCarport}>Remove</Button>
       </ContextPanel>
     {/if}

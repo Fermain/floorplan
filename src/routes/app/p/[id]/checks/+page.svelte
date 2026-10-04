@@ -13,6 +13,7 @@
   import { gasLayout } from '$lib/geometry/gas'
   import { finishIssues } from '$lib/geometry/finishes'
   import { counterIssues, counterTotals } from '$lib/geometry/counters'
+  import { carportIssues } from '$lib/geometry/carports'
   import { groundOf, measureRetaining, retainingIssues } from '$lib/geometry/retaining'
   import { RETAINING_ENGINEER_M } from '$lib/model/retaining'
   import { bottleSetup } from '$lib/model/fixtures'
@@ -122,6 +123,7 @@
   const kitchenList = $derived(counterIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
   const joinery = $derived(counterTotals(doc))
   const counterLength = $derived(joinery.units.base + joinery.units.island + joinery.units.bar)
+  const carportList = $derived(carportIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: null })))
   const retainingList = $derived(retainingIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: null })))
   // Every retaining wall together: how much of it there is and the most any of it holds back.
   const retained = $derived.by(() => {
@@ -146,6 +148,7 @@
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
     { id: 'kitchens', title: 'Kitchens', issues: kitchenList, empty: counterLength > 0 ? null : 'No counters yet' },
+    { id: 'carports', title: 'Carports', issues: carportList, empty: (doc.carports ?? []).length > 0 ? null : 'None placed' },
     { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
     { id: 'walls', title: 'Wall finishes', issues: wallList, empty: hasWalls ? null : 'No walls yet' },
   ])
@@ -564,6 +567,18 @@
             ])}
           {:else}
             <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters with the Counters tool on the plan and they are checked here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-carports">
+        {@render heading('carports', 'A carport stands free on its own posts. It can butt up to the house, but not stand over a room or over another carport.')}
+        {#if !folded.includes('carports')}
+          {@render attend(carportList)}
+          {#if carportList.length === 0}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">
+              {(doc.carports ?? []).length > 0 ? 'Every carport stands clear.' : 'Place a carport with the Carport tool on the plan and it is checked here.'}
+            </p>
           {/if}
         {/if}
       </section>
