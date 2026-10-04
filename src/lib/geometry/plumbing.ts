@@ -31,9 +31,9 @@ const WATER_TRENCH_DEPTH_M = 0.45
 const SAMPLE_M = 0.5
 
 const DRAINS: Partial<Record<FixtureKind, number>> = { wc: 110, basin: 50, shower: 50, bath: 50, sink: 50, 'washing-machine': 50 }
-const COLD: FixtureKind[] = ['wc', 'basin', 'shower', 'bath', 'sink', 'washing-machine', 'outside-tap']
-const HOT: FixtureKind[] = ['basin', 'shower', 'bath', 'sink']
-const GEYSERS: FixtureKind[] = ['geyser', 'solar-geyser', 'gas-geyser']
+export const COLD: FixtureKind[] = ['wc', 'basin', 'shower', 'bath', 'sink', 'washing-machine', 'outside-tap']
+export const HOT: FixtureKind[] = ['basin', 'shower', 'bath', 'sink']
+export const GEYSERS: FixtureKind[] = ['geyser', 'solar-geyser', 'gas-geyser']
 
 export type Placed = { floor: Floor; fixture: Fixture }
 

@@ -8,6 +8,7 @@
     BOTTLE_SIZES,
     BOTTLES,
     bottleSetup,
+    BUILT_IN,
     fitFixtureY,
     fixtureSpec,
     MAX_BOTTLES,
@@ -47,6 +48,17 @@
   }
 </script>
 
+{#if BUILT_IN.includes(fixture.kind)}
+  <label class="flex cursor-pointer items-center gap-2">
+    <input
+      type="checkbox"
+      class="size-4 accent-primary"
+      checked={fixture.builtIn ?? false}
+      onchange={(event) => apply(documentStore.updateFixture(floorId, fixture.id, { builtIn: event.currentTarget.checked }))}
+    />
+    Built in: a hob in the worktop, with an oven under it
+  </label>
+{/if}
 {#if swaps.length > 0}
   <div class="grid gap-1.5">
     <Label for="{id}-kind">Type</Label>

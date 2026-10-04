@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
 import { counterRing } from '../model/counters'
-import { addCounter, addFixture, addWallRing, removeCounter, updateCounter } from '../model/mutations'
+import { addCounter, addFixture, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, counterTotals } from './counters'
-import { placeFixture } from './fixtures'
+import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, countersOnWall, counterTotals } from './counters'
+import { buildFixtureParts, placeFixture } from './fixtures'
 
 // A room from (4, 4) to (10, 9), in cavity brick 262 mm thick.
 function room(): Document {
@@ -160,6 +160,89 @@ describe('counters', () => {
     expect(clear.fixture.x).toBeCloseTo(9.1, 6)
     // And with no counters, nothing changes.
     expect(placeFixture(floorOf(room()), { x: 5.7, z: 4.6 }, 'sink', { x: 0, z: 1 }).fixture.x).toBeCloseTo(5.7, 6)
+  })
+
+  it('take a sink or a hob set into an island, flush with the side it is worked at from', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    // An island from x = 6 to 8, z = 6 to 6.9.
+    doc = addCounter(doc, fid, { x: 6, z: 6, dx: 1, dz: 0, length: 2, depth: 0.9, kind: 'island', top: 'granite' }).document
+    const floor = floorOf(doc)
+    // Dropped near its far side, a stove is built in there, facing out of that side.
+    const hob = placeFixture(floor, { x: 7.02, z: 6.8 }, 'stove', { x: 0, z: 1 })
+    expect(hob.problem).toBeNull()
+    expect(hob.fixture.builtIn).toBe(true)
+    expect(hob.fixture.dz).toBeCloseTo(1, 6)
+    expect(hob.fixture.x).toBeCloseTo(7, 6)
+    expect(hob.fixture.z).toBeCloseTo(6.6, 6)
+    // A sink dropped near its near side faces the other way, and stays inside the island's length.
+    const sink = placeFixture(floor, { x: 6.1, z: 6.1 }, 'sink', { x: 0, z: 1 })
+    expect(sink.fixture.dz).toBeCloseTo(-1, 6)
+    expect(sink.fixture.x).toBeCloseTo(6.6, 6)
+    expect(sink.fixture.z).toBeCloseTo(6.3, 6)
+    expect(sink.fixture.builtIn).toBeUndefined()
+    // A washing machine does not go in an island, and a bar is too narrow for anything.
+    expect(placeFixture(floor, { x: 7, z: 6.5 }, 'washing-machine', { x: 0, z: 1 }).fixture.z).not.toBeCloseTo(6.6, 1)
+    const bar = floorOf(addCounter(room(), fid, { x: 6, z: 6, dx: 1, dz: 0, length: 2, depth: 0.4, kind: 'bar', top: 'timber' }).document)
+    expect(placeFixture(bar, { x: 7, z: 6.2 }, 'stove', { x: 0, z: 1 }).fixture.builtIn).toBeUndefined()
+  })
+
+  it('run through a built-in hob without complaint, and draw it flush inside them like a sink', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    doc = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 3 }).document
+    doc = addFixture(doc, fid, { kind: 'stove', x: 6.5, z: backZ + 0.3, dx: 0, dz: 1, y: 0, builtIn: true } as never).document
+    expect(counterIssues(doc)).toEqual([])
+    // A new counter is not stopped by it.
+    const face = counterFace(floorOf(doc), { x: 5, z: backZ + 0.1 }, 0.45)!
+    expect(face.spans.some((span) => span.stop)).toBe(false)
+    // Dropped in the middle of the counter it stays there; near an end it sits flush inside.
+    const floor = floorOf(doc)
+    expect(placeFixture(floor, { x: 6.5, z: 4.6 }, 'stove', { x: 0, z: 1 }, { setup: { builtIn: true } }).fixture.x).toBeCloseTo(6.5, 6)
+    expect(placeFixture(floor, { x: 5.4, z: 4.6 }, 'stove', { x: 0, z: 1 }, { setup: { builtIn: true } }).fixture).toMatchObject({ builtIn: true })
+    expect(placeFixture(floor, { x: 5.4, z: 4.6 }, 'stove', { x: 0, z: 1 }, { setup: { builtIn: true } }).fixture.x).toBeCloseTo(5.3, 6)
+    // Only a stove can be built in.
+    expect(addFixture(doc, fid, { kind: 'sink', x: 8.5, z: backZ + 0.3, dx: 0, dz: 1, y: 0, builtIn: true } as never).ok).toBe(false)
+  })
+
+  it('are cut through where a sink is set into them, and the sink is drawn as bowls rather than a unit of its own', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    doc = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 3 }).document
+    const whole = buildCounterParts(floorOf(doc).counters!, 0)
+    doc = addFixture(doc, fid, { kind: 'sink', x: 6.5, z: backZ + 0.3, dx: 0, dz: 1, y: 0 } as never).document
+    const floor = floorOf(doc)
+    const cut = buildCounterParts(floor.counters!, 0, floor.fixtures!)
+    const count = (parts: { geometry: { getAttribute(name: string): { count: number } } }[]) => parts.reduce((sum, part) => sum + part.geometry.getAttribute('position').count, 0)
+    expect(count(cut)).toBeGreaterThan(count(whole))
+    const span = (parts: ReturnType<typeof buildFixtureParts>) => {
+      const ys = parts.flatMap((part) => Array.from(part.geometry.getAttribute('position').array).filter((_, i) => i % 3 === 1))
+      return Math.min(...ys)
+    }
+    // On its own the sink stands on the floor as a unit; set in, nothing of it is below the bowls.
+    expect(span(buildFixtureParts(floor.fixtures!, 0))).toBeLessThan(0.05)
+    expect(span(buildFixtureParts(floor.fixtures!, 0, floor.counters!))).toBeGreaterThan(0.6)
+  })
+
+  it('go with their room when it is moved, and are found on the wall they stand against', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    doc = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 3 }).document
+    doc = addCounter(doc, fid, { x: 6, z: 6, dx: 1, dz: 0, length: 2, depth: 0.9, kind: 'island', top: 'granite' }).document
+    const south = floorOf(doc).walls.find((wall) => {
+      const [a, b] = [wall.startCornerId, wall.endCornerId].map((id) => floorOf(doc).corners.find((corner) => corner.id === id)!)
+      return a.z === 4 && b.z === 4
+    })!
+    const sides = ([1, -1] as const).map((side) => countersOnWall(floorOf(doc), south.id, side).length)
+    expect(sides.sort()).toEqual([0, 1])
+    const moved = moveCorners(doc, fid, floorOf(doc).corners.map((corner) => corner.id), 1, 0.5)
+    expect(moved.ok).toBe(true)
+    const [wallCounter, island] = floorOf(moved.document).counters!
+    expect(wallCounter).toMatchObject({ x: 6, z: backZ + 0.5 })
+    expect(island).toMatchObject({ x: 7, z: 6.5 })
   })
 
   it('are carried along their wall, or to another, by the point they were picked up by', () => {

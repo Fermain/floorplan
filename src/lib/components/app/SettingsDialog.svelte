@@ -1,7 +1,12 @@
 <script lang="ts">
   import Download from '@lucide/svelte/icons/download'
   import Upload from '@lucide/svelte/icons/upload'
+  import { setMode, userPrefersMode } from 'mode-watcher'
+  import Monitor from '@lucide/svelte/icons/monitor'
+  import Moon from '@lucide/svelte/icons/moon'
+  import Sun from '@lucide/svelte/icons/sun'
   import { Button } from '$lib/components/ui/button'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import * as Dialog from '$lib/components/ui/dialog'
   import { makeBackup, readBackup } from '$lib/state/backup'
   import { listProjects, readProject, saveProject } from '$lib/state/projects'
@@ -83,6 +88,25 @@
       <Dialog.Title class="text-base">Settings</Dialog.Title>
       <Dialog.Description class="sr-only">How the app behaves in this browser, and backing up what it stores here.</Dialog.Description>
     </Dialog.Header>
+    <div class="border-b bg-muted px-4 py-1.5 text-[13px] font-semibold">Appearance</div>
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 text-sm">
+      <span>
+        <span class="font-medium">Theme</span>
+        <span class="block text-muted-foreground">The plan and elevations stay on light paper.</span>
+      </span>
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={userPrefersMode.current}
+        onValueChange={(next) => next && setMode(next as 'system' | 'light' | 'dark')}
+        aria-label="Theme"
+      >
+        <ToggleGroup.Item value="system" title="Follow this device"><Monitor />Device</ToggleGroup.Item>
+        <ToggleGroup.Item value="light"><Sun />Light</ToggleGroup.Item>
+        <ToggleGroup.Item value="dark"><Moon />Dark</ToggleGroup.Item>
+      </ToggleGroup.Root>
+    </div>
     <div class="border-b bg-muted px-4 py-1.5 text-[13px] font-semibold">While drawing</div>
     <label class="flex cursor-pointer items-start gap-3 border-b px-4 py-3 text-sm">
       <input

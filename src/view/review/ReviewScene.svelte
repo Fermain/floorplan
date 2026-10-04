@@ -74,6 +74,8 @@
   import ReviewSky from './ReviewSky.svelte'
   import ReviewInteractivity from './ReviewInteractivity.svelte'
   import ReviewCutaway from './ReviewCutaway.svelte'
+  import ReviewXray from './ReviewXray.svelte'
+  import { buildServiceParts, serviceRuns, type ServicePart } from '../../lib/geometry/serviceRuns'
   import { isCutAway, type CutShape, type WallView } from './cutaway'
   import { Button } from '$lib/components/ui/button'
 
@@ -85,9 +87,20 @@
     cutShape?: CutShape
     walls?: WallView
     upTo?: number | null
+    // Whether the building fades to show the services running through it.
+    xray?: boolean
   }
 
-  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, xray = false }: Props = $props()
+
+  // The pipes and cables, built only while they are being looked at.
+  const serviceParts = $derived.by((): ServicePart[] => (xray ? buildServiceParts(serviceRuns(doc)) : []))
+  $effect(() => {
+    const parts = serviceParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
 
   type WallMeshes = {
     key: string
@@ -518,14 +531,14 @@
         return {
           key: floor.id,
           datum,
-          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
+          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture), floor.counters ?? []),
         }
       })
     const counters = floors
       .filter((floor) => (floor.counters ?? []).length > 0)
       .map((floor) => {
         const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
-        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor)) }
+        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor), floor.fixtures ?? []) }
       })
     counterMeshes = counters
     groundGeometry = ground
@@ -870,6 +883,7 @@
 
     <ReviewSky {sun} centre={{ x: plotCenter.x, y: plotCenter.y, z: across(plotCenter.z) }} />
     <ReviewCutaway depth={cutDepth} shape={cutShape} />
+    <ReviewXray on={xray} />
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}
@@ -883,13 +897,18 @@
     <!-- The model, drawn with z turned over so that it matches the plan rather than mirroring it. -->
     <T.Group scale.z={-1}>
     {#if groundGeometry}
-      <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
+      <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true, ground: true }}>
         <T.MeshStandardMaterial vertexColors roughness={0.95} />
       </T.Mesh>
     {/if}
     {#each roadMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each serviceParts as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} userData={{ service: true, keepWhole: true }} renderOrder={5}>
+        <T.MeshBasicMaterial color={part.colour} />
       </T.Mesh>
     {/each}
     {#each retainingMeshes as part (part.geometry.uuid)}
