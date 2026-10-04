@@ -62,8 +62,42 @@ function surface(points: Vector3[], triangles: number[][]): BufferGeometry {
   return geometry
 }
 
-// The carports for Review: posts standing on the ground, a frame round their heads, and the roof. The roof is
-// level on its posts, set by the highest ground under them, so a carport on a slope has longer posts downhill.
+// A steel member from one point to another, square in section.
+function member(from: Vector3, to: Vector3, size: number): BufferGeometry {
+  const run = to.clone().sub(from)
+  const length = run.length()
+  const dir = run.clone().normalize()
+  const flat = Math.abs(dir.y) > 0.99 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0)
+  const side = new Vector3().crossVectors(dir, flat).normalize()
+  const up = new Vector3().crossVectors(side, dir).normalize()
+  const geometry = new BoxGeometry(1, 1, 1)
+  const matrix = new Matrix4().makeBasis(dir, up, side)
+  matrix.scale(new Vector3(length, size, size))
+  matrix.setPosition(from.clone().add(to).multiplyScalar(0.5))
+  geometry.applyMatrix4(matrix)
+  return geometry
+}
+
+// A flat panel with some thickness, lying on three of its corners: a sheet of roofing.
+function panel(p0: Vector3, p1: Vector3, p3: Vector3, thickness: number): BufferGeometry {
+  const u = p1.clone().sub(p0)
+  const w = p3.clone().sub(p0)
+  const normal = new Vector3().crossVectors(w, u).normalize()
+  if (normal.y < 0) normal.negate()
+  const geometry = new BoxGeometry(1, 1, 1)
+  const matrix = new Matrix4().makeBasis(u.clone().normalize(), normal, w.clone().normalize())
+  matrix.scale(new Vector3(u.length(), thickness, w.length()))
+  matrix.setPosition(p0.clone().add(u.clone().multiplyScalar(0.5)).add(w.clone().multiplyScalar(0.5)).addScaledVector(normal, thickness / 2))
+  geometry.applyMatrix4(matrix)
+  return geometry
+}
+
+const SHEET_M = 0.04
+
+// The carports for Review: posts standing on the ground, a steel frame at their heads, and the roof on it. The
+// low side of the roof is set by the highest ground under the posts, so a carport on a slope has longer posts
+// downhill. A sheeted roof falls to one side: its posts are taller on the high side and rafters carry the slope.
+// Shade cloth is pulled up over a ridge held on hip rafters from the corners.
 export function buildCarportParts(doc: Document, heightAt: (x: number, z: number) => number): CarportPart[] {
   const frames: BufferGeometry[] = []
   const roofs = new Map<string, { colour: string; opacity: number; parts: BufferGeometry[] }>()
@@ -73,46 +107,66 @@ export function buildCarportParts(doc: Document, heightAt: (x: number, z: number
     const along = new Vector3(carport.dx, 0, carport.dz)
     const across = new Vector3(-carport.dz, 0, carport.dx)
     const posts = carportPosts(carport)
-    const head = Math.max(...posts.map((p) => heightAt(p.x, p.z))) + CARPORT_CLEAR_M
-    const centre = new Vector3(carport.x, head, carport.z)
+    const low = Math.max(...posts.map((p) => heightAt(p.x, p.z))) + CARPORT_CLEAR_M
+    const rise = Math.tan((spec.pitchDeg * Math.PI) / 180)
+    const sheet = carport.roof === 'sheet'
+    const centre = new Vector3(carport.x, 0, carport.z)
+    // The height of the frame over a point b metres across the cars: a sheeted roof's frame slopes with it.
+    const headAt = (b: number) => low + (sheet ? rise * (wide / 2 - b) : 0)
+    const at = (a: number, b: number, lift = 0) => centre.clone().addScaledVector(along, a).addScaledVector(across, b).setY(headAt(b) + lift)
     for (const post of posts) {
       const foot = heightAt(post.x, post.z)
+      const b = (post.x - carport.x) * across.x + (post.z - carport.z) * across.z
+      const head = headAt(b)
       frames.push(box(new Vector3(post.x, (foot + head) / 2, post.z), along, across, [CARPORT_POST_M, head - foot, CARPORT_POST_M]))
     }
-    // A beam down each side and across each end, at the heads of the posts.
-    for (const side of [-1, 1]) {
-      frames.push(box(centre.clone().addScaledVector(across, (side * (wide - BEAM_M)) / 2).setY(head + BEAM_M / 2), along, across, [deep, BEAM_M, BEAM_M]))
-      frames.push(box(centre.clone().addScaledVector(along, (side * (deep - BEAM_M)) / 2).setY(head + BEAM_M / 2), along, across, [BEAM_M, BEAM_M, wide]))
-    }
-    const base = head + BEAM_M
-    const rise = Math.tan((spec.pitchDeg * Math.PI) / 180)
+    const [a0, a1, b0, b1] = [-deep / 2, deep / 2, -wide / 2, wide / 2]
+    const half = BEAM_M / 2
+    // A beam down each side at the heads of its posts, and one across each end: a rafter, on a sheeted roof.
+    for (const b of [b0 + half, b1 - half]) frames.push(member(at(a0, b, half), at(a1, b, half), BEAM_M))
+    for (const a of [a0 + half, a1 - half]) frames.push(member(at(a, b0, half), at(a, b1, half), BEAM_M))
     const over = 0.15
-    const corner = (a: number, b: number, y: number) => centre.clone().addScaledVector(along, a).addScaledVector(across, b).setY(y)
-    const [a0, a1, b0, b1] = [-deep / 2 - over, deep / 2 + over, -wide / 2 - over, wide / 2 + over]
-    let roof: BufferGeometry
-    if (carport.roof === 'sheet') {
-      // One slope, falling across the cars to one side.
-      const high = base + rise * (b1 - b0)
-      roof = surface([corner(a0, b0, high), corner(a1, b0, high), corner(a1, b1, base), corner(a0, b1, base)], [[0, 1, 2], [0, 2, 3]])
+    const parts: BufferGeometry[] = []
+    if (sheet) {
+      // Purlins along the cars at about 1.2 m, and the sheeting on top of them.
+      const count = Math.max(1, Math.round(wide / 1.2))
+      for (let i = 1; i < count; i++) {
+        const b = b0 + (wide * i) / count
+        frames.push(member(at(a0, b, half), at(a1, b, half), BEAM_M * 0.6))
+      }
+      const lift = BEAM_M
+      const edge = (a: number, b: number) => centre.clone().addScaledVector(along, a).addScaledVector(across, b).setY(low + rise * (wide / 2 - b) + lift)
+      parts.push(panel(edge(a0 - over, b0 - over), edge(a1 + over, b0 - over), edge(a0 - over, b1 + over), SHEET_M))
     } else {
-      // Cloth pulled up to a short ridge down the middle: a low hip.
-      const half = (b1 - b0) / 2
-      const top = base + rise * half
-      const run = Math.max(0, (a1 - a0) / 2 - half)
-      const [r0, r1] = [corner(-run, 0, top), corner(run, 0, top)]
-      roof = surface(
-        [corner(a0, b0, base), corner(a1, b0, base), corner(a1, b1, base), corner(a0, b1, base), r0, r1],
-        [[0, 1, 5], [0, 5, 4], [1, 2, 5], [2, 3, 4], [2, 4, 5], [3, 0, 4]],
-      )
+      // A ridge down the middle, held up on hip rafters from the four corners, with the cloth over them.
+      const halfWide = wide / 2
+      const top = low + BEAM_M + rise * halfWide
+      const run = Math.max(0, deep / 2 - halfWide)
+      const ridge = [centre.clone().addScaledVector(along, -run).setY(top), centre.clone().addScaledVector(along, run).setY(top)]
+      if (run > 0) frames.push(member(ridge[0], ridge[1], BEAM_M * 0.6))
+      const corners = [at(a0, b0, BEAM_M), at(a1, b0, BEAM_M), at(a1, b1, BEAM_M), at(a0, b1, BEAM_M)]
+      frames.push(member(corners[0], ridge[0], BEAM_M * 0.6), member(corners[3], ridge[0], BEAM_M * 0.6))
+      frames.push(member(corners[1], ridge[1], BEAM_M * 0.6), member(corners[2], ridge[1], BEAM_M * 0.6))
+      const lift = BEAM_M * 0.3
+      const [r0, r1] = ridge.map((p) => p.clone().setY(p.y + lift))
+      const c = corners.map((p) => p.clone().setY(p.y + lift))
+      // Cloth has no thickness worth drawing: four faces up to the ridge, seen from both sides.
+      parts.push(surface([c[0], c[1], c[2], c[3], r0, r1], [[0, 1, 5], [0, 5, 4], [1, 2, 5], [2, 3, 4], [2, 4, 5], [3, 0, 4]]))
     }
     const key = carport.roof
-    const group = roofs.get(key) ?? { colour: spec.colour, opacity: carport.roof === 'shade-cloth' ? 0.92 : 1, parts: [] }
-    group.parts.push(roof)
+    const group = roofs.get(key) ?? { colour: spec.colour, opacity: sheet ? 1 : 0.92, parts: [] }
+    group.parts.push(...parts)
     roofs.set(key, group)
   }
   const out: CarportPart[] = []
   const merge = (parts: BufferGeometry[]) => {
-    const merged = mergeGeometries(parts.map((part) => (part.index ? part.toNonIndexed() : part)), false)
+    const flat = parts.map((part) => {
+      const plain = part.index ? part.toNonIndexed() : part
+      // Boxes carry texture coordinates and plain surfaces do not; drop them so the two merge.
+      plain.deleteAttribute('uv')
+      return plain
+    })
+    const merged = mergeGeometries(flat, false)
     for (const part of parts) part.dispose()
     return merged
   }
