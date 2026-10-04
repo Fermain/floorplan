@@ -12,7 +12,8 @@ import {
 } from '../model/counters'
 import { cornerById } from '../model/geom'
 import { systemOf, wallThickness } from '../model/systems'
-import type { Counter, CounterKind, Document, Floor } from '../model/types'
+import { fixtureFootprint, fixtureSpec } from '../model/fixtures'
+import type { Counter, CounterKind, Document, Fixture, FixtureKind, Floor } from '../model/types'
 
 type Point = { x: number; z: number }
 
@@ -34,9 +35,34 @@ export function counterAt(floor: Floor, p: Point): Counter | null {
   return null
 }
 
+// Fittings that stand in a gap between counters: a counter stops at their sides rather than running through them.
+export const COUNTER_STOPS: readonly FixtureKind[] = ['stove', 'gas-stove', 'washing-machine']
+// Fittings that come with their own cupboard, which a counter butts up to or runs on from.
+export const COUNTER_JOINS: readonly FixtureKind[] = ['sink']
+
+// A stretch of a wall face taken up by a fitting standing against it, measured along the face from its point.
+export type FaceSpan = { from: number; to: number; stop: boolean; kind: FixtureKind }
+
 // A wall face a counter can stand against: a point on it, the way a counter runs along it with the room on its
-// left, and how far the face goes each way from that point.
-export type CounterFace = { wallId: string; point: Point; dir: Point; before: number; after: number }
+// left, how far the face goes each way from that point, and the kitchen fittings standing against it.
+export type CounterFace = { wallId: string; point: Point; dir: Point; before: number; after: number; spans: FaceSpan[] }
+
+// The kitchen fittings standing against a face, as stretches along it.
+function faceSpans(floor: Floor, point: Point, dir: Point): FaceSpan[] {
+  const out = { x: -dir.z, z: dir.x }
+  const spans: FaceSpan[] = []
+  for (const fixture of floor.fixtures ?? []) {
+    const stop = COUNTER_STOPS.includes(fixture.kind)
+    if (!stop && !COUNTER_JOINS.includes(fixture.kind)) continue
+    const ring = fixtureFootprint(fixture)
+    const depths = ring.map((p) => (p.x - point.x) * out.x + (p.z - point.z) * out.z)
+    // Against this face: its back within a hand's width of the face, and none of it behind the wall.
+    if (Math.min(...depths) < -0.1 || Math.min(...depths) > 0.25) continue
+    const along = ring.map((p) => (p.x - point.x) * dir.x + (p.z - point.z) * dir.z)
+    spans.push({ from: Math.min(...along), to: Math.max(...along), stop, kind: fixture.kind })
+  }
+  return spans
+}
 
 // The face of a built wall nearest a point, within reach. The face is the side of the wall the point is on.
 export function counterFace(floor: Floor, p: Point, reach: number): CounterFace | null {
@@ -61,6 +87,7 @@ export function counterFace(floor: Floor, p: Point, reach: number): CounterFace 
     // With the room on its left: along the wall on its +normal side, back along it on the other.
     const dir = side === 1 ? t : { x: -t.x, z: -t.z }
     best = {
+      spans: [],
       wallId: wall.id,
       point: { x: a.x + t.x * u + n.x * half * side, z: a.z + t.z * u + n.z * half * side },
       dir,
@@ -71,16 +98,27 @@ export function counterFace(floor: Floor, p: Point, reach: number): CounterFace 
   }
   if (!best) return null
   const { d: _d, ...face } = best
-  return face
+  return { ...face, spans: faceSpans(floor, face.point, face.dir) }
 }
 
 const step = (value: number) => Math.round(value * 20) / 20
 
 // A counter run from where it was started on a face to the pointer: along the face, to the nearest 50 mm, and no
 // further than the wall goes.
-export function counterAlongFace(face: CounterFace, p: Point, depth: number): Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'> {
+// It closes up to the side of a stove, a washing machine or a sink unit when it ends near one, and stops at a
+// stove or a washing machine rather than running through it.
+export function counterAlongFace(face: CounterFace, p: Point, depth: number, snap = 0.12): Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'> {
   const raw = (p.x - face.point.x) * face.dir.x + (p.z - face.point.z) * face.dir.z
-  const t = Math.max(-face.before, Math.min(face.after, step(raw)))
+  let t = Math.max(-face.before, Math.min(face.after, step(raw)))
+  const edges = face.spans.flatMap((span) => [span.from, span.to])
+  const near = edges.filter((edge) => Math.abs(edge - raw) <= snap).sort((a, b) => Math.abs(a - raw) - Math.abs(b - raw))[0]
+  if (near !== undefined) t = Math.max(-face.before, Math.min(face.after, near))
+  // Stop at the near side of the first standing fitting in the way.
+  for (const span of face.spans) {
+    if (!span.stop) continue
+    if (t > 0 && span.from >= -1e-6 && span.from < t) t = Math.min(t, span.from)
+    if (t < 0 && span.to <= 1e-6 && span.to > t) t = Math.max(t, span.to)
+  }
   const from = Math.min(0, t)
   return {
     x: face.point.x + face.dir.x * from,
@@ -104,6 +142,43 @@ export function counterBetween(a: Point, b: Point, axis: Point): Pick<Counter, '
   const out = { x: -dir.z, z: dir.x }
   const start = { x: a.x + (long < 0 ? dir.x * long : 0) + (short < 0 ? out.x * short : 0), z: a.z + (long < 0 ? dir.z * long : 0) + (short < 0 ? out.z * short : 0) }
   return { x: start.x, z: start.z, dx: dir.x, dz: dir.z, length: Math.abs(long), depth: Math.abs(short) }
+}
+
+function ringsOverlap(a: Point[], b: Point[]): boolean {
+  // Both are rectangles: they overlap unless one lies wholly to one side of an edge of the other.
+  for (const [ring, other] of [[a, b], [b, a]] as const) {
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i]
+      const q = ring[(i + 1) % ring.length]
+      const n = { x: q.z - p.z, z: -(q.x - p.x) }
+      const inside = (ring[(i + 2) % ring.length].x - p.x) * n.x + (ring[(i + 2) % ring.length].z - p.z) * n.z
+      const sign = inside >= 0 ? 1 : -1
+      if (other.every((o) => ((o.x - p.x) * n.x + (o.z - p.z) * n.z) * sign < 0.02)) return false
+    }
+  }
+  return true
+}
+
+export type CounterIssue = { id: string; text: string; floorId: string }
+
+// Counters that run through a fitting that should stand in a gap between them.
+export function counterIssues(doc: Document): CounterIssue[] {
+  const issues: CounterIssue[] = []
+  for (const floor of doc.building.floors) {
+    const standing = (floor.fixtures ?? []).filter((fixture: Fixture) => COUNTER_STOPS.includes(fixture.kind))
+    for (const counter of floor.counters ?? []) {
+      const ring = counterRing(counter)
+      for (const fixture of standing) {
+        if (!ringsOverlap(ring, fixtureFootprint(fixture))) continue
+        issues.push({
+          id: `counter:${counter.id}:${fixture.id}`,
+          text: `A counter runs through the ${fixtureSpec(fixture.kind).name.toLowerCase()}. Stop the counter at its side, or move one of them.`,
+          floorId: floor.id,
+        })
+      }
+    }
+  }
+  return issues
 }
 
 export type CounterPart = { geometry: BufferGeometry; colour: string }

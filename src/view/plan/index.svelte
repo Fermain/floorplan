@@ -79,7 +79,7 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, snapCarport } from '../../lib/geometry/carports'
-  import { counterAlongFace, counterAt, counterBetween, counterFace, type CounterFace } from '../../lib/geometry/counters'
+  import { counterAlongFace, counterAt, counterBetween, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
   import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
@@ -3726,6 +3726,9 @@
             Cupboards on the wall above
           </label>
         {/if}
+        {#each counterIssues(document).filter((issue) => issue.id.startsWith(`counter:${chosenCounter.id}:`)) as issue (issue.id)}
+          <p class="text-amber-700">{issue.text}</p>
+        {/each}
         <Button variant="destructive" onclick={removeChosenCounter}>Remove</Button>
       </ContextPanel>
     {/if}

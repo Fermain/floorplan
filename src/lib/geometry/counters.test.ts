@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
 import { counterRing } from '../model/counters'
-import { addCounter, addWallRing, removeCounter, updateCounter } from '../model/mutations'
+import { addCounter, addFixture, addWallRing, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterFace, counterTotals } from './counters'
+import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterFace, counterIssues, counterTotals } from './counters'
 
 // A room from (4, 4) to (10, 9), in cavity brick 262 mm thick.
 function room(): Document {
@@ -99,5 +99,43 @@ describe('counters', () => {
     const lines = takeoff(doc).filter((line) => line.group === 'Joinery')
     expect(lines.map((line) => line.id).sort()).toEqual(['counter-wall-units', 'counter:base', 'counter:island', 'worktop:granite', 'worktop:laminate'])
     expect(takeoff(room()).some((line) => line.group === 'Joinery')).toBe(false)
+  })
+
+  it('close up to a stove and stop at it, and run on from a sink', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const wall = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!
+    const backZ = wall.point.z
+    // A stove standing against the south wall from x = 7 to 7.6, and a sink unit from 8.4 to 9.6.
+    doc = addFixture(doc, fid, { kind: 'stove', x: 7.3, z: backZ + 0.3, dx: 0, dz: 1, y: 0 } as never).document
+    doc = addFixture(doc, fid, { kind: 'sink', x: 9, z: backZ + 0.3, dx: 0, dz: 1, y: 0 } as never).document
+    const face = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!
+    expect(face.spans.map((span) => [span.kind, span.stop])).toEqual([['stove', true], ['sink', false]])
+    const end = (x: number) => {
+      const run = counterAlongFace(face, { x, z: 5 }, 0.6)
+      return run.x + run.dx * run.length
+    }
+    // Ending 80 mm short of the stove, it closes up to the stove's side.
+    expect(end(6.92)).toBeCloseTo(7, 6)
+    // Pulled on past the stove, it still stops at the stove's near side.
+    expect(end(8)).toBeCloseTo(7, 6)
+    // Started beyond the stove, it runs on through the sink unit without stopping.
+    const beyond = counterFace(floorOf(doc), { x: 7.8, z: 4.3 }, 0.45)!
+    const on = counterAlongFace(beyond, { x: 9.8, z: 5 }, 0.6)
+    expect(on.x + on.dx * on.length).toBeGreaterThan(9.6)
+    // And started beyond it and pulled back, it stops at the stove's far side.
+    const back = counterAlongFace(beyond, { x: 5, z: 5 }, 0.6)
+    expect(back.x).toBeCloseTo(7.6, 6)
+  })
+
+  it('are flagged when they run through a stove, but not when they stop beside it', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45)!.point.z
+    doc = addFixture(doc, fid, { kind: 'stove', x: 7.3, z: backZ + 0.3, dx: 0, dz: 1, y: 0 } as never).document
+    const through = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 4 }).document
+    expect(counterIssues(through).map((issue) => issue.text)).toEqual(['A counter runs through the electric stove. Stop the counter at its side, or move one of them.'])
+    const beside = addCounter(doc, fid, { ...base, x: 5, z: backZ, length: 2 }).document
+    expect(counterIssues(beside)).toEqual([])
   })
 })
