@@ -92,61 +92,65 @@
   <T.AmbientLight intensity={0.45} />
   <T.DirectionalLight position={lightFrom} intensity={1.1} />
 
-  {#each wallGeometries as geometry (geometry.uuid)}
-    <T.Mesh {geometry}>
-      <T.MeshStandardMaterial color="#6e6256" />
-    </T.Mesh>
-  {/each}
-  {#each courseGeometries as geometry (geometry.uuid)}
-    <T.Mesh {geometry}>
-      <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
-    </T.Mesh>
-  {/each}
-  {#if lintelGeometry}
-    <T.Mesh geometry={lintelGeometry}>
-      <T.MeshStandardMaterial color="#8a8680" />
-    </T.Mesh>
-  {/if}
-  {#if frameGeometry}
-    <T.Mesh geometry={frameGeometry}>
-      <T.MeshStandardMaterial color={FRAME_COLOUR} />
-    </T.Mesh>
-  {/if}
-  {#if glassGeometry}
-    <T.Mesh geometry={glassGeometry}>
-      <T.MeshStandardMaterial
-        color={GLASS_COLOUR}
-        transparent
-        opacity={GLASS_OPACITY}
-        depthWrite={false}
-        side={DoubleSide}
-      />
-    </T.Mesh>
-  {/if}
-  {#each fenceParts as part (part.geometry.uuid)}
-    <T.Mesh geometry={part.geometry}>
-      <T.MeshStandardMaterial
-        color={part.colour}
-        transparent={part.opacity < 1}
-        opacity={part.opacity}
-        depthWrite={part.opacity >= 1}
-        side={DoubleSide}
-        roughness={part.roughness ?? 0.8}
-        metalness={part.metalness ?? 0}
-        emissive={part.emissive ?? '#000000'}
-        emissiveIntensity={part.emissiveIntensity ?? 0}
-      />
-    </T.Mesh>
-  {/each}
-  {#each panelMeshes as panel (panel.geometry.uuid)}
-    <T.Mesh geometry={panel.geometry}>
-      <T.MeshStandardMaterial
-        color={panel.color}
-        emissive={panel.emissive}
-        emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
-        toneMapped={panel.emissive === '#000000'}
-        roughness={0.72}
-      />
-    </T.Mesh>
-  {/each}
+  <!-- The wall, drawn with z turned over so that the view is not a mirror image of the plan. The frame the
+       cameras and light use is already given in that world. -->
+  <T.Group scale.z={-1}>
+    {#each wallGeometries as geometry (geometry.uuid)}
+      <T.Mesh {geometry}>
+        <T.MeshStandardMaterial color="#6e6256" />
+      </T.Mesh>
+    {/each}
+    {#each courseGeometries as geometry (geometry.uuid)}
+      <T.Mesh {geometry}>
+        <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
+      </T.Mesh>
+    {/each}
+    {#if lintelGeometry}
+      <T.Mesh geometry={lintelGeometry}>
+        <T.MeshStandardMaterial color="#8a8680" />
+      </T.Mesh>
+    {/if}
+    {#if frameGeometry}
+      <T.Mesh geometry={frameGeometry}>
+        <T.MeshStandardMaterial color={FRAME_COLOUR} />
+      </T.Mesh>
+    {/if}
+    {#if glassGeometry}
+      <T.Mesh geometry={glassGeometry}>
+        <T.MeshStandardMaterial
+          color={GLASS_COLOUR}
+          transparent
+          opacity={GLASS_OPACITY}
+          depthWrite={false}
+          side={DoubleSide}
+        />
+      </T.Mesh>
+    {/if}
+    {#each fenceParts as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry}>
+        <T.MeshStandardMaterial
+          color={part.colour}
+          transparent={part.opacity < 1}
+          opacity={part.opacity}
+          depthWrite={part.opacity >= 1}
+          side={DoubleSide}
+          roughness={part.roughness ?? 0.8}
+          metalness={part.metalness ?? 0}
+          emissive={part.emissive ?? '#000000'}
+          emissiveIntensity={part.emissiveIntensity ?? 0}
+        />
+      </T.Mesh>
+    {/each}
+    {#each panelMeshes as panel (panel.geometry.uuid)}
+      <T.Mesh geometry={panel.geometry}>
+        <T.MeshStandardMaterial
+          color={panel.color}
+          emissive={panel.emissive}
+          emissiveIntensity={panel.emissive === '#000000' ? 0 : 1}
+          toneMapped={panel.emissive === '#000000'}
+          roughness={0.72}
+        />
+      </T.Mesh>
+    {/each}
+  </T.Group>
 </Canvas>
