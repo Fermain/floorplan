@@ -1,5 +1,6 @@
 import { BufferGeometry, Float32BufferAttribute, ShapeUtils, Vector2 } from 'three'
 import { signedPolygonArea } from '../model/geom'
+import { carportRing } from '../model/carports'
 import { projectDefaults } from '../model/defaults'
 import type { Document, PavingSurface } from '../model/types'
 import type { DeckPolygon } from './deck'
@@ -200,6 +201,7 @@ export function pavingSnapTargets(doc: Document): { points: Point[]; edges: [Poi
   if (ground && ground.walls.length > 0) for (const footprint of wallFootprints(ground)) rings.push(footprint.outer)
   for (const polygon of apronPolygons(doc)) rings.push(polygon.outer)
   for (const item of doc.paving ?? []) rings.push(item.ring.map(([x, z]) => ({ x, z })))
+  for (const carport of doc.carports ?? []) rings.push(carportRing(carport))
   const points = rings.flat()
   const edges = rings.flatMap((ring) => ring.map((p, i) => [p, ring[(i + 1) % ring.length]] as [Point, Point]))
   return { points, edges }

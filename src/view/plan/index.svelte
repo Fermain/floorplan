@@ -13,6 +13,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Plug from '@lucide/svelte/icons/plug'
   import Grid2x2 from '@lucide/svelte/icons/grid-2x2'
+  import CarFront from '@lucide/svelte/icons/car-front'
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import FixtureSymbol from './FixtureSymbol.svelte'
@@ -74,7 +75,9 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import { carportAt, snapCarport } from '../../lib/geometry/carports'
+  import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -126,7 +129,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -183,6 +186,11 @@
   let selectedEdge = $state<number | null>(null)
   // Paving: the area picked ('apron' for the strip round the house), and one being drawn, corner by corner.
   let selectedPaving = $state<string | null>(null)
+  // Carports: the one picked, and the size, roof and turn of the next one to be placed.
+  let selectedCarport = $state<string | null>(null)
+  let carportBays = $state<Carport['bays']>(2)
+  let carportRoof = $state<CarportRoof>('sheet')
+  let carportTurn = $state(0)
   let pavingDraft = $state<{ x: number; z: number }[]>([])
   let pavingShape = $state<'rect' | 'outline'>('rect')
   let pavingSurface = $state<PavingSurface>('concrete')
@@ -756,6 +764,11 @@
   }
 
   function cancelDraw() {
+    if (tool === 'draw-carport') {
+      setTool('select')
+      errorMessage = null
+      return
+    }
     if (tool === 'draw-paving') {
       if (pavingDraft.length > 0) pavingDraft = []
       else setTool('select')
@@ -809,8 +822,10 @@
     service?: ServiceKind | null
     bend?: number | null
     paving?: string | null
+    carport?: string | null
   }) {
     selectedPaving = next.paving ?? null
+    selectedCarport = next.carport ?? null
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
     selectedFixture = next.fixture ?? null
@@ -870,6 +885,11 @@
       return
     }
 
+    if (tool === 'draw-carport') {
+      placeCarport()
+      return
+    }
+
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
@@ -910,6 +930,11 @@
           return
         }
         chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
+        return
+      }
+      const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
+      if (parked) {
+        chooseSelection({ carport: parked.id })
         return
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
@@ -1959,6 +1984,60 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // A carport being placed follows the pointer, square to the drawing grid; R turns it a quarter turn.
+  const carportGhost = $derived.by((): { carport: Omit<Carport, 'id'>; problem: string | null } | null => {
+    const at = pointerPlan
+    if (tool !== 'draw-carport' || !at) return null
+    const length = Math.hypot(pavingAxis.x, pavingAxis.z) || 1
+    let dir = { x: pavingAxis.x / length, z: pavingAxis.z / length }
+    for (let i = 0; i < ((carportTurn % 4) + 4) % 4; i++) dir = { x: -dir.z, z: dir.x }
+    const loose = { x: at.x, z: at.z, dx: dir.x, dz: dir.z, bays: carportBays, roof: carportRoof }
+    const carport = { ...loose, ...snapCarport(document, loose, s(0.4)) }
+    return { carport, problem: carportProblem(document, carport) }
+  })
+
+  function placeCarport() {
+    if (activeStoreyIndex !== 0) {
+      errorMessage = 'A carport stands on the ground. Switch to the ground floor to place it.'
+      return
+    }
+    const ghost = carportGhost
+    if (!ghost) return
+    if (applyResult(documentStore.addCarport(ghost.carport))) {
+      const added = documentStore.document.carports?.at(-1)
+      if (added) chooseSelection({ carport: added.id })
+    }
+  }
+
+  const chosenCarport = $derived(selectedCarport ? (document.carports?.find((item) => item.id === selectedCarport) ?? null) : null)
+
+  function removeChosenCarport() {
+    const chosen = chosenCarport
+    if (chosen && applyResult(documentStore.removeCarport(chosen.id))) chooseSelection({})
+  }
+
+  function turnChosenCarport() {
+    const chosen = chosenCarport
+    if (chosen) applyResult(documentStore.updateCarport(chosen.id, { dx: -chosen.dz, dz: chosen.dx }))
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-carport') return
+    const onKey = (event: KeyboardEvent) => {
+      if (typingTarget(event) || event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault()
+        carportTurn += 1
+      } else if (event.key === '-' || event.key === '_' || event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        const step = event.key === '-' || event.key === '_' ? -1 : 1
+        carportBays = Math.min(3, Math.max(1, carportBays + step)) as Carport['bays']
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   // The paving picked: one area, or the apron, which is a project setting.
   const chosenPaving = $derived.by(() => {
     const id = selectedPaving
@@ -2072,6 +2151,7 @@
     if (selectedService && selectedBend !== null) return { label: 'Delete bend', run: removeSelectedBend }
     if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     if (chosenPaving) return { label: chosenPaving.apron ? 'Remove the apron' : 'Delete paving', run: removeChosenPaving }
+    if (chosenCarport) return { label: 'Delete carport', run: removeChosenCarport }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -2099,6 +2179,13 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-carport') {
+      const ghost = carportGhost
+      const size = carportSize({ bays: carportBays })
+      const name = `${carportName(carportBays)}, ${size.wide.toFixed(2)} × ${size.deep.toFixed(1)} m, ${carportRoofSpec(carportRoof).name.toLowerCase()}`
+      if (ghost?.problem) return `${name}. It will not go here: ${ghost.problem}.`
+      return `${name}. Click to place it; R turns it, − and + change how many cars it takes. Esc when done.`
+    }
     if (tool === 'draw-paving') {
       const spec = PAVING[pavingSurface]
       if (pavingShape === 'rect') {
@@ -2250,7 +2337,35 @@
       <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
         <Grid2x2 /><span class="hidden sm:inline">Paving</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
+        <CarFront /><span class="hidden sm:inline">Carport</span>
+      </ToggleGroup.Item>
     </ToggleGroup.Root>
+    {#if tool === 'draw-carport'}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={String(carportBays)}
+        onValueChange={(next) => next && (carportBays = Number(next) as Carport['bays'])}
+        aria-label="How many cars"
+      >
+        {#each CARPORT_BAYS as bays (bays)}
+          <ToggleGroup.Item value={String(bays)} title={carportName(bays)}>{bays === 1 ? 'Single' : bays === 2 ? 'Double' : 'Triple'}</ToggleGroup.Item>
+        {/each}
+      </ToggleGroup.Root>
+      <Select.Root type="single" value={carportRoof} onValueChange={(next) => next && (carportRoof = next as CarportRoof)}>
+        <Select.Trigger size="sm" class="w-40" aria-label="Carport roof">{carportRoofSpec(carportRoof).name}</Select.Trigger>
+        <Select.Content>
+          {#each CARPORT_ROOFS as spec (spec.id)}
+            <Select.Item value={spec.id} label={spec.name} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      <Button size="sm" variant="outline" title="Turn it a quarter turn (R)" onclick={() => (carportTurn += 1)}>
+        <RotateCw /><span class="hidden sm:inline">Turn</span>
+      </Button>
+    {/if}
     {#if tool === 'draw-paving'}
       <ToggleGroup.Root
         type="single"
@@ -2494,6 +2609,39 @@
           pointer-events="none"
         />
       {/if}
+    {/if}
+    {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
+      {@const ring = carportRing(carport)}
+      {@const colour = state === 'refused' ? '#dc2626' : state === 'placed' ? '#57534e' : '#2563eb'}
+      <polygon
+        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+        fill={carportRoofSpec(carport.roof).colour}
+        fill-opacity={state === 'ghost' || state === 'refused' ? 0.3 : 0.38}
+        stroke={colour}
+        stroke-width={s(state === 'placed' ? 0.03 : 0.06)}
+        stroke-dasharray={dash(0.3, 0.16)}
+      />
+      <!-- A diagonal each way marks it as a roof with nothing under it; the way in is the open side. -->
+      <path
+        d="M {ring[0].x} {ring[0].z} L {ring[2].x} {ring[2].z} M {ring[1].x} {ring[1].z} L {ring[3].x} {ring[3].z}"
+        stroke={colour}
+        stroke-opacity="0.35"
+        stroke-width={s(0.02)}
+        fill="none"
+      />
+      {#each carportPosts(carport) as post, i (i)}
+        <rect x={post.x - 0.06} y={post.z - 0.06} width="0.12" height="0.12" fill={colour} />
+      {/each}
+    {/snippet}
+    {#if activeStoreyIndex === 0}
+      <g class="carports" pointer-events="none">
+        {#each document.carports ?? [] as carport (carport.id)}
+          {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
+        {/each}
+        {#if carportGhost}
+          {@render carportShape(carportGhost.carport, carportGhost.problem ? 'refused' : 'ghost')}
+        {/if}
+      </g>
     {/if}
     {#if activeStoreyIndex === 0}
       <g class="paving" pointer-events="none">
@@ -3311,6 +3459,48 @@
           </p>
         </ContextPanel>
       {/if}
+    {/if}
+    {#if chosenCarport && !roofFloor}
+      {@const size = carportSize(chosenCarport)}
+      <ContextPanel
+        label="Carport"
+        title={carportName(chosenCarport.bays)}
+        description="{size.wide.toFixed(2)} × {size.deep.toFixed(1)} m. {carportRoofSpec(chosenCarport.roof).text}"
+        onclose={() => chooseSelection({})}
+      >
+        <div class="grid gap-1.5">
+          <Label>Cars</Label>
+          <ToggleGroup.Root
+            type="single"
+            variant="outline"
+            size="sm"
+            value={String(chosenCarport.bays)}
+            onValueChange={(next) => next && chosenCarport && applyResult(documentStore.updateCarport(chosenCarport.id, { bays: Number(next) as Carport['bays'] }))}
+            aria-label="How many cars"
+          >
+            {#each CARPORT_BAYS as bays (bays)}
+              <ToggleGroup.Item value={String(bays)} class="flex-1">{bays === 1 ? 'Single' : bays === 2 ? 'Double' : 'Triple'}</ToggleGroup.Item>
+            {/each}
+          </ToggleGroup.Root>
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="carport-roof">Roof</Label>
+          <Select.Root
+            type="single"
+            value={chosenCarport.roof}
+            onValueChange={(next) => next && chosenCarport && applyResult(documentStore.updateCarport(chosenCarport.id, { roof: next as CarportRoof }))}
+          >
+            <Select.Trigger id="carport-roof" size="sm" class="w-full">{carportRoofSpec(chosenCarport.roof).name}</Select.Trigger>
+            <Select.Content>
+              {#each CARPORT_ROOFS as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <Button variant="outline" onclick={turnChosenCarport}><RotateCw />Turn a quarter turn</Button>
+        <Button variant="destructive" onclick={removeChosenCarport}>Remove</Button>
+      </ContextPanel>
     {/if}
     {#if chosenPaving && !roofFloor}
       {@const surface = chosenPaving.apron ? projectDefaults(document).apronSurface : chosenPaving.item.surface}

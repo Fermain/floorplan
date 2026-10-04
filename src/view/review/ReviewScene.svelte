@@ -49,6 +49,7 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
+  import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
@@ -121,6 +122,7 @@
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
+  let carportMeshes = $state<CarportPart[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -418,6 +420,7 @@
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
     const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
+    const carportParts = buildCarportParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -502,6 +505,7 @@
     groundGeometry = ground
     roadMeshes = roadParts
     pavingMeshes = pavingParts
+    carportMeshes = carportParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -521,6 +525,7 @@
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
       for (const part of pavingParts) part.geometry.dispose()
+      for (const part of carportParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -856,6 +861,11 @@
     {#each roadMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each carportMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.8} side={DoubleSide} transparent={part.opacity < 1} opacity={part.opacity} />
       </T.Mesh>
     {/each}
     {#each pavingMeshes as part (part.geometry.uuid)}

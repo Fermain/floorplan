@@ -11,6 +11,7 @@ import {
   placeOpeningU,
 } from './openings'
 import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
+import { carportProblem } from './carports'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -32,6 +33,7 @@ import {
 } from './stories'
 import type {
   CostAssumptions,
+  Carport,
   Document,
   FaceFinish,
   FaceTrim,
@@ -1053,6 +1055,29 @@ export function removePaving(document: Document, id: string): MutationResult {
   const paving = document.paving.filter((item) => item.id !== id)
   if (paving.length > 0) return ok({ ...document, paving })
   const { paving: _gone, ...rest } = document
+  return ok(rest)
+}
+
+export function addCarport(document: Document, carport: Omit<Carport, 'id'>): MutationResult {
+  const problem = carportProblem(document, carport)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, carports: [...(document.carports ?? []), { ...carport, id: newId('carport') }] })
+}
+
+export function updateCarport(document: Document, id: string, patch: Partial<Omit<Carport, 'id'>>): MutationResult {
+  const current = document.carports?.find((item) => item.id === id)
+  if (!current) return fail(document, 'carport not found')
+  const next = { ...current, ...patch }
+  const problem = carportProblem(document, next)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, carports: (document.carports ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removeCarport(document: Document, id: string): MutationResult {
+  if (!document.carports?.some((item) => item.id === id)) return fail(document, 'carport not found')
+  const carports = document.carports.filter((item) => item.id !== id)
+  if (carports.length > 0) return ok({ ...document, carports })
+  const { carports: _gone, ...rest } = document
   return ok(rest)
 }
 

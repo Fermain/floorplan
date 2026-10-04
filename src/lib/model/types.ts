@@ -255,6 +255,20 @@ export type SiteServices = {
   bends?: Partial<Record<ServiceKind, PlanPoint[]>>
 }
 
+// A carport: a roof on posts with no walls, standing free on the ground. It is placed by its middle and the way
+// its cars drive in, and sized by how many cars it takes side by side.
+export type CarportRoof = 'sheet' | 'shade-cloth'
+export type Carport = {
+  id: string
+  x: number
+  z: number
+  // The unit direction cars drive in along.
+  dx: number
+  dz: number
+  bays: 1 | 2 | 3
+  roof: CarportRoof
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
@@ -262,6 +276,7 @@ export type Document = {
   costing?: Costing
   services?: SiteServices
   paving?: PavingArea[]
+  carports?: Carport[]
 }
 
 export type DerivedRoom = {

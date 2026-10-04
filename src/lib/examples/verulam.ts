@@ -1,6 +1,7 @@
 import { outsideFaces } from '../geometry/finishes'
 import * as mutations from '../model/mutations'
 import type { Document } from '../model/types'
+import { CARPORT_BAY_M, CARPORT_DEEP_M } from '../model/carports'
 import { Builder, terrain } from './build'
 
 // A real stand near Verulam, KwaZulu-Natal, traced from the municipal map, an aerial photograph and the
@@ -188,16 +189,12 @@ export function verulam(): Document {
     if (i !== 2) b.apply(mutations.setFence(b.doc, b.floor(0).id, edge, { type: 'half-wall', height: 0.9 }), 'patio wall')
   }
 
-  // Two double carports, 5.5 × 5.2 m, each standing free on its own posts under a low hipped roof (they are
-  // fabric in life, which cannot be drawn). One is off the north face of the main house, stopping 3 m short of
-  // its east end; the other is on the west side of the cottage.
-  const [CAR_WIDE, CAR_DEEP, CAR_GAP] = [5.5, 5.2, 0.6]
-  const houseCarport = [at(N - CAR_GAP, E - 3), at(N - CAR_GAP - CAR_DEEP, E - 3), at(N - CAR_GAP - CAR_DEEP, E - 3 - CAR_WIDE), at(N - CAR_GAP, E - 3 - CAR_WIDE)]
-  b.walls(0, houseCarport, { skin: 'logical', closed: true })
-  b.room(0, at(N - CAR_GAP - CAR_DEEP / 2, E - 3 - CAR_WIDE / 2), 'Carport', 'garage', false)
-  const cottageCarport = { x: x0 - CAR_GAP - CAR_WIDE, z: z0 + 3.5 }
-  b.rect(0, cottageCarport.x, cottageCarport.z, cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP, { skin: 'logical' })
-  b.room(0, { x: cottageCarport.x + CAR_WIDE / 2, z: cottageCarport.z + CAR_DEEP / 2 }, 'Cottage carport', 'garage', false)
+  // Two double carports under shade cloth, each standing free. One is off the north face of the main house,
+  // stopping 3 m short of its east end; the other is on the west side of the cottage.
+  const CAR = { wide: 2 * CARPORT_BAY_M, deep: CARPORT_DEEP_M, gap: 0.6 }
+  b.carport(at(N - CAR.gap - CAR.deep / 2, E - 3 - CAR.wide / 2), { x: u.x, z: u.z }, 2, 'shade-cloth')
+  const cottageCarport = { x: x0 - CAR.gap - CAR.wide, z: z0 + 3.5 }
+  b.carport({ x: cottageCarport.x + CAR.wide / 2, z: cottageCarport.z + CAR.deep / 2 }, { x: 0, z: -1 }, 2, 'shade-cloth')
 
   // A palisade fence 300 mm inside the boundary, with a 3.5 m gate in the north side, 3 m from the north-west corner.
   const inset = 0.3
@@ -216,13 +213,9 @@ export function verulam(): Document {
   }
 
   // Tiled gables over the cottage, its ridge running north to south, and over the main house with its patio, its
-  // ridge running the length of the house;
-  // low hips over the carports.
+  // ridge running the length of the house.
   b.cover({ x: x0, z: z0 }, { pitchDeg: 17.5, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
   b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
-  const carportRoof = { pitchDeg: 8, eaves: 0.2, form: 'hip', covering: 'ibr' } as const
-  b.cover(houseCarport[0], carportRoof)
-  b.cover(cottageCarport, carportRoof)
 
   // The deck is timber; the patio is paved.
   for (const space of floor().spaces ?? []) {
@@ -264,11 +257,11 @@ export function verulam(): Document {
     [
       [drive.x, deep - inset],
       [drive.x + drive.wide, deep - inset],
-      [drive.x + drive.wide, cottageCarport.z + CAR_DEEP + drive.turn],
-      [cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP + drive.turn],
-      [cottageCarport.x + CAR_WIDE, cottageCarport.z + CAR_DEEP],
-      [cottageCarport.x, cottageCarport.z + CAR_DEEP],
-      [drive.x, cottageCarport.z + CAR_DEEP + drive.turn],
+      [drive.x + drive.wide, cottageCarport.z + CAR.deep + drive.turn],
+      [cottageCarport.x + CAR.wide, cottageCarport.z + CAR.deep + drive.turn],
+      [cottageCarport.x + CAR.wide, cottageCarport.z + CAR.deep],
+      [cottageCarport.x, cottageCarport.z + CAR.deep],
+      [drive.x, cottageCarport.z + CAR.deep + drive.turn],
     ],
     'gravel',
   )
