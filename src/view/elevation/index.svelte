@@ -62,6 +62,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { buildGutterParts, GUTTERS, gutterLayout, gutterOf } from '../../lib/geometry/gutters'
   import { supportingFloor } from '../../lib/model/stories'
   import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
+  import { buildCounterParts, countersOnWall, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixtureStandAboveDatum, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
     defaultSupport,
@@ -211,9 +212,21 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     })
   })
 
+  // The counters against the face in view, with the sinks and hobs set into them.
+  const faceCounters = $derived(floor && wall && !logical ? countersOnWall(floor, wall.id, side) : [])
   const fittingParts = $derived.by((): FixturePart[] =>
-    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture)) : [],
+    floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture), faceCounters) : [],
   )
+  const counterParts = $derived.by((): CounterPart[] =>
+    floor && faceCounters.length > 0 ? buildCounterParts(faceCounters, floor.datumHeight + finishedFloor(floor), shownFittings) : [],
+  )
+
+  $effect(() => {
+    const parts = counterParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
 
   $effect(() => {
     const parts = fittingParts
@@ -1394,6 +1407,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
           ...fenceParts,
           ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
           ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
+          ...counterParts.map((part) => ({ ...part, opacity: 1 })),
           ...gutterParts,
           ...finishParts,
           ...trimParts,

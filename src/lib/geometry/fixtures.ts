@@ -1,9 +1,10 @@
 import { BoxGeometry, BufferGeometry, CylinderGeometry, LatheGeometry, Matrix4, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { cornerById } from '../model/geom'
-import { BOTTLE_GAP_M, BOTTLES, bottleSetup, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
-import type { Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
-import { settleAgainstCounters } from './counters'
+import { BOTTLE_GAP_M, BOTTLES, bottleSetup, BUILT_IN, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
+import type { Counter, Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
+import { settleAgainstCounters, SINK_BOWLS } from './counters'
+import { counterKindSpec, counterUnder } from '../model/counters'
 import { wallReach } from './outline'
 import { floorWorldDatum, groundPad, levelField, padBleed, pointInRing, ringDistance, wallDatum, type LevelPad, type Ring } from './pad'
 import { floorCells, ringLabelPoint, type WallSide } from './spaces'
@@ -145,7 +146,7 @@ export function siteField(doc: Document): Document['heightfield'] {
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
-export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres'>>
+export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn'>>
 
 function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: FixtureSetup = {}): Omit<Fixture, 'id'> {
   const reach = fixtureSize({ kind, ...setup }).depth / 2 + FACE_GAP_M
@@ -154,6 +155,9 @@ function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: Fix
 
 // Indoors, gas bottles start as a single 9 kg bottle with no cage.
 const INDOOR_SETUP: Partial<Record<FixtureKind, FixtureSetup>> = { 'gas-cylinder': { bottles: 1, bottleKg: 9, cage: false } }
+
+// Fittings that can be set into an island or a bar wide enough to take them.
+const ISLAND_FITTINGS: readonly FixtureKind[] = ['sink', 'stove', 'gas-stove']
 
 // Where a fixture goes for a pointer: snapped against the nearest wall face it can use, or over the middle of a room.
 // How close to a downpipe a rainwater tank has to come to be pulled under it.
@@ -208,11 +212,38 @@ export function placeFixture(
       const half = size.width / 2
       const raw = dot({ x: pointer.x - a.x, z: pointer.z - a.z }, t)
       // A kitchen fitting settles against the counters on this wall: a sink flush with one, a stove beside one.
-      const s = Math.min(edge - half, Math.max(half, settleAgainstCounters(floor, kind, a, t, n, raw, half)))
+      const s = Math.min(edge - half, Math.max(half, settleAgainstCounters(floor, kind, a, t, n, raw, half, 0.2, setup.builtIn === true)))
       const fixture = against({ x: a.x + t.x * s, z: a.z + t.z * s }, n, kind, spec.y, setup)
       // Judged from where it stood before a counter drew it along the wall.
       const drawn = s - Math.min(edge - half, Math.max(half, raw))
       consider(fixture, fixtureFootprint(fixture).every((point) => pointInRing(ring, point.x, point.z)), { x: fixture.x - t.x * drawn, z: fixture.z - t.z * drawn })
+    }
+  }
+  if (cell && ISLAND_FITTINGS.includes(kind)) {
+    // A sink or a hob can be set into an island: flush with the side it is worked at from, which is the side the
+    // pointer is on. A stove put there is built in, with its oven under the worktop.
+    const size = fixtureSize({ kind })
+    for (const counter of floor.counters ?? []) {
+      if (counter.kind === 'base' || counter.length < size.width || counter.depth < size.depth - 0.01) continue
+      const out = { x: -counter.dz, z: counter.dx }
+      const along = dot({ x: pointer.x - counter.x, z: pointer.z - counter.z }, { x: counter.dx, z: counter.dz })
+      const across = dot({ x: pointer.x - counter.x, z: pointer.z - counter.z }, out)
+      if (along < -0.3 || along > counter.length + 0.3 || across < -0.3 || across > counter.depth + 0.3) continue
+      const s = Math.round(Math.min(counter.length - size.width / 2, Math.max(size.width / 2, along)) * 20) / 20
+      const front = across > counter.depth / 2
+      const middle = front ? counter.depth - size.depth / 2 : size.depth / 2
+      const n = front ? out : { x: -out.x, z: -out.z }
+      const fixture: Omit<Fixture, 'id'> = {
+        kind,
+        x: counter.x + counter.dx * s + out.x * middle,
+        z: counter.z + counter.dz * s + out.z * middle,
+        dx: n.x,
+        dz: n.z,
+        y: spec.y,
+        ...(BUILT_IN.includes(kind) ? { builtIn: true } : {}),
+      }
+      // On the island itself it wins over any wall: judged as if it stood right under the pointer.
+      consider(fixture, true, pointer)
     }
   }
   if (spec.outside || either) {
@@ -436,9 +467,52 @@ function mixer(along: number, out: number, y: number): Piece[] {
 }
 
 // Pieces in the fixture's own frame: along the wall, out from its back, and up from its underside.
-function pieces(fixture: Fixture): Piece[] {
+// A fitting set into a counter is drawn as what shows of it: the counter is its cupboard and its worktop.
+function setIn(fixture: Fixture, counter: Counter): Piece[] | null {
+  const { width: w, depth: d } = fixtureSize(fixture)
+  const top = counterKindSpec(counter.kind).height
+  if (fixture.kind === 'sink') {
+    // A steel sink of two bowls let into the worktop, with the mixer behind it.
+    const { along, back, front, deep } = SINK_BOWLS
+    const middle = (back + front) / 2
+    const wide = front - back
+    const skin = 0.012
+    return [
+      box(along * 2, wide, skin, 0, middle, top - deep, BRUSHED),
+      box(along * 2, skin, deep, 0, back + skin / 2, top - deep, BRUSHED),
+      box(along * 2, skin, deep, 0, front - skin / 2, top - deep, BRUSHED),
+      box(skin, wide, deep, -along + skin / 2, middle, top - deep, BRUSHED),
+      box(skin, wide, deep, along - skin / 2, middle, top - deep, BRUSHED),
+      box(skin * 2, wide, deep - 0.02, 0, middle, top - deep, BRUSHED),
+      puck(0.025, 0.004, -along / 2, middle, top - deep + skin, CHROME, 12),
+      puck(0.025, 0.004, along / 2, middle, top - deep + skin, CHROME, 12),
+      ...mixer(0, 0.03, top),
+    ]
+  }
+  if ((fixture.kind === 'stove' || fixture.kind === 'gas-stove') && fixture.builtIn) {
+    const gas = fixture.kind === 'gas-stove'
+    const hob = [box(w - 0.04, d - 0.14, 0.012, 0, d / 2, top, HOB)]
+    const knobs = [-0.2, -0.07, 0.07, 0.2].map((x) => puck(0.014, 0.018, x, d - 0.11, top + 0.012, CHROME, 10))
+    const burners = [-0.14, 0.14].flatMap((x) =>
+      [0.17, 0.37].flatMap((out) => {
+        const r = gas ? 0.055 : 0.075
+        const ring = puck(r, 0.008, x, out, top + 0.012, gas ? CHROME : RING, 16)
+        if (!gas) return [ring]
+        return [ring, box(r * 1.6, 0.008, 0.008, x, out, top + 0.02, BRUSHED), box(0.008, r * 1.6, 0.008, x, out, top + 0.02, BRUSHED)]
+      }),
+    )
+    // The oven under the worktop, its door in the face of the counter.
+    const oven = [box(w - 0.02, 0.02, 0.58, 0, d + 0.008, 0.16, APPLIANCE_DARK), box(w * 0.7, 0.02, 0.025, 0, d + 0.03, 0.66, BRUSHED), box(w * 0.6, 0.006, 0.3, 0, d + 0.02, 0.26, GLASS)]
+    return [...hob, ...knobs, ...burners, ...oven]
+  }
+  return null
+}
+
+function pieces(fixture: Fixture, counter: Counter | null = null): Piece[] {
   const kind = fixture.kind
   const { width: w, depth: d, height: h } = fixtureSize(fixture)
+  const inCounter = counter ? setIn(fixture, counter) : null
+  if (inCounter) return inCounter
   switch (kind) {
     case 'wc': {
       const cistern = [
@@ -554,8 +628,8 @@ function pieces(fixture: Fixture): Piece[] {
         box(w, d, h - 0.05, 0, d / 2, 0, APPLIANCE),
         box(w - 0.05, d - 0.08, 0.025, 0, d / 2 + 0.02, h - 0.05, HOB),
         box(w, 0.04, 0.1, 0, 0.02, h - 0.05, APPLIANCE),
-        box(w * 0.7, 0.02, h * 0.45, 0, 0.03, 0.12, APPLIANCE_DARK),
-        box(w * 0.55, 0.015, 0.03, 0, 0.04, 0.35, BRUSHED),
+        box(w * 0.8, 0.02, h * 0.5, 0, d + 0.005, 0.12, APPLIANCE_DARK),
+        box(w * 0.6, 0.02, 0.025, 0, d + 0.025, 0.6, BRUSHED),
       ]
       const knobs = [-0.2, -0.07, 0.07, 0.2].map((x) => puck(0.015, 0.02, x, 0.05, h - 0.02, CHROME, 10))
       const burners = [-0.14, 0.14].flatMap((x) =>
@@ -670,7 +744,7 @@ function pieces(fixture: Fixture): Piece[] {
 }
 
 // One merged geometry per finish for a set of fixtures. baseY is the underside of each fitting, or a function of it.
-export function buildFixtureParts(fixtures: Fixture[], baseY: number | ((fixture: Fixture) => number)): FixturePart[] {
+export function buildFixtureParts(fixtures: Fixture[], baseY: number | ((fixture: Fixture) => number), counters: Counter[] = []): FixturePart[] {
   const byFinish = new Map<string, { finish: Finish; list: BufferGeometry[] }>()
   const basis = new Matrix4()
   const move = new Matrix4()
@@ -681,7 +755,7 @@ export function buildFixtureParts(fixtures: Fixture[], baseY: number | ((fixture
     const back = { x: fixture.x - fixture.dx * out, z: fixture.z - fixture.dz * out }
     // A right-handed frame (along, up, out), so faces point outwards and nothing renders inside out.
     const along = { x: fixture.dz, z: -fixture.dx }
-    for (const piece of pieces(fixture)) {
+    for (const piece of pieces(fixture, counterUnder(counters, fixture.x, fixture.z))) {
       basis.set(along.x, 0, fixture.dx, 0, 0, 1, 0, 0, along.z, 0, fixture.dz, 0, 0, 0, 0, 1)
       // A tank's pad sits on the ground; other fittings lift a hair to avoid z-fighting the slab.
       const clear = fixture.kind === 'water-tank' ? 0 : FLOOR_CLEAR_M

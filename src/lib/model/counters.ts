@@ -47,6 +47,16 @@ export function counterRing(counter: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'le
   ]
 }
 
+// The counter a point stands in, if any: the last drawn first.
+export function counterUnder(counters: Counter[] | undefined, x: number, z: number): Counter | null {
+  for (const counter of [...(counters ?? [])].reverse()) {
+    const along = (x - counter.x) * counter.dx + (z - counter.z) * counter.dz
+    const out = (x - counter.x) * -counter.dz + (z - counter.z) * counter.dx
+    if (along > -0.01 && along < counter.length + 0.01 && out > -0.01 && out < counter.depth + 0.01) return counter
+  }
+  return null
+}
+
 export function counterProblem(counter: Omit<Counter, 'id'>): string | null {
   if (!COUNTER_KINDS.some((item) => item.id === counter.kind)) return 'unknown kind of counter'
   if (!COUNTER_TOPS.some((item) => item.id === counter.top)) return 'unknown worktop'

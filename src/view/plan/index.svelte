@@ -84,7 +84,7 @@
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
   import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
-  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
+  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
@@ -948,7 +948,10 @@
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
-      const worktop = counterAt(activeFloor, plan)
+      // A fitting set into a counter is picked before the counter it stands in.
+      const hit = fixtureAt(plan.x, plan.z)
+      const setIn = hit && levelFixtures.find((item) => item.fixture.id === hit.id)?.fixture
+      const worktop = setIn && counterUnder(activeFloor.counters, setIn.x, setIn.z) ? null : counterAt(activeFloor, plan)
       if (worktop) {
         chooseSelection({ counter: worktop.id })
         // A counter can be dragged: along its wall or to another, or anywhere if it stands free.
@@ -1221,7 +1224,7 @@
     if (moved) {
       fixtureMove = null
       const next = moved.preview
-      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz }))
+      if (next) applyResult(documentStore.updateFixture(moved.floorId, moved.id, { x: next.x, z: next.z, dx: next.dx, dz: next.dz, ...(next.builtIn ? { builtIn: true } : {}) }))
       return
     }
     const dragging = serviceDrag
@@ -1945,6 +1948,7 @@
   function setupOf(fixture: Fixture) {
     if (fixture.kind === 'gas-cylinder') return { bottles: fixture.bottles, bottleKg: fixture.bottleKg, cage: fixture.cage }
     if (fixture.kind === 'water-tank') return { litres: fixture.litres }
+    if (fixture.builtIn) return { builtIn: true }
     return {}
   }
   // Gas pipes run round the outside of the ground floor; the chosen appliance or bottles pick out their own.
@@ -3375,7 +3379,9 @@
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
-          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {#if !counterUnder(activeFloor?.counters, shown.x, shown.z)}
+            <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {/if}
         {/each}
         {#if fixtureGhost}
           <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
@@ -3410,6 +3416,15 @@
           <circle cx={mark.point.x} cy={mark.point.z} r={s(0.09)} fill="#2563eb" />
         {/if}
       {/if}
+    </g>
+    <!-- A sink or a hob set into a counter is drawn over it. -->
+    <g class="fixtures set-in" pointer-events="none">
+      {#each levelFixtures as item (item.fixture.id)}
+        {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+        {#if counterUnder(activeFloor?.counters, shown.x, shown.z)}
+          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+        {/if}
+      {/each}
     </g>
     {#if focusedCells}
       <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
@@ -4337,6 +4352,8 @@
     min-width: 0;
     min-height: 0;
     touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
     cursor: crosshair;
   }
 
