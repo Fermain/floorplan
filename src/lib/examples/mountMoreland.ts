@@ -17,9 +17,9 @@ export function mountMoreland(): Document {
     [0, deep],
   ]
 
-  // The main house, turned 32° from the boundaries: 7.6 m wide and 15.65 m long inside its walls. Its short north
+  // The main house, turned 32° from the boundaries: 7.6 m wide and 14.4 m long inside its walls. Its short north
   // face and its front, the long west side, look towards the gate.
-  const [INSIDE_WIDE, INSIDE_LONG] = [7.6, 15.65]
+  const [INSIDE_WIDE, INSIDE_LONG] = [7.6, 14.4]
   const HALF_WALL = 0.07
   const centre = { x: 28.5, z: 36.5 }
   const turn = (32 * Math.PI) / 180
@@ -112,10 +112,12 @@ export function mountMoreland(): Document {
 
   // The main house, from measurements taken inside it. Facing south there are two sides to it.
   // West: the open-plan room, then bedroom 2 (3.7 × 3.2 m), then bedroom 1 in the corner.
-  // East: the kitchen, running on 1.9 m beside the mouth of the corridor; the bathroom (3 m long, 2.5 m wide)
-  // behind the kitchen's end wall; the corridor's turn; and the guest room (3 × 3 m) in the corner.
+  // East: the kitchen, running on 1.9 m beside the mouth of the corridor; the bathroom (3 m long, 2.5 m wide,
+  // counting the shower that runs across the end of the corridor's turn) behind the kitchen's end wall; the
+  // turn itself; and the guest room (3 × 3 m) in the corner.
   // The corridor starts 3 m in from the front, 1.2 m wide, with 0.5 m of built-in storage between it and the
-  // bathroom. It runs past the doors of both bedrooms, stops 3 m short of the south face and turns east,
+  // bathroom. It runs past the doors of both bedrooms, stops 3 m short of the south face and turns east as far
+  // as the shower,
   // with the bathroom's door on one side of the turn and the guest room's on the other. South of the turn,
   // bedroom 1 takes in the corridor's width as well, 1.2 m against the guest room's wall, so it is not a rectangle.
   const thin = { systemId: 'block-90' as const, skin: 'single' as const }
@@ -124,8 +126,11 @@ export function mountMoreland(): Document {
   const STORE = HALL_E + 0.5 + 0.09
   const KITCHEN_END = OPEN + 1.9
   const BED2_END = OPEN + 3.7 + 0.09
-  const LEG_N = KITCHEN_END + 3 + 0.09
-  const LEG_S = LEG_N + 1.2 + 0.09
+  // Bedroom 1's door stands hard against the south wall of the corridor, its frame 10.45 m from the north face.
+  const LEG_S = 10.45 + 0.85 + 0.045
+  const LEG_N = LEG_S - 1.2 - 0.09
+  // The turn stops short of the east wall: the last 0.95 m is the bathroom's shower.
+  const LEG_E = INSIDE_WIDE - 0.95 - 0.045
   b.walls(0, [at(N, W), at(OPEN, W), at(S, W), at(S, E), at(N, E)], { ...block, closed: true })
   // West of the corridor: bedroom 2, then bedroom 1, whose door is the last on the corridor before the turn.
   b.walls(0, [at(OPEN, W), at(OPEN, HALL_W), at(BED2_END, HALL_W), at(LEG_S, HALL_W)], thin)
@@ -134,10 +139,9 @@ export function mountMoreland(): Document {
   b.walls(0, [at(OPEN, HALL_E), at(KITCHEN_END, HALL_E), at(LEG_N, HALL_E)], thin)
   b.walls(0, [at(KITCHEN_END, HALL_E), at(KITCHEN_END, STORE), at(KITCHEN_END, E)], thin)
   b.walls(0, [at(KITCHEN_END, STORE), at(LEG_N, STORE)], thin)
-  // The turn east: the bathroom to its north, the guest room to its south. It is drawn through to the east wall,
-  // 3 m rather than the 2.67 m measured, so that both doors have a wall to stand in.
-  b.walls(0, [at(LEG_N, HALL_E), at(LEG_N, STORE), at(LEG_N, E)], thin)
-  b.walls(0, [at(LEG_S, HALL_W), at(LEG_S, HALL_E), at(LEG_S, E)], thin)
+  // The turn east: the bathroom to its north, the guest room to its south, and the bathroom's shower across its end.
+  b.walls(0, [at(LEG_N, HALL_E), at(LEG_N, STORE), at(LEG_N, LEG_E), at(LEG_S, LEG_E)], thin)
+  b.walls(0, [at(LEG_S, HALL_W), at(LEG_S, HALL_E), at(LEG_S, LEG_E), at(LEG_S, E)], thin)
   b.walls(0, [at(LEG_S, HALL_E), at(S, HALL_E)], thin)
   // Lines with nothing built on them: across the mouth of the corridor, and round the kitchen.
   b.walls(0, [at(OPEN, HALL_W), at(OPEN, HALL_E)], { skin: 'logical' })
@@ -148,28 +152,29 @@ export function mountMoreland(): Document {
   b.opening(0, 'external-door', at(3.8 + 0.45, E), 0.9)
   // Bedroom 2's door frame is 9.3 m from the north face and bedroom 1's 10.45 m, hard against the wall between them.
   b.opening(0, 'internal-door', at(9.3 + 0.4, HALL_W))
-  b.opening(0, 'internal-door', at(10.45 + 0.4, HALL_W))
-  b.opening(0, 'internal-door', at(LEG_N, 6.4))
-  b.opening(0, 'internal-door', at(LEG_S, 6))
+  b.opening(0, 'internal-door', at(LEG_S - 0.045 - 0.4, HALL_W), 0.8)
+  // The bathroom's door is off the turn, beside its shower; the guest room's is opposite.
+  b.opening(0, 'internal-door', at(LEG_N, (STORE + LEG_E) / 2))
+  b.opening(0, 'internal-door', at(LEG_S, (HALL_E + LEG_E) / 2))
   // Windows, placed by eye.
   b.opening(0, 'window', at(4.4, W), 1.6)
   b.opening(0, 'window', at(N, 2), 2.2)
   b.opening(0, 'window', at(N, 5.6), 2.2)
   b.opening(0, 'window', at(6.4, E), 2)
   b.opening(0, 'window', at(8.2, W), 1.6)
-  b.opening(0, 'window', at(13, W), 2)
+  b.opening(0, 'window', at(12.4, W), 2)
   b.opening(0, 'window', at(S, 2), 1.6)
-  b.opening(0, 'window', at(14.2, E), 1.6)
-  b.opening(0, 'window', at(9.8, E), 0.6)
+  b.opening(0, 'window', at(13, E), 1.6)
+  b.opening(0, 'window', at(9.2, E), 0.6)
 
   b.room(0, at(2, 2), 'Lounge', 'living')
   b.room(0, at(5, 6), 'Kitchen', 'kitchen')
   b.room(0, at(8.2, 1.5), 'Bedroom 2', 'bedroom')
-  b.room(0, at(13, 1.5), 'Bedroom 1', 'bedroom')
-  b.room(0, at(14.2, 6), 'Guest room', 'bedroom')
-  b.room(0, at(9.8, 6.4), 'Bathroom', 'bathroom')
+  b.room(0, at(12.6, 1.5), 'Bedroom 1', 'bedroom')
+  b.room(0, at(13, 6), 'Guest room', 'bedroom')
+  b.room(0, at(9.2, 6.4), 'Bathroom', 'bathroom')
   b.room(0, at(9, (HALL_W + HALL_E) / 2), 'Corridor', 'passage', false)
-  b.room(0, at(9.8, HALL_E + 0.3), 'Storage', 'other', false)
+  b.room(0, at(9.2, HALL_E + 0.3), 'Storage', 'other', false)
 
   // The patio is a rectangle 2.8 m deep along the front, outside the front door, under the house's roof.
   b.walls(0, [at(N, W), at(N, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
