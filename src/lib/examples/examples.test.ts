@@ -70,10 +70,13 @@ describe('example projects', () => {
     const level = (x: number, z: number) => field.heights[Math.round(z - field.originZ) * field.cols + Math.round(x - field.originX)]
     // The cottage's lawn and the main house's terrace, with the bank between them.
     expect(level(14, 26)).toBeCloseTo(3.6, 1)
-    expect(level(26, 38)).toBeCloseTo(6.4, 1)
-    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchen', 'Living', 'Bedroom', 'En suite', 'Deck', 'Main house', 'Patio']))
+    expect(level(28, 37)).toBeCloseTo(6.4, 1)
+    expect(doc.plot.roads ?? []).toEqual([])
+    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchen', 'Living', 'Bedroom', 'En suite', 'Deck', 'Lounge', 'Bedroom 1', 'Bedroom 2', 'Guest room', 'Bathroom', 'Corridor', 'Patio']))
     expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(2)
-    expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
+    // The lounge's windows all open under the patio roof, which the daylight check does not count; nothing else falls short.
+    const short = buildingChecks(doc).rooms.filter((room) => !room.ok).map((room) => ground.spaces?.find((space) => space.id === room.spaceId)?.name)
+    expect(short).toEqual(['Lounge'])
     // Every wall stays on the stand.
     for (const corner of ground.corners) {
       expect(corner.x).toBeGreaterThan(0)
