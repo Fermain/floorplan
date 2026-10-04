@@ -61,6 +61,28 @@ describe('example projects', () => {
     expect(ground.walls.some((wall) => wall.finish)).toBe(true)
   })
 
+  it('the Mount Moreland stand is 2,023 m², with the main house a terrace above the cottage', async () => {
+    const doc = await byId('mount-moreland')
+    const [wide, deep] = doc.plot.ring[2]
+    expect(wide * deep).toBeCloseTo(2023, -1)
+    const ground = doc.building.floors.find((floor) => floor.index === 0)!
+    const field = doc.heightfield
+    const level = (x: number, z: number) => field.heights[Math.round(z - field.originZ) * field.cols + Math.round(x - field.originX)]
+    // The cottage's lawn and the main house's terrace, with the bank between them.
+    expect(level(14, 26)).toBeCloseTo(3.6, 1)
+    expect(level(26, 38)).toBeCloseTo(6.4, 1)
+    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchen', 'Living', 'Bedroom', 'En suite', 'Deck', 'Main house', 'Patio']))
+    expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(2)
+    expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
+    // Every wall stays on the stand.
+    for (const corner of ground.corners) {
+      expect(corner.x).toBeGreaterThan(0)
+      expect(corner.x).toBeLessThan(wide)
+      expect(corner.z).toBeGreaterThan(0)
+      expect(corner.z).toBeLessThan(deep)
+    }
+  })
+
   it('the city house fits its narrow stand', async () => {
     const doc = await byId('tight-urban')
     const xs = doc.building.floors.flatMap((floor) => floor.corners.map((corner) => corner.x))

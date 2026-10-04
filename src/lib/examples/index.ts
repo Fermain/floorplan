@@ -33,6 +33,16 @@ export const EXAMPLES: readonly Example[] = [
     load: async () => (await import('./multiGeneration')).multiGeneration(),
   },
   {
+    id: 'mount-moreland',
+    name: 'Mount Moreland house and cottage',
+    place: 'Mount Moreland, KwaZulu-Natal, on a steep 2,023 m² stand',
+    description:
+      'A real stand traced from the municipal map and an aerial photograph: a main house on an upper terrace and a 9 × 9 m open-plan cottage on a lower one, with a bank between, a deck and walled garden behind the cottage, and a gravel drive in from the track. Only the outline of the main house is drawn.',
+    highlights: ['A real plot', 'Two terraces', 'Open-plan cottage', 'Deck and walled garden'],
+    author: 'Fermain',
+    load: async () => (await import('./mountMoreland')).mountMoreland(),
+  },
+  {
     id: 'eco-off-grid',
     name: 'Off-grid farmhouse',
     place: 'Limpopo, on a rolling hectare',
