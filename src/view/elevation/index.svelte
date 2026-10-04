@@ -1394,7 +1394,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
         {/if}
       </div>
       <div
-        class="viewport"
+        class="viewport paper"
         class:elevation={locked}
         class:placing={locked && mode === 'place'}
         onpointerdown={onViewportPointerDown}
@@ -1515,6 +1515,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   .viewport {
     position: relative;
+    background: var(--background);
     flex: 1;
     min-height: 0;
     width: 100%;
