@@ -72,7 +72,7 @@ describe('example projects', () => {
     expect(level(14, 26)).toBeCloseTo(3.6, 1)
     expect(level(28, 37)).toBeCloseTo(6.4, 1)
     expect(doc.plot.roads ?? []).toEqual([])
-    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchenette', 'Living', 'Bedroom', 'En suite', 'Deck', 'Lounge', 'Kitchen', 'Bedroom 1', 'Bedroom 2', 'Guest room', 'Bathroom', 'Corridor', 'Lobby', 'Storage', 'Patio', 'Carport', 'Cottage carport']))
+    expect((ground.spaces ?? []).map((space) => space.name)).toEqual(expect.arrayContaining(['Kitchenette', 'Living', 'Bedroom', 'En suite', 'Deck', 'Lounge', 'Kitchen', 'Bedroom 1', 'Bedroom 2', 'Guest room', 'Bathroom', 'Corridor', 'Storage', 'Patio', 'Carport', 'Cottage carport']))
     expect(doc.building.floors.filter((floor) => floor.roof)).toHaveLength(4)
     // One long eave down each side of the main house's gable: a downpipe at each end, not one at every room.
     const mainRoof = doc.building.floors.filter((floor) => floor.roof?.form === 'gable').at(-1)!
