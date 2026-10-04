@@ -6,6 +6,7 @@ import { gutterLayout } from '../geometry/gutters'
 import { plumbingLayout } from '../geometry/plumbing'
 import { powerLayout } from '../geometry/power'
 import { buildingChecks } from '../geometry/sans'
+import { layoutSpaces } from '../geometry/spaces'
 import type { Document } from '../model/types'
 import { isDocument } from '../state/projects'
 import { EXAMPLES } from '.'
@@ -78,6 +79,8 @@ describe('example projects', () => {
     const mainRoof = doc.building.floors.filter((floor) => floor.roof?.form === 'gable').at(-1)!
     expect(gutterLayout(doc).downpipes.filter((pipe) => pipe.roofFloorId === mainRoof.id).length).toBeLessThanOrEqual(6)
     expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
+    // The boundary fence does not close, so it makes no room, and nothing else is left over.
+    expect(layoutSpaces(ground).loose).toEqual([])
     // Every wall stays on the stand.
     for (const corner of ground.corners) {
       expect(corner.x).toBeGreaterThan(0)

@@ -1058,7 +1058,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     const current = drag
     if (current && floor && wall && frame) {
       const moving = wall.openings.find((opening) => opening.id === current.id)
-      if (moving) {
+      // A click that did not drag only selects: an opening standing off the module is left where it is.
+      const dragged = current.u !== current.originU || current.v !== current.originV
+      if (moving && dragged) {
         const others = wall.openings.filter((opening) => opening.id !== current.id)
         const u = snapLegalModuleU(current.u, moving.width, frame.length, others, system)
         if (u !== null) {

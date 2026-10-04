@@ -66,6 +66,18 @@ describe('SANS 10400 room checks', () => {
     expect(checks.ventilation.ok).toBe(true)
   })
 
+  it('counts a window that looks onto a patio, which is open to the air', () => {
+    let doc = withWindow(withWindow(room(4, 4), 4, 0.5), 4, 2.5)
+    const before = buildingChecks(doc).rooms[0].glazed
+    // A patio 3 m deep along that wall, marked off by lines with nothing built on them.
+    const patio = addWallRing(doc, doc.building.floors[0].id, [{ x: 4, z: 4 }, { x: 4, z: 1 }, { x: 8, z: 1 }, { x: 8, z: 4 }], 'logical')
+    expect(patio.ok).toBe(true)
+    doc = patio.document
+    const [checked] = buildingChecks(doc).rooms
+    expect(checked.glazed).toBeCloseTo(before, 6)
+    expect(checksOf(doc).light.ok).toBe(true)
+  })
+
   it('does not count a window that looks into the next room', () => {
     let doc = room(8, 4)
     const floor = doc.building.floors[0]
