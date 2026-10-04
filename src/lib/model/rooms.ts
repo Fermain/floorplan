@@ -136,7 +136,8 @@ export function deriveRooms(floor: Floor): DerivedRoom[] {
       .filter((p): p is NonNullable<typeof p> => p !== undefined)
     if (points.length !== cycle.length) continue
     const area = signedPolygonArea(points)
-    if (area <= 0) continue
+    // A run of walls that does not close walks out and back along itself: no area, so no room.
+    if (area <= 1e-6) continue
     const key = roomKey(cycle)
     const finishId = floor.roomFinishes[key] ?? 'unfinished'
     rooms.push({ cornerIds: cycle, signedArea: area, finishId })

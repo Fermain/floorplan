@@ -116,3 +116,20 @@ describe('the damp check', () => {
     expect(finishIssues(setProjectDefaults(doc, { outsideFinish: 'exposed' }).document)).toEqual([])
   })
 })
+
+describe('rooms open to the air', () => {
+  it('count as outside: a wall facing a patio marked off by logical walls takes the outside finish', () => {
+    // A patio 3 m deep along the south wall of the house, marked off by lines with nothing built on them.
+    let doc = house('block-140')
+    const floor = () => floorOf(doc)
+    const south = floor().walls.find((wall) => {
+      const [a, b] = [wall.startCornerId, wall.endCornerId].map((id) => floor().corners.find((corner) => corner.id === id)!)
+      return a.z === 4 && b.z === 4
+    })!
+    const side = outsideFaces(floor())(south, 1) ? 1 : -1
+    doc = addWallRing(doc, floor().id, [{ x: 4, z: 4 }, { x: 4, z: 1 }, { x: 12, z: 1 }, { x: 12, z: 4 }], 'logical').document
+    const after = floor().walls.find((wall) => wall.id === south.id)!
+    expect(outsideFaces(floor())(after, side)).toBe(true)
+    expect(outsideFaces(floor())(after, side === 1 ? -1 : 1)).toBe(false)
+  })
+})

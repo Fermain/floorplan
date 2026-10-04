@@ -19,6 +19,7 @@ export const PAINTS: readonly PaintSpec[] = [
   { id: 'terracotta', name: 'Terracotta', colour: '#b9694a' },
   { id: 'sage', name: 'Sage', colour: '#a9b39a' },
   { id: 'sky', name: 'Sky', colour: '#b9cfdc' },
+  { id: 'navy', name: 'Navy', colour: '#506389' },
   { id: 'stone', name: 'Stone grey', colour: '#b3b0a8' },
   { id: 'charcoal', name: 'Charcoal', colour: '#55575a' },
 ]

@@ -7,6 +7,8 @@ import * as mutations from '../model/mutations'
 import { defaultOpeningDimensions } from '../model/openings'
 import { wallSystem } from '../model/systems'
 import type {
+  Carport,
+  CarportRoof,
   Document,
   FixtureKind,
   Floor,
@@ -158,6 +160,12 @@ export class Builder {
   // A paved area on the ground: a driveway, a path or a patio.
   paving(ring: [number, number][], surface: PavingSurface): this {
     return this.apply(mutations.addPaving(this.doc, ring, surface), `${surface} paving`)
+  }
+
+  // A carport standing free: its middle, the way its cars drive in, how many it takes and what it is roofed with.
+  carport(at: Point, direction: Point, bays: Carport['bays'], roof: CarportRoof): this {
+    const length = Math.hypot(direction.x, direction.z) || 1
+    return this.apply(mutations.addCarport(this.doc, { x: at.x, z: at.z, dx: direction.x / length, dz: direction.z / length, bays, roof }), `carport at ${at.x}, ${at.z}`)
   }
 
   stair(index: number, p: Point, direction: Point, width?: number): this {

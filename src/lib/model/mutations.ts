@@ -11,6 +11,9 @@ import {
   placeOpeningU,
 } from './openings'
 import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
+import { carportProblem } from './carports'
+import { counterProblem } from './counters'
+import { retainingProblem } from './retaining'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -32,7 +35,10 @@ import {
 } from './stories'
 import type {
   CostAssumptions,
+  Carport,
+  Counter,
   Document,
+  RetainingWall,
   FaceFinish,
   FaceTrim,
   Fence,
@@ -1053,6 +1059,81 @@ export function removePaving(document: Document, id: string): MutationResult {
   const paving = document.paving.filter((item) => item.id !== id)
   if (paving.length > 0) return ok({ ...document, paving })
   const { paving: _gone, ...rest } = document
+  return ok(rest)
+}
+
+export function addCounter(document: Document, floorId: string, counter: Omit<Counter, 'id'>): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const problem = counterProblem(counter)
+  if (problem) return fail(document, problem)
+  return ok(replaceFloor(document, { ...floor, counters: [...(floor.counters ?? []), { ...counter, id: newId('counter') }] }))
+}
+
+export function updateCounter(document: Document, floorId: string, id: string, patch: Partial<Omit<Counter, 'id'>>): MutationResult {
+  const floor = getFloor(document, floorId)
+  const current = floor?.counters?.find((item) => item.id === id)
+  if (!floor || !current) return fail(document, 'counter not found')
+  const next = { ...current, ...patch }
+  if (next.kind !== 'base') delete next.wallUnits
+  const problem = counterProblem(next)
+  if (problem) return fail(document, problem)
+  return ok(replaceFloor(document, { ...floor, counters: (floor.counters ?? []).map((item) => (item.id === id ? next : item)) }))
+}
+
+export function removeCounter(document: Document, floorId: string, id: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor?.counters?.some((item) => item.id === id)) return fail(document, 'counter not found')
+  const counters = floor.counters.filter((item) => item.id !== id)
+  if (counters.length > 0) return ok(replaceFloor(document, { ...floor, counters }))
+  const { counters: _gone, ...rest } = floor
+  return ok(replaceFloor(document, rest))
+}
+
+export function addRetainingWall(document: Document, wall: Omit<RetainingWall, 'id'>): MutationResult {
+  const problem = retainingProblem(document, wall)
+  if (problem) return fail(document, problem)
+  const added: RetainingWall = { id: newId('retaining'), type: wall.type, points: wall.points.map(([x, z]) => [x, z]) }
+  return ok({ ...document, retaining: [...(document.retaining ?? []), added] })
+}
+
+export function updateRetainingWall(document: Document, id: string, patch: Partial<Omit<RetainingWall, 'id'>>): MutationResult {
+  const current = document.retaining?.find((item) => item.id === id)
+  if (!current) return fail(document, 'retaining wall not found')
+  const next = { ...current, ...patch }
+  const problem = retainingProblem(document, next)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, retaining: (document.retaining ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removeRetainingWall(document: Document, id: string): MutationResult {
+  if (!document.retaining?.some((item) => item.id === id)) return fail(document, 'retaining wall not found')
+  const retaining = document.retaining.filter((item) => item.id !== id)
+  if (retaining.length > 0) return ok({ ...document, retaining })
+  const { retaining: _gone, ...rest } = document
+  return ok(rest)
+}
+
+export function addCarport(document: Document, carport: Omit<Carport, 'id'>): MutationResult {
+  const problem = carportProblem(document, carport)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, carports: [...(document.carports ?? []), { ...carport, id: newId('carport') }] })
+}
+
+export function updateCarport(document: Document, id: string, patch: Partial<Omit<Carport, 'id'>>): MutationResult {
+  const current = document.carports?.find((item) => item.id === id)
+  if (!current) return fail(document, 'carport not found')
+  const next = { ...current, ...patch }
+  const problem = carportProblem(document, next)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, carports: (document.carports ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removeCarport(document: Document, id: string): MutationResult {
+  if (!document.carports?.some((item) => item.id === id)) return fail(document, 'carport not found')
+  const carports = document.carports.filter((item) => item.id !== id)
+  if (carports.length > 0) return ok({ ...document, carports })
+  const { carports: _gone, ...rest } = document
   return ok(rest)
 }
 

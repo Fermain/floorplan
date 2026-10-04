@@ -12,6 +12,9 @@
   import { plumbingLayout } from '$lib/geometry/plumbing'
   import { gasLayout } from '$lib/geometry/gas'
   import { finishIssues } from '$lib/geometry/finishes'
+  import { counterIssues, counterTotals } from '$lib/geometry/counters'
+  import { groundOf, measureRetaining, retainingIssues } from '$lib/geometry/retaining'
+  import { RETAINING_ENGINEER_M } from '$lib/model/retaining'
   import { bottleSetup } from '$lib/model/fixtures'
   import { BATTERY_MODULE_KWH, powerLayout, suggestedPanels } from '$lib/geometry/power'
   import { planHref } from '$lib/routes/links'
@@ -116,6 +119,22 @@
     ),
   )
 
+  const kitchenList = $derived(counterIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
+  const joinery = $derived(counterTotals(doc))
+  const counterLength = $derived(joinery.units.base + joinery.units.island + joinery.units.bar)
+  const retainingList = $derived(retainingIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: null })))
+  // Every retaining wall together: how much of it there is and the most any of it holds back.
+  const retained = $derived.by(() => {
+    const walls = doc.retaining ?? []
+    if (walls.length === 0) return null
+    const ground = groundOf(doc)
+    const measures = walls.map((wall) => measureRetaining(wall, ground))
+    return {
+      count: walls.length,
+      length: measures.reduce((sum, measure) => sum + measure.length, 0),
+      highest: Math.max(...measures.map((measure) => measure.highest)),
+    }
+  })
   const hasGas = $derived(gas.appliances.length > 0 || gas.cylinders.length > 0)
   const hasWalls = $derived(doc.building.floors.some((floor) => floor.walls.some((wall) => wall.skin !== 'logical')))
 
@@ -126,6 +145,8 @@
     { id: 'backup', title: 'Load shedding and solar', issues: powerList, empty: electrical.circuits.length === 0 ? 'No circuits yet' : null },
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
+    { id: 'kitchens', title: 'Kitchens', issues: kitchenList, empty: counterLength > 0 ? null : 'No counters yet' },
+    { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
     { id: 'walls', title: 'Wall finishes', issues: wallList, empty: hasWalls ? null : 'No walls yet' },
   ])
   const total = $derived(sections.reduce((sum, section) => sum + section.issues.length, 0))
@@ -528,6 +549,36 @@
             {@render facts(gasFacts)}
           {:else}
             <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place a gas stove, a gas geyser or bottles with the Fittings tool and the gas run appears here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-kitchens">
+        {@render heading('kitchens', 'Counters against the fittings that stand between them. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
+        {#if !folded.includes('kitchens')}
+          {@render attend(kitchenList)}
+          {#if counterLength > 0}
+            {@render facts([
+              { label: 'Counters', value: `${number.format(counterLength)} m`, note: [joinery.units.island > 0 ? 'with an island' : '', joinery.units.bar > 0 ? 'with a bar' : ''].filter(Boolean).join(', ') },
+              { label: 'Wall cupboards', value: joinery.wallUnits > 0 ? `${number.format(joinery.wallUnits)} m` : 'None' },
+            ])}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters with the Counters tool on the plan and they are checked here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-retaining">
+        {@render heading('retaining', `What each wall holds back is read from the ground as it lies, a metre to either side. Up to ${RETAINING_ENGINEER_M} m a builder can take on; over that the wall needs an engineer's design, and every one needs a drain behind it.`)}
+        {#if !folded.includes('retaining')}
+          {@render attend(retainingList)}
+          {#if retained}
+            {@render facts([
+              { label: 'Retaining walls', value: `${number.format(retained.length)} m`, note: retained.count === 1 ? 'one wall' : `${retained.count} walls` },
+              { label: 'Most held back', value: `${number.format(retained.highest)} m` },
+            ])}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw a retaining wall with the Retaining tool on the plan and it is checked here.</p>
           {/if}
         {/if}
       </section>

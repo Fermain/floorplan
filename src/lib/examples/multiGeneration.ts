@@ -84,19 +84,15 @@ export function multiGeneration(): Document {
   b.opening(0, 'external-door', { x: 36.5, z: 24 })
   b.room(0, { x: 33, z: 23 }, 'Garage', 'garage')
 
-  // A carport beside each cottage: posts and a roof, no walls.
-  b.rect(0, 19, 30, 22, 35.5, { skin: 'logical' })
-  b.rect(0, 48, 30, 51, 35.5, { skin: 'logical' })
-  b.room(0, { x: 20.5, z: 33 }, 'Carport', 'garage', false)
-  b.room(0, { x: 49.5, z: 33 }, 'Carport', 'garage', false)
+  // A carport beside each cottage: a sheeted roof on posts, standing free.
+  b.carport({ x: 20.5, z: 32.75 }, { x: 0, z: 1 }, 1, 'sheet')
+  b.carport({ x: 49.5, z: 32.75 }, { x: 0, z: 1 }, 1, 'sheet')
 
-  // Roofs: a tiled gable on the house, hips on the cottages, a gable on the garage and sheeting on the carports.
+  // Roofs: a tiled gable on the house, hips on the cottages, and a gable on the garage.
   b.cover({ x: w, z: s }, { pitchDeg: 22, eaves: 0.6, form: 'gable', covering: 'concrete-tile' })
   b.cover({ x: 8, z: 30 }, { pitchDeg: 22, eaves: 0.5, form: 'hip', covering: 'concrete-tile' })
   b.cover({ x: 53, z: 30 }, { pitchDeg: 22, eaves: 0.5, form: 'hip', covering: 'concrete-tile' })
   b.cover({ x: 30, z: 20 }, { pitchDeg: 22, eaves: 0.4, form: 'gable', covering: 'concrete-tile' })
-  b.cover({ x: 19, z: 30 }, { pitchDeg: 7, eaves: 0.2, form: 'mono', covering: 'ibr' })
-  b.cover({ x: 48, z: 30 }, { pitchDeg: 7, eaves: 0.2, form: 'mono', covering: 'ibr' })
 
   // Colour: the house stays face brick; the west cottage is sage, the east terracotta, the garage cream.
   const ground0 = () => b.floor(0)

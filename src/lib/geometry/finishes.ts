@@ -19,18 +19,41 @@ export type ResolvedFinish = {
   ownPaint: boolean
 }
 
-// Which faces of a storey's walls look outside: a step off the face lands in no room.
+// Which faces of a storey's walls look outside: a step off the face lands in no room, or in one that is open to
+// the air. A patio, a deck or a carport is marked off by lines with nothing built on them (logical walls), and one
+// of those lines has nothing beyond it; a kitchen marked off inside a house has rooms on both sides of its lines.
 export function outsideFaces(floor: Floor): (wall: Wall, side: WallSide) => boolean {
   const layout = layoutSpaces(floor)
   const cells = [...layout.loose, ...layout.spaces.flatMap((resolved) => resolved.cells)]
-  return (wall, side) => {
+  const beside = (wall: Wall, side: WallSide, reach: number) => {
     const a = cornerById(floor.corners, wall.startCornerId)
     const b = cornerById(floor.corners, wall.endCornerId)
-    if (!a || !b) return true
+    if (!a || !b) return undefined
     const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
     const normal = { x: -(b.z - a.z) / length, z: (b.x - a.x) / length }
-    const reach = wallThickness(systemOf(wall)) / 2 + 0.05
-    return !cellAt(cells, (a.x + b.x) / 2 + normal.x * side * reach, (a.z + b.z) / 2 + normal.z * side * reach)
+    return cellAt(cells, (a.x + b.x) / 2 + normal.x * side * reach, (a.z + b.z) / 2 + normal.z * side * reach)
+  }
+  // Rooms joined across a logical wall share the air; a logical wall with open ground beyond lets the outside in.
+  const group = new Map<unknown, unknown>(cells.map((cell) => [cell, cell]))
+  const root = (cell: unknown): unknown => {
+    let at = cell
+    while (group.get(at) !== at) at = group.get(at)
+    return at
+  }
+  const open = new Set<unknown>()
+  const logical = floor.walls.filter((wall) => wall.skin === 'logical')
+  for (const wall of logical) {
+    const [left, right] = [beside(wall, 1, 0.1), beside(wall, -1, 0.1)]
+    if (left && right) group.set(root(left), root(right))
+  }
+  for (const wall of logical) {
+    const [left, right] = [beside(wall, 1, 0.1), beside(wall, -1, 0.1)]
+    if (left && !right) open.add(root(left))
+    if (right && !left) open.add(root(right))
+  }
+  return (wall, side) => {
+    const cell = beside(wall, side, wallThickness(systemOf(wall)) / 2 + 0.05)
+    return !cell || open.has(root(cell))
   }
 }
 

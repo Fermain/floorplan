@@ -1,4 +1,5 @@
 import type { Document, Floor, Opening, Wall } from '../model/types'
+import { outsideFaces } from './finishes'
 import { openingFrameLayout } from './frames'
 import { wallBetween } from './outline'
 import type { Ring } from './pad'
@@ -68,6 +69,12 @@ function exteriorWallIds(floor: Floor, cells: Cell[]): Set<string> {
   }
   const exterior = new Set<string>()
   for (const [id, count] of seen) if (count === 1) exterior.add(id)
+  // A wall onto a patio, a deck or a carport looks outside too: those are open to the air, and a window under a
+  // patio roof still lights and airs the room behind it.
+  const outside = outsideFaces(floor)
+  for (const wall of floor.walls) {
+    if (wall.skin !== 'logical' && (outside(wall, 1) || outside(wall, -1))) exterior.add(wall.id)
+  }
   return exterior
 }
 
