@@ -22,7 +22,7 @@ export function ecoOffGrid(): Document {
     { ring, northBearingDeg: 0, latitude: -24.68, longitude: 30.33, roads: [0] },
     terrain(ring, ground),
     'clay-cavity',
-    { roofForm: 'mono', roofCovering: 'ibr', roofPitchDeg: 12, roofEaves: 0.6 },
+    { roofForm: 'mono', roofCovering: 'ibr', roofPitchDeg: 12, roofEaves: 0.6, apronWidth: 1, apronSurface: 'concrete' },
   )
 
   // 16 × 9 m: living and kitchen across the north front, bedrooms, bathroom and laundry behind.
@@ -82,6 +82,8 @@ export function ecoOffGrid(): Document {
   b.apply(mutations.setServiceBends(b.doc, 'sewer', [{ x: 30, z: 54 }, { x: 30, z: 70 }]), 'drain round the house')
   const geyser = floor().fixtures?.find((fixture) => fixture.kind === 'solar-geyser')
   if (geyser) b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: 41, z: 60 }), 'geyser in the middle')
+  // A gravel drive up from the farm road to the back door.
+  b.paving([[49.5, 0], [53, 0], [53, 54], [49.5, 54]], 'gravel')
   b.apply(mutations.setRainfall(b.doc, 700), 'rainfall')
   b.apply(mutations.setBackupHours(b.doc, 24), 'backup hours')
   // Lights and plugs stay on through the night from the battery; twenty panels, 11 kWp, charge it.

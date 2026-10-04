@@ -8,7 +8,9 @@
   type OpeningPanelMesh,
 } from '../../lib/geometry/frames'
 import { formatSchedule, scheduleWall } from '../../lib/geometry/schedule'
-import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+import { buildCourseFaceGeometries, buildFinishSkin, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+import { outsideFaces, resolveFinish } from '../../lib/geometry/finishes'
+import { finishSpec, NO_PAINT, PAINTS, paintSpec, WALL_FINISHES } from '../../lib/model/finishes'
 import {
   defaultOpeningDimensions,
   isFloorOpening,
@@ -18,7 +20,7 @@ import {
   placeOpeningU,
 } from '../../lib/model/openings'
 import { systemOf, WALL_SYSTEMS } from '../../lib/model/systems'
-import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/model/types'
+import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
   import { Button } from '$lib/components/ui/button'
   import { Input } from '$lib/components/ui/input'
@@ -537,6 +539,36 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
 
   $effect(() => {
     const parts = trimParts
+    return () => {
+      for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  // How the face in view is finished and painted, and whether that is its own choice or the project's.
+  const faceFinishNow = $derived(floor && wall && !logical ? resolveFinish(doc, wall, side, viewFace?.outside ?? false) : null)
+
+  function chooseFinish(patch: { finish?: WallFinish | null; paint?: string | null }) {
+    if (!floor || !wall) return
+    documentStore.setFaceFinish(floor.id, wall.id, side, patch)
+  }
+
+  // Plaster or bagging over each face of the wall, in its paint colour.
+  const finishParts = $derived.by((): FencePart[] => {
+    const shown = displayWall
+    if (!floor || !wall || !shown || logical) return []
+    const outside = outsideFaces(floor)
+    const parts: FencePart[] = []
+    for (const face of [1, -1] as const) {
+      const finish = resolveFinish(doc, wall, face, outside(wall, face))
+      if (finish.finish === 'exposed' || !finish.colour) continue
+      const geometry = buildFinishSkin(floor, shown, face)
+      if (geometry) parts.push({ geometry, colour: finish.colour, opacity: finish.finish === 'bagged' ? 0.82 : 1, roughness: 0.95 })
+    }
+    return parts
+  })
+
+  $effect(() => {
+    const parts = finishParts
     return () => {
       for (const part of parts) part.geometry.dispose()
     }
@@ -1214,8 +1246,48 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           <span class="text-muted-foreground">mm</span>
         </label>
       {/if}
-      {#if faceTrimNow}
+      {#if faceFinishNow}
         <div class="flex items-center gap-2 sm:ml-auto">
+          <span class="text-muted-foreground">Finish</span>
+          <Select.Root
+            type="single"
+            value={faceFinishNow.ownFinish ? faceFinishNow.finish : 'project'}
+            onValueChange={(next) => next && chooseFinish({ finish: next === 'project' ? null : (next as WallFinish) })}
+          >
+            <Select.Trigger size="sm" class="w-28" aria-label="Finish on this face">{finishSpec(faceFinishNow.finish).name}</Select.Trigger>
+            <Select.Content>
+              <Select.Item value="project" label="As the project" />
+              {#each WALL_FINISHES as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          {#if faceFinishNow.finish !== 'exposed'}
+            <Select.Root
+              type="single"
+              value={faceFinishNow.ownPaint ? faceFinishNow.paint : 'project'}
+              onValueChange={(next) => next && chooseFinish({ paint: next === 'project' ? null : next })}
+            >
+              <Select.Trigger size="sm" class="w-32" aria-label="Paint on this face">
+                <span class="inline-block size-3 rounded-full border" style:background={faceFinishNow.colour}></span>
+                {paintSpec(faceFinishNow.paint)?.name ?? 'Unpainted'}
+              </Select.Trigger>
+              <Select.Content>
+                <Select.Item value="project" label="As the project" />
+                {#each PAINTS as paint (paint.id)}
+                  <Select.Item value={paint.id} label={paint.name}>
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={paint.colour}></span>
+                    {paint.name}
+                  </Select.Item>
+                {/each}
+                <Select.Item value={NO_PAINT} label="Unpainted" />
+              </Select.Content>
+            </Select.Root>
+          {/if}
+        </div>
+      {/if}
+      {#if faceTrimNow}
+        <div class="flex items-center gap-2">
           <span class="text-muted-foreground">Skirting</span>
           <Select.Root type="single" value={faceTrimNow.skirting} onValueChange={(next) => chooseTrim({ skirting: next as SkirtingType | 'none' })}>
             <Select.Trigger size="sm" class="w-28" aria-label="Skirting on this face">
@@ -1243,7 +1315,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
         </div>
       {/if}
       {#if gutterValue}
-        <div class="flex items-center gap-2 {faceTrimNow ? '' : 'sm:ml-auto'}">
+        <div class="flex items-center gap-2 {faceFinishNow ? '' : 'sm:ml-auto'}">
           <span class="text-muted-foreground">Gutter</span>
           <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
             <Select.Trigger size="sm" class="w-36" aria-label="Gutter above this wall">
@@ -1258,7 +1330,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           </Select.Root>
         </div>
       {/if}
-      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue || faceTrimNow ? '' : 'sm:ml-auto'}">
+      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue || faceFinishNow ? '' : 'sm:ml-auto'}">
         <span class="text-muted-foreground">Wall</span>
         <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
           <Select.Trigger size="sm" class="w-full sm:w-48" aria-label="Wall system">{system.name}</Select.Trigger>
@@ -1321,6 +1393,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallSystemId } from '../../lib/
           ...pillarParts.map((part) => ({ ...part, opacity: 1 })),
           ...fittingParts.map((part) => ({ ...part, opacity: 1 })),
           ...gutterParts,
+          ...finishParts,
           ...trimParts,
         ]}
         {orthoCamera}

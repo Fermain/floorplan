@@ -16,9 +16,13 @@ export type NewProjectDraft = ProjectDefaults & {
 
 const KEY = 'floorplan:new-project'
 
+// A new house starts with a 600 mm concrete apron round it; older projects keep none until asked.
+export const NEW_APRON_M = 0.6
+
 function fresh(): NewProjectDraft {
   return {
     ...BASE_DEFAULTS,
+    apronWidth: NEW_APRON_M,
     name: '',
     site: DEFAULT_SAMPLE_ID,
     customPlot: null,
@@ -81,5 +85,11 @@ export function draftDefaults(): ProjectDefaults {
     doorHeight: draft.doorHeight,
     skirting: draft.skirting,
     cornice: draft.cornice,
+    apronWidth: draft.apronWidth,
+    apronSurface: draft.apronSurface,
+    outsideFinish: draft.outsideFinish,
+    insideFinish: draft.insideFinish,
+    outsidePaint: draft.outsidePaint,
+    insidePaint: draft.insidePaint,
   }
 }

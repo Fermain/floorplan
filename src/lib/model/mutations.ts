@@ -1,4 +1,4 @@
-import { EPS, wallLength } from './geom'
+import { EPS, signedPolygonArea, wallLength } from './geom'
 import { applyExistingWallSplits, cornersOnSegment, findWallCrossings } from './intersect'
 import { newId } from './id'
 import {
@@ -15,11 +15,12 @@ import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
 import { COVERINGS } from '../geometry/coverings'
-import { defaultsProblem, projectDefaults } from './defaults'
+import { defaultsProblem, PAVING_SURFACES, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
 import { fixtureProblem, reseat, swapsFor } from './fixtures'
 import { faceKey, trimProblem } from './trims'
+import { finishProblem } from './finishes'
 import { pointInRing } from '../geometry/pad'
 import { deriveRooms, roomKey } from './rooms'
 import {
@@ -32,10 +33,13 @@ import {
 import type {
   CostAssumptions,
   Document,
+  FaceFinish,
   FaceTrim,
   Fence,
   Fixture,
   FixtureKind,
+  PavingArea,
+  PavingSurface,
   PlanPoint,
   ServiceKind,
   SewerType,
@@ -49,6 +53,7 @@ import type {
   ProjectDefaults,
   Roof,
   RoomType,
+  WallFinish,
   Space,
   Stair,
   Wall,
@@ -590,6 +595,38 @@ export function setFaceTrim(document: Document, floorId: string, wallId: string,
   return ok(replaceFloor(document, { ...floor, walls }))
 }
 
+// A face's own finish and paint; null hands the choice back to the project.
+export function setFaceFinish(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  side: 1 | -1,
+  patch: { finish?: WallFinish | null; paint?: string | null },
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (wall.skin === 'logical') return fail(document, 'a logical wall has no faces to finish')
+  const problem = finishProblem(patch)
+  if (problem) return fail(document, problem)
+  const key = faceKey(side)
+  const merged: FaceFinish = { ...(wall.finish?.[key] ?? {}) }
+  if (patch.finish === null) delete merged.finish
+  else if (patch.finish !== undefined) merged.finish = patch.finish
+  if (patch.paint === null) delete merged.paint
+  else if (patch.paint !== undefined) merged.paint = patch.paint
+  const finish = { ...(wall.finish ?? {}) }
+  if (merged.finish === undefined && merged.paint === undefined) delete finish[key]
+  else finish[key] = merged
+  const walls = floor.walls.map((item) => {
+    if (item.id !== wallId) return item
+    const { finish: _old, ...rest } = item
+    return Object.keys(finish).length > 0 ? { ...rest, finish } : rest
+  })
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
 export function setRate(document: Document, key: string, value: number | null): MutationResult {
   if (value !== null && (!Number.isFinite(value) || value < 0)) return fail(document, 'rate must be zero or more')
   const rates = { ...(document.costing?.rates ?? {}) }
@@ -984,6 +1021,39 @@ export function setPlotRoad(document: Document, edge: number, road: boolean): Mu
   const roads = road ? [...others, edge].sort((a, b) => a - b) : others
   const { roads: _roads, ...rest } = document.plot
   return ok({ ...document, plot: roads.length > 0 ? { ...rest, roads } : rest })
+}
+
+// A paving area must be a real shape on the plot, of a surface that exists.
+function pavingProblem(document: Document, ring: [number, number][], surface: PavingSurface): string | null {
+  if (!(PAVING_SURFACES as readonly string[]).includes(surface)) return 'unknown paving surface'
+  if (ring.length < 3 || ring.some(([x, z]) => !Number.isFinite(x) || !Number.isFinite(z))) return 'paving needs at least three corners'
+  if (Math.abs(signedPolygonArea(ring.map(([x, z]) => ({ x, z })))) < 0.1) return 'paving is too small'
+  if (ring.some(([x, z]) => !pointInPlot(document.plot, x, z))) return 'paving outside the plot'
+  return null
+}
+
+export function addPaving(document: Document, ring: [number, number][], surface: PavingSurface): MutationResult {
+  const problem = pavingProblem(document, ring, surface)
+  if (problem) return fail(document, problem)
+  const area: PavingArea = { id: newId('paving'), ring: ring.map(([x, z]) => [x, z]), surface }
+  return ok({ ...document, paving: [...(document.paving ?? []), area] })
+}
+
+export function updatePaving(document: Document, id: string, patch: Partial<Pick<PavingArea, 'ring' | 'surface'>>): MutationResult {
+  const current = document.paving?.find((item) => item.id === id)
+  if (!current) return fail(document, 'paving not found')
+  const next = { ...current, ...patch }
+  const problem = pavingProblem(document, next.ring, next.surface)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, paving: (document.paving ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removePaving(document: Document, id: string): MutationResult {
+  if (!document.paving?.some((item) => item.id === id)) return fail(document, 'paving not found')
+  const paving = document.paving.filter((item) => item.id !== id)
+  if (paving.length > 0) return ok({ ...document, paving })
+  const { paving: _gone, ...rest } = document
+  return ok(rest)
 }
 
 export function replaceHeightfield(document: Document, heightfield: Heightfield): MutationResult {

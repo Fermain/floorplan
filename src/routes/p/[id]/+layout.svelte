@@ -3,6 +3,7 @@
   import { page } from '$app/state'
   import { untrack } from 'svelte'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Redo2 from '@lucide/svelte/icons/redo-2'
   import Undo2 from '@lucide/svelte/icons/undo-2'
@@ -38,6 +39,9 @@
       })
     })
   })
+
+  // Whether the status bar is opened out to show a long message in full.
+  let statusOpen = $state(false)
 
   const sections: { id: ProjectSection; label: string }[] = [
     { id: 'plan', label: 'Plan' },
@@ -228,14 +232,26 @@
         </div>
       {/if}
     </div>
-    {#if statusLine.text}
-      <p
-        class="pointer-events-none absolute right-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 max-w-[min(28rem,calc(100%-10.5rem))] rounded-md border bg-background px-3 py-1.5 text-sm shadow-sm {statusLine.error
-          ? 'border-destructive/40 text-destructive'
-          : 'text-muted-foreground'}"
-      >
-        {statusLine.text}
-      </p>
-    {/if}
   </main>
+  {#if statusLine.text}
+    <!-- A status bar under the drawing rather than a note floating over it, so it never covers the controls.
+         One line; a tap or click opens a long message out in full. -->
+    <footer
+      class="z-10 border-t px-3 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] text-xs sm:text-sm {statusLine.error
+        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+        : 'bg-background text-muted-foreground'}"
+      aria-live="polite"
+    >
+      <button
+        type="button"
+        class="flex w-full items-start gap-1.5 text-left"
+        aria-expanded={statusOpen}
+        title={statusOpen ? undefined : statusLine.text}
+        onclick={() => (statusOpen = !statusOpen)}
+      >
+        {#if statusLine.error}<TriangleAlert class="mt-0.5 size-3.5 shrink-0" />{/if}
+        <span class={statusOpen ? '' : 'truncate'}>{statusLine.text}</span>
+      </button>
+    </footer>
+  {/if}
 </div>

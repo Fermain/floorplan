@@ -56,6 +56,12 @@ export type Support = {
 export type SkirtingType = 'rounded' | 'square' | 'angled'
 export type CorniceType = 'rounded' | 'coral'
 
+// How a face of a wall is finished: left as built, bagged with a thin slurry, or plastered ("dagga").
+export type WallFinish = 'exposed' | 'bagged' | 'plastered'
+
+// A face's own finish and paint (a colour from the palette, or 'none'); anything left out follows the project.
+export type FaceFinish = { finish?: WallFinish; paint?: string }
+
 // What runs along one face of a wall inside a room; anything left out follows the project default.
 export type FaceTrim = { skirting?: SkirtingType | 'none'; cornice?: CorniceType | 'none' }
 
@@ -69,6 +75,7 @@ export type Wall = {
   support?: Support
   // front is the face on side 1 of the wall, back the face on side -1.
   trim?: { front?: FaceTrim; back?: FaceTrim }
+  finish?: { front?: FaceFinish; back?: FaceFinish }
   openings: Opening[]
 }
 
@@ -180,6 +187,11 @@ export type Roof = {
   noGutter?: string[]
 }
 
+// Hard surfaces on the ground round the house: driveways, paths, patios, and the apron along the walls.
+export type PavingSurface = 'concrete' | 'cement-pavers' | 'clay-pavers' | 'gravel' | 'grass-blocks'
+
+export type PavingArea = { id: string; ring: [number, number][]; surface: PavingSurface }
+
 export type ProjectDefaults = {
   roofForm: RoofForm
   roofCovering: RoofCovering
@@ -191,6 +203,14 @@ export type ProjectDefaults = {
   doorHeight: number
   skirting: SkirtingType | 'none'
   cornice: CorniceType | 'none'
+  // A strip laid round the outside of the house to throw water clear of the foundations; 0 for none.
+  apronWidth: number
+  apronSurface: PavingSurface
+  // Wall finishes outside and in: 'auto' follows the wall, plastering block and leaving clay face brick outside.
+  outsideFinish: WallFinish | 'auto'
+  insideFinish: WallFinish | 'auto'
+  outsidePaint: string
+  insidePaint: string
 }
 
 export type Building = {
@@ -241,6 +261,7 @@ export type Document = {
   building: Building
   costing?: Costing
   services?: SiteServices
+  paving?: PavingArea[]
 }
 
 export type DerivedRoom = {

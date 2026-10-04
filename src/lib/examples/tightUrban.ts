@@ -16,7 +16,7 @@ export function tightUrban(): Document {
     { ring, northBearingDeg: 0, latitude: -26.19, longitude: 28.03, roads: [0] },
     terrain(ring, levels),
     'block-140',
-    { roofForm: 'mono', roofCovering: 'ibr', roofPitchDeg: 10, roofEaves: 0.3 },
+    { roofForm: 'mono', roofCovering: 'ibr', roofPitchDeg: 10, roofEaves: 0.3, apronWidth: 0.6, apronSurface: 'concrete' },
   )
 
   // 6.5 × 11 m, half a metre in from the side boundaries, set back 5 m for a parking bay.
@@ -65,6 +65,8 @@ export function tightUrban(): Document {
 
   // The roof falls to the yard. A slimline tank under its downpipe, and the geyser solar to meet SANS 10400-XA.
   b.fixture(0, 'water-tank', { x: 1.2, z: n + 0.8 }, { x: 0, z: 1 }, { litres: 1000 })
+  // The parking bay in front, in pavers from boundary to boundary.
+  b.paving([[0, 0], [7.5, 0], [7.5, 4.2], [0, 4.2]], 'cement-pavers')
   // The wastes leave on the east side, along the 0.5 m strip, round the corner and back to the sewer.
   b.apply(mutations.setServiceBends(b.doc, 'sewer', [{ x: 7.3, z: 16.7 }]), 'drain round the house')
   for (const floor of b.doc.building.floors) {

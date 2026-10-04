@@ -3,17 +3,19 @@
   import { assumptionsOf, rateIsDefault } from '../../lib/cost/rates'
   import type { CostAssumptions } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Download from '@lucide/svelte/icons/download'
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import { Button } from '$lib/components/ui/button'
-  import * as Card from '$lib/components/ui/card'
-  import { Input } from '$lib/components/ui/input'
-  import { Label } from '$lib/components/ui/label'
-  import * as Table from '$lib/components/ui/table'
 
   const doc = $derived(documentStore.document)
   const lines = $derived(takeoff(doc))
   const total = $derived(totalCost(lines))
   const assumptions = $derived(assumptionsOf(doc.costing))
+
+  // Groups folded away, by name; only their subtotal row shows.
+  let folded = $state<string[]>([])
 
   const groups = $derived(
     GROUP_ORDER.map((group) => ({ group, lines: lines.filter((line) => line.group === group) })).filter(
@@ -37,15 +39,42 @@
     return items.reduce((sum, line) => sum + line.amount, 0)
   }
 
+  function fold(group: string) {
+    folded = folded.includes(group) ? folded.filter((item) => item !== group) : [...folded, group]
+  }
+
   function commitRate(key: string, raw: string) {
     const trimmed = raw.trim()
-    documentStore.setRate(key, trimmed === '' ? null : Number(trimmed))
+    const value = Number(trimmed.replace(',', '.'))
+    if (trimmed !== '' && !(Number.isFinite(value) && value >= 0)) return
+    documentStore.setRate(key, trimmed === '' ? null : value)
   }
 
   function commitAssumption(key: keyof CostAssumptions, raw: string) {
     const value = Number(raw)
     if (raw.trim() === '' || !Number.isFinite(value)) return
     documentStore.setAssumption(key, value)
+  }
+
+  // Sheet keys in an editable cell: Enter and the down arrow go to the cell below, the up arrow to the one above,
+  // and Esc puts back what was there.
+  function cellKey(event: KeyboardEvent, restore: number) {
+    const input = event.currentTarget
+    if (!(input instanceof HTMLInputElement)) return
+    if (event.key === 'Escape') {
+      input.value = String(restore)
+      input.blur()
+      return
+    }
+    const step = event.key === 'Enter' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
+    if (step === 0) return
+    event.preventDefault()
+    const cells = [...(input.closest('[data-sheet]')?.querySelectorAll<HTMLInputElement>('input[data-cell]') ?? [])]
+    const next = cells[cells.indexOf(input) + step]
+    if (next) {
+      next.focus()
+      next.select()
+    } else input.blur()
   }
 
   function downloadCsv() {
@@ -56,6 +85,8 @@
     link.click()
     URL.revokeObjectURL(url)
   }
+
+  const edited = $derived(lines.filter((line) => !rateIsDefault(doc.costing, line.rateKey)).length)
 </script>
 
 <div class="flex h-full flex-col">
@@ -63,92 +94,251 @@
     <p>
       <span class="text-muted-foreground">Estimated total</span>
       <span class="ml-1 text-base font-semibold tabular-nums">R {money.format(total)}</span>
+      {#if edited > 0}
+        <span class="ml-2 text-muted-foreground">{edited} {edited === 1 ? 'rate' : 'rates'} of your own</span>
+      {/if}
     </p>
     <Button variant="outline" size="sm" onclick={downloadCsv} disabled={lines.length === 0}>
       <Download />Download CSV
     </Button>
   </div>
-  <div class="min-h-0 flex-1 overflow-auto">
-    <div class="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-6">
+  <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
+    <div class="min-h-0 flex-1 overflow-auto bg-background max-lg:flex-none" data-sheet>
       {#if lines.length === 0}
-        <p class="text-sm text-muted-foreground">Draw some walls and the quantities appear here.</p>
+        <p class="p-4 text-sm text-muted-foreground">Draw some walls and the quantities appear here.</p>
       {:else}
-        <Card.Root>
-          <Card.Content class="p-0">
-            <Table.Root>
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head class="pl-4">Item</Table.Head>
-                  <Table.Head class="text-right">Quantity</Table.Head>
-                  <Table.Head>Unit</Table.Head>
-                  <Table.Head class="text-right">Rate (R)</Table.Head>
-                  <Table.Head class="pr-4 text-right">Amount (R)</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              {#each groups as entry (entry.group)}
-                <Table.Body>
-                  <Table.Row class="bg-muted/50 hover:bg-muted/50">
-                    <Table.Cell colspan={4} class="pl-4 font-semibold">{entry.group}</Table.Cell>
-                    <Table.Cell class="pr-4 text-right font-semibold tabular-nums">
-                      {money.format(groupTotal(entry.lines))}
-                    </Table.Cell>
-                  </Table.Row>
-                  {#each entry.lines as line (line.id)}
-                    <Table.Row>
-                      <Table.Cell class="pl-4 whitespace-normal">
-                        <div>{line.label}</div>
-                        <div class="text-xs text-muted-foreground">{line.note}</div>
-                      </Table.Cell>
-                      <Table.Cell class="text-right tabular-nums">{count.format(line.quantity)}</Table.Cell>
-                      <Table.Cell class="text-muted-foreground">{line.unit}</Table.Cell>
-                      <Table.Cell class="text-right">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="any"
-                          class="ml-auto h-7 w-28 text-right tabular-nums {rateIsDefault(doc.costing, line.rateKey)
-                            ? 'text-muted-foreground'
-                            : ''}"
-                          value={line.rate}
-                          aria-label={`Rate for ${line.label}`}
-                          onchange={(event) => commitRate(line.rateKey, event.currentTarget.value)}
-                        />
-                      </Table.Cell>
-                      <Table.Cell class="pr-4 text-right tabular-nums">{money.format(line.amount)}</Table.Cell>
-                    </Table.Row>
-                  {/each}
-                </Table.Body>
-              {/each}
-            </Table.Root>
-          </Card.Content>
-        </Card.Root>
-        <p class="text-sm text-muted-foreground">
-          Rates in grey are rough examples, not quotes. Type your supplier's price to replace one, or clear a field to
-          return to the example. Quantities come from the drawn walls, openings, slabs and roofs; foundations below the
-          footing, reinforcement, plaster, finishes and labour are not included yet.
-        </p>
-      {/if}
-      <Card.Root>
-        <Card.Header>
-          <Card.Title>Assumptions</Card.Title>
-          <Card.Description>These shape the quantities above.</Card.Description>
-        </Card.Header>
-        <Card.Content class="grid gap-4 sm:grid-cols-3">
-          {#each assumptionFields as field (field.key)}
-            <div class="grid gap-1.5">
-              <Label for={`assumption-${field.key}`}>{field.label} ({field.unit})</Label>
-              <Input
-                id={`assumption-${field.key}`}
-                type="number"
-                min="0"
-                step={field.step}
-                value={assumptions[field.key]}
-                onchange={(event) => commitAssumption(field.key, event.currentTarget.value)}
-              />
-            </div>
+        <table class="sheet">
+          <thead>
+            <tr>
+              <th class="w-10 text-center">#</th>
+              <th class="min-w-48 text-left">Item</th>
+              <th class="min-w-64 text-left max-md:hidden">How it is measured</th>
+              <th class="w-24 text-right">Quantity</th>
+              <th class="w-14 text-left">Unit</th>
+              <th class="w-32 text-right">Rate (R)</th>
+              <th class="w-32 text-right">Amount (R)</th>
+            </tr>
+          </thead>
+          {#each groups as entry (entry.group)}
+            {@const shut = folded.includes(entry.group)}
+            <tbody>
+              <tr class="group-row">
+                <td class="text-center">
+                  <button
+                    type="button"
+                    class="grid size-full place-items-center"
+                    aria-expanded={!shut}
+                    aria-label="{shut ? 'Show' : 'Hide'} {entry.group}"
+                    onclick={() => fold(entry.group)}
+                  >
+                    {#if shut}<ChevronRight class="size-3.5" />{:else}<ChevronDown class="size-3.5" />{/if}
+                  </button>
+                </td>
+                <td colspan="2" class="max-md:hidden">{entry.group} <span class="count">{entry.lines.length}</span></td>
+                <td class="md:hidden">{entry.group} <span class="count">{entry.lines.length}</span></td>
+                <td colspan="3"></td>
+                <td class="text-right tabular-nums">{money.format(groupTotal(entry.lines))}</td>
+              </tr>
+              {#if !shut}
+                {#each entry.lines as line (line.id)}
+                  {@const own = !rateIsDefault(doc.costing, line.rateKey)}
+                  <tr>
+                    <td class="rownum">{lines.indexOf(line) + 1}</td>
+                    <td>
+                      {line.label}
+                      <div class="text-xs text-muted-foreground md:hidden">{line.note}</div>
+                    </td>
+                    <td class="text-muted-foreground max-md:hidden">{line.note}</td>
+                    <td class="text-right tabular-nums">{count.format(line.quantity)}</td>
+                    <td class="text-muted-foreground">{line.unit}</td>
+                    <td class="cell" class:own>
+                      <input
+                        data-cell
+                        type="text"
+                        inputmode="decimal"
+                        value={line.rate}
+                        aria-label="Rate for {line.label}"
+                        title={own ? 'Your rate. Clear the cell to go back to the example.' : 'An example rate. Type your own.'}
+                        onfocus={(event) => event.currentTarget.select()}
+                        onkeydown={(event) => cellKey(event, line.rate)}
+                        onchange={(event) => commitRate(line.rateKey, event.currentTarget.value)}
+                      />
+                      {#if own}
+                        <button type="button" class="reset" title="Back to the example rate" aria-label="Reset the rate for {line.label}" onclick={() => documentStore.setRate(line.rateKey, null)}>
+                          <RotateCcw class="size-3" />
+                        </button>
+                      {/if}
+                    </td>
+                    <td class="text-right tabular-nums">{money.format(line.amount)}</td>
+                  </tr>
+                {/each}
+              {/if}
+            </tbody>
           {/each}
-        </Card.Content>
-      </Card.Root>
+          <tfoot>
+            <tr>
+              <td></td>
+              <td>Estimated total</td>
+              <td class="max-md:hidden"></td>
+              <td colspan="3"></td>
+              <td class="text-right tabular-nums">{money.format(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      {/if}
     </div>
+    <aside class="grid shrink-0 content-start gap-3 border-t bg-muted/40 p-3 text-sm lg:w-72 lg:overflow-auto lg:border-t-0 lg:border-l" data-sheet>
+      <div>
+        <h2 class="font-semibold">Assumptions</h2>
+        <p class="text-muted-foreground">These shape the quantities.</p>
+      </div>
+      <table class="sheet rounded-md border">
+        <tbody>
+          {#each assumptionFields as field (field.key)}
+            <tr>
+              <td><label for="assumption-{field.key}">{field.label}</label></td>
+              <td class="cell w-20">
+                <input
+                  data-cell
+                  id="assumption-{field.key}"
+                  type="number"
+                  min="0"
+                  step={field.step}
+                  value={assumptions[field.key]}
+                  onkeydown={(event) => event.key === 'Enter' && cellKey(event, assumptions[field.key])}
+                  onchange={(event) => commitAssumption(field.key, event.currentTarget.value)}
+                />
+              </td>
+              <td class="w-12 text-muted-foreground">{field.unit}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      <p class="text-muted-foreground">
+        White cells take your figures; the rest is worked out from the drawing. Rates in grey are rough examples, not
+        quotes: type your supplier's price over one, or clear the cell to return to the example. Enter and the arrow keys
+        move down and up the column.
+      </p>
+      <p class="text-muted-foreground">
+        Foundations below the footing and reinforcement are not measured yet.
+      </p>
+    </aside>
   </div>
 </div>
+
+<style>
+  .sheet {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+  .sheet th,
+  .sheet td {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 0.25rem 0.5rem;
+    vertical-align: top;
+  }
+  .sheet th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .sheet tbody td {
+    background: color-mix(in oklab, var(--muted) 45%, var(--background));
+  }
+  .sheet .rownum {
+    text-align: center;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+    background: var(--muted);
+  }
+  .sheet .group-row td {
+    background: var(--muted);
+    font-weight: 600;
+    border-right-color: transparent;
+    padding-block: 0.375rem;
+    vertical-align: middle;
+  }
+  .sheet .group-row .count {
+    margin-left: 0.25rem;
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  .sheet tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--muted);
+    border-top: 1px solid var(--border);
+    border-right-color: transparent;
+    font-weight: 600;
+    padding-block: 0.375rem;
+  }
+  /* A cell that takes typing: white, with the input filling it and a sheet-style outline when it has the focus. */
+  .sheet td.cell {
+    position: relative;
+    padding: 0;
+    background: var(--background);
+  }
+  .sheet td.cell input {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 1.75rem;
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+    outline: none;
+  }
+  .sheet td.cell.own input {
+    padding-left: 1.5rem;
+    color: var(--foreground);
+    font-weight: 500;
+  }
+  .sheet td.cell:focus-within {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+  .sheet td.cell:focus-within input {
+    color: var(--foreground);
+  }
+  .sheet td.cell:hover:not(:focus-within) {
+    background: color-mix(in oklab, var(--primary) 5%, var(--background));
+  }
+  .sheet td.cell.own::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-top: 6px solid var(--primary);
+    border-left: 6px solid transparent;
+  }
+  .sheet .reset {
+    position: absolute;
+    left: 0.25rem;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 0.25rem;
+    color: var(--muted-foreground);
+  }
+  .sheet .reset:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+</style>

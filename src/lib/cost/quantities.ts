@@ -15,6 +15,8 @@ import { FENCES, fencePosts, fenceSpec } from '../model/fences'
 import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { gasLayout } from '../geometry/gas'
+import { PAVING_LIST, pavingPieces } from '../geometry/paving'
+import { finishTotals } from '../geometry/finishes'
 import { plumbingLayout, wallChases, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
@@ -32,9 +34,9 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Paving' | 'Supports' | 'Fencing'
 
-export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³'
+export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
 export type QuantityLine = {
   id: string
@@ -48,7 +50,10 @@ export type QuantityLine = {
   amount: number
 }
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Supports', 'Fencing']
+// A litre of paint covers about this much wall in one coat.
+export const PAINT_COVERAGE_M2_PER_L = 8
+
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Paving', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -486,6 +491,44 @@ export function takeoff(doc: Document): QuantityLine[] {
     if (length > 0) drafts.push({ id: `cornice:${spec.id}`, group: 'Finishes', label: `${spec.name} cornice`, note: 'Round every room at the ceiling, plus 10%', unit: 'm', quantity: Math.ceil(length * 1.1), rateKey: `cornice:${spec.id}` })
   }
 
+  // Plaster, bagging and paint on the walls, outside and in.
+  const walls = finishTotals(doc)
+  const plastered = walls.plaster.outside + walls.plaster.inside
+  if (plastered > 0) {
+    drafts.push({
+      id: 'plaster',
+      group: 'Finishes',
+      label: 'Plaster, 15 mm',
+      note: `${round(walls.plaster.outside, 1)} m² outside and ${round(walls.plaster.inside, 1)} m² inside, with the reveals round openings`,
+      unit: 'm²',
+      quantity: round(plastered * waste, 1),
+      rateKey: 'plaster-m2',
+    })
+    drafts.push({ id: 'plaster-cement', group: 'Finishes', label: 'Cement for plaster', note: `${round(walls.mortar, 2)} m³ of plaster at ${assumptions.cementBagsPerM3} bags per m³`, unit: 'bag', quantity: Math.ceil(walls.mortar * assumptions.cementBagsPerM3), rateKey: 'cement-bag' })
+    drafts.push({ id: 'plaster-sand', group: 'Finishes', label: 'Plaster sand', note: `${assumptions.sandM3PerM3} m³ per m³ of plaster`, unit: 'm³', quantity: round(walls.mortar * assumptions.sandM3PerM3, 2), rateKey: 'sand-m3' })
+  }
+  const bagged = walls.bagging.outside + walls.bagging.inside
+  if (bagged > 0) {
+    drafts.push({ id: 'bagging', group: 'Finishes', label: 'Bagging', note: 'Cement slurry rubbed over the wall', unit: 'm²', quantity: round(bagged * waste, 1), rateKey: 'bagging-m2' })
+  }
+  const painted = walls.paint.outside + walls.paint.inside
+  if (painted > 0) {
+    drafts.push({ id: 'paint-primer', group: 'Finishes', label: 'Plaster primer', note: `One coat on ${round(painted, 1)} m², at ${PAINT_COVERAGE_M2_PER_L} m² a litre`, unit: 'L', quantity: Math.ceil(painted / PAINT_COVERAGE_M2_PER_L), rateKey: 'paint-primer-l' })
+    for (const [where, label] of [['outside', 'Exterior'], ['inside', 'Interior']] as const) {
+      if (walls.paint[where] <= 0) continue
+      drafts.push({
+        id: `paint-${where}`,
+        group: 'Finishes',
+        label: `${label} paint`,
+        note: `Two coats on ${round(walls.paint[where], 1)} m²`,
+        unit: 'L',
+        quantity: Math.ceil((walls.paint[where] * 2) / PAINT_COVERAGE_M2_PER_L),
+        rateKey: `paint-${where}-l`,
+      })
+    }
+    drafts.push({ id: 'painting', group: 'Finishes', label: 'Painting', note: 'Primer and two coats, labour', unit: 'm²', quantity: round(painted, 1), rateKey: 'painting-m2' })
+  }
+
   const gutters = gutterLengths(gutterLayout(doc), doc)
   for (const type of ['round-pvc', 'square-metal'] as GutterType[]) {
     if (gutters.gutter[type] > 0) {
@@ -592,6 +635,38 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'gas-pipe', group: 'Gas', label: 'Copper gas pipe 15 mm', note: 'From the bottles round the outside walls to each appliance, plus 10%', unit: 'm', quantity: Math.ceil(gas.length * 1.1), rateKey: 'gas-pipe' })
     drafts.push({ id: 'gas-valve', group: 'Gas', label: 'Gas isolating valves', note: 'One at each appliance', unit: 'each', quantity: gas.runs.length, rateKey: 'gas-valve' })
     drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
+  }
+
+  // Paving and the apron: the surface laid, by area; the layers under it, by volume; the edging, by length.
+  const pieces = pavingPieces(doc)
+  const layers = new Map<string, { name: string; volume: number }>()
+  let edging = 0
+  for (const spec of PAVING_LIST) {
+    const mine = pieces.filter((piece) => piece.surface === spec.id)
+    const area = mine.reduce((sum, piece) => sum + piece.area, 0)
+    if (area <= 0) continue
+    const apron = mine.some((piece) => piece.apron)
+    drafts.push({
+      id: `paving:${spec.id}`,
+      group: 'Paving',
+      label: `${spec.name} paving, laid`,
+      note: apron ? 'Including the apron round the house' : 'Driveways, paths and patios',
+      unit: 'm²',
+      quantity: round(area, 1),
+      rateKey: `paving:${spec.id}`,
+    })
+    for (const layer of spec.layers) {
+      const tally = layers.get(layer.rateKey) ?? { name: layer.name, volume: 0 }
+      tally.volume += area * layer.thickness
+      layers.set(layer.rateKey, tally)
+    }
+    if (spec.edging) edging += mine.reduce((sum, piece) => sum + piece.edge, 0)
+  }
+  for (const [rateKey, layer] of layers) {
+    drafts.push({ id: `paving-layer:${rateKey}`, group: 'Paving', label: layer.name, note: 'Under the paving, plus 10%', unit: 'm³', quantity: round(layer.volume * 1.1, 2), rateKey })
+  }
+  if (edging > 0) {
+    drafts.push({ id: 'paving-edge', group: 'Paving', label: 'Paving kerb and edge restraint', note: 'Round pavers, blocks and gravel', unit: 'm', quantity: Math.ceil(edging), rateKey: 'paving-edge' })
   }
 
   const fences = new Map<string, { length: number; area: number; posts: number }>()

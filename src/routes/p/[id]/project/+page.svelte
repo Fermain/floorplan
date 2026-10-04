@@ -12,6 +12,8 @@
   import RoofPicker from '$lib/components/project/RoofPicker.svelte'
   import WallPicker from '$lib/components/project/WallPicker.svelte'
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
+  import ApronPicker from '$lib/components/project/ApronPicker.svelte'
+  import FinishPicker from '$lib/components/project/FinishPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
   import { DEFAULT_RAINFALL_MM } from '$lib/geometry/plumbing'
@@ -97,7 +99,7 @@
 </script>
 
 <div class="h-full overflow-auto">
-  <div class="mx-auto flex max-w-3xl flex-col gap-4 p-4 sm:p-6">
+  <div class="mx-auto flex max-w-3xl flex-col gap-4 p-4 sm:p-6 lg:max-w-5xl xl:max-w-6xl">
     <div>
       <h1 class="text-lg font-semibold">Project</h1>
       <p class="text-sm text-muted-foreground">The site, and the defaults new work starts from.</p>
@@ -124,102 +126,104 @@
       </Card.Root>
     </div>
 
-    <Card.Root>
-      <Card.Header>
-        <Card.Title>Location</Card.Title>
-        <Card.Description>Used for the sun path in Review, and the rainfall for sizing rainwater tanks.</Card.Description>
-      </Card.Header>
-      <Card.Content class="grid gap-4 sm:grid-cols-4">
-        <div class="grid gap-1.5">
-          <Label for="latitude">Latitude</Label>
-          <Input
-            id="latitude"
-            type="number"
-            step="0.0001"
-            value={plot.latitude}
-            onchange={(event) => {
-              const input = event.currentTarget
-              const value = Number(input.value)
-              commit(
-                { ...plot, latitude: value },
-                input,
-                plot.latitude,
-                !Number.isFinite(value) || value < -90 || value > 90 ? 'Latitude must be between −90 and 90.' : '',
-              )
-            }}
-          />
-        </div>
-        <div class="grid gap-1.5">
-          <Label for="longitude">Longitude</Label>
-          <Input
-            id="longitude"
-            type="number"
-            step="0.0001"
-            value={plot.longitude}
-            onchange={(event) => {
-              const input = event.currentTarget
-              const value = Number(input.value)
-              commit(
-                { ...plot, longitude: value },
-                input,
-                plot.longitude,
-                !Number.isFinite(value) || value < -180 || value > 180 ? 'Longitude must be between −180 and 180.' : '',
-              )
-            }}
-          />
-        </div>
-        <div class="grid gap-1.5">
-          <Label for="rainfall">Annual rainfall (mm)</Label>
-          <Input
-            id="rainfall"
-            type="number"
-            min="50"
-            step="10"
-            value={documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM}
-            onchange={(event) => {
-              const result = documentStore.setRainfall(Number(event.currentTarget.value))
-              if (!result.ok) event.currentTarget.value = String(documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM)
-            }}
-          />
-        </div>
-        <div class="grid gap-1.5">
-          <Label for="bearing">North bearing (°)</Label>
-          <Input
-            id="bearing"
-            type="number"
-            step="1"
-            value={plot.northBearingDeg}
-            onchange={(event) => {
-              const input = event.currentTarget
-              const value = Number(input.value)
-              commit(
-                { ...plot, northBearingDeg: value },
-                input,
-                plot.northBearingDeg,
-                !Number.isFinite(value) ? 'North bearing must be a number.' : '',
-              )
-            }}
-          />
-        </div>
-      </Card.Content>
-    </Card.Root>
+    <div class="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Location</Card.Title>
+          <Card.Description>Used for the sun path in Review, and the rainfall for sizing rainwater tanks.</Card.Description>
+        </Card.Header>
+        <Card.Content class="grid gap-4 sm:grid-cols-4">
+          <div class="grid gap-1.5">
+            <Label for="latitude">Latitude</Label>
+            <Input
+              id="latitude"
+              type="number"
+              step="0.0001"
+              value={plot.latitude}
+              onchange={(event) => {
+                const input = event.currentTarget
+                const value = Number(input.value)
+                commit(
+                  { ...plot, latitude: value },
+                  input,
+                  plot.latitude,
+                  !Number.isFinite(value) || value < -90 || value > 90 ? 'Latitude must be between −90 and 90.' : '',
+                )
+              }}
+            />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="longitude">Longitude</Label>
+            <Input
+              id="longitude"
+              type="number"
+              step="0.0001"
+              value={plot.longitude}
+              onchange={(event) => {
+                const input = event.currentTarget
+                const value = Number(input.value)
+                commit(
+                  { ...plot, longitude: value },
+                  input,
+                  plot.longitude,
+                  !Number.isFinite(value) || value < -180 || value > 180 ? 'Longitude must be between −180 and 180.' : '',
+                )
+              }}
+            />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="rainfall">Annual rainfall (mm)</Label>
+            <Input
+              id="rainfall"
+              type="number"
+              min="50"
+              step="10"
+              value={documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM}
+              onchange={(event) => {
+                const result = documentStore.setRainfall(Number(event.currentTarget.value))
+                if (!result.ok) event.currentTarget.value = String(documentStore.document.services?.rainfallMm ?? DEFAULT_RAINFALL_MM)
+              }}
+            />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="bearing">North bearing (°)</Label>
+            <Input
+              id="bearing"
+              type="number"
+              step="1"
+              value={plot.northBearingDeg}
+              onchange={(event) => {
+                const input = event.currentTarget
+                const value = Number(input.value)
+                commit(
+                  { ...plot, northBearingDeg: value },
+                  input,
+                  plot.northBearingDeg,
+                  !Number.isFinite(value) ? 'North bearing must be a number.' : '',
+                )
+              }}
+            />
+          </div>
+        </Card.Content>
+      </Card.Root>
 
-    <Card.Root>
-      <Card.Header>
-        <Card.Title>Import</Card.Title>
-        <Card.Description>
-          A plot boundary as GeoJSON or KML in metres, and ground levels as a heightfield JSON file.
-        </Card.Description>
-      </Card.Header>
-      <Card.Content class="flex flex-wrap gap-2">
-        <Button variant="outline" onclick={() => document.getElementById('plot-file')?.click()}>Import plot…</Button>
-        <Button variant="outline" onclick={() => document.getElementById('height-file')?.click()}>
-          Import ground levels…
-        </Button>
-        <input id="plot-file" class="hidden" type="file" accept=".geojson,.json,.kml" onchange={importPlot} />
-        <input id="height-file" class="hidden" type="file" accept=".json,application/json" onchange={importHeights} />
-      </Card.Content>
-    </Card.Root>
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Import</Card.Title>
+          <Card.Description>
+            A plot boundary as GeoJSON or KML in metres, and ground levels as a heightfield JSON file.
+          </Card.Description>
+        </Card.Header>
+        <Card.Content class="flex flex-wrap gap-2">
+          <Button variant="outline" onclick={() => document.getElementById('plot-file')?.click()}>Import plot…</Button>
+          <Button variant="outline" onclick={() => document.getElementById('height-file')?.click()}>
+            Import ground levels…
+          </Button>
+          <input id="plot-file" class="hidden" type="file" accept=".geojson,.json,.kml" onchange={importPlot} />
+          <input id="height-file" class="hidden" type="file" accept=".json,application/json" onchange={importHeights} />
+        </Card.Content>
+      </Card.Root>
+    </div>
 
     {#if message}
       <p class="text-sm {message.error ? 'text-destructive' : 'text-muted-foreground'}">{message.text}</p>
@@ -278,6 +282,35 @@
         />
       </Card.Content>
     </Card.Root>
+    <div class="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Plaster and paint</Card.Title>
+          <Card.Description>How the walls are finished, unless a face has its own choice in Focus.</Card.Description>
+        </Card.Header>
+        <Card.Content>
+          <FinishPicker
+            {systemId}
+            bind:outsideFinish={() => defaults.outsideFinish, (next) => setDefault('outsideFinish', next)}
+            bind:insideFinish={() => defaults.insideFinish, (next) => setDefault('insideFinish', next)}
+            bind:outsidePaint={() => defaults.outsidePaint, (next) => setDefault('outsidePaint', next)}
+            bind:insidePaint={() => defaults.insidePaint, (next) => setDefault('insidePaint', next)}
+          />
+        </Card.Content>
+      </Card.Root>
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Apron</Card.Title>
+          <Card.Description>Paving laid round the outside of the house.</Card.Description>
+        </Card.Header>
+        <Card.Content>
+          <ApronPicker
+            bind:width={() => defaults.apronWidth, (next) => setDefault('apronWidth', next)}
+            bind:surface={() => defaults.apronSurface, (next) => setDefault('apronSurface', next)}
+          />
+        </Card.Content>
+      </Card.Root>
+    </div>
     {#if defaultsMessage}
       <p class="text-sm text-destructive">{defaultsMessage}</p>
     {/if}

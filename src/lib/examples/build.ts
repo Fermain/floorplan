@@ -13,6 +13,7 @@ import type {
   Heightfield,
   MutationResult,
   OpeningKind,
+  PavingSurface,
   Plot,
   ProjectDefaults,
   Roof,
@@ -144,6 +145,11 @@ export class Builder {
 
   roof(index: number, roof: Roof): this {
     return this.apply(mutations.setRoof(this.doc, this.floor(index).id, roof), `roof on storey ${index}`)
+  }
+
+  // A paved area on the ground: a driveway, a path or a patio.
+  paving(ring: [number, number][], surface: PavingSurface): this {
+    return this.apply(mutations.addPaving(this.doc, ring, surface), `${surface} paving`)
   }
 
   stair(index: number, p: Point, direction: Point, width?: number): this {

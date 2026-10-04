@@ -5,6 +5,7 @@ import {
   courseCount,
   leafOffset,
   MORTAR_JOINT,
+  outerReach,
   snapToCourse,
   systemOf,
   wallThickness,
@@ -663,6 +664,50 @@ export function buildCourseFaceGeometries(
   }
   unitBox.dispose()
   return out
+}
+
+// Plaster or bagging stands this proud of the masonry, enough to cover the brick faces.
+export const FINISH_SKIN_M = 0.012
+
+export type FaceRun = { u0: number; u1: number; y0: number; y1: number }
+
+// The solid wall showing on one face: its blocks joined into runs along each course, and the lintels over openings.
+export function faceRuns(floor: Floor, wall: Wall, side: 1 | -1, bottomSamples?: BottomSample[], facadeHead?: number): FaceRun[] {
+  if (wall.skin === 'logical') return []
+  const signs = leafSigns(wall.skin)
+  const leaf = signs.length === 1 ? 0 : signs.indexOf(side)
+  if (leaf < 0) return []
+  const spans = collectWallBlockSpans(floor, wall, bottomSamples, facadeHead)
+    .filter((span) => span.leaf === leaf)
+    .sort((a, b) => a.y0 - b.y0 || a.y1 - b.y1 || a.u0 - b.u0)
+  const runs: FaceRun[] = []
+  for (const span of spans) {
+    const last = runs[runs.length - 1]
+    if (last && Math.abs(last.y0 - span.y0) < 1e-6 && Math.abs(last.y1 - span.y1) < 1e-6 && Math.abs(last.u1 - span.u0) < 1e-6) last.u1 = span.u1
+    else runs.push({ u0: span.u0, u1: span.u1, y0: span.y0, y1: span.y1 })
+  }
+  for (const lintel of collectLintelSpans(floor, wall)) runs.push({ u0: lintel.u0, u1: lintel.u1, y0: lintel.y0, y1: lintel.y1 })
+  return runs
+}
+
+export function faceArea(floor: Floor, wall: Wall, side: 1 | -1): number {
+  return faceRuns(floor, wall, side).reduce((sum, run) => sum + (run.u1 - run.u0) * (run.y1 - run.y0), 0)
+}
+
+// A thin skin over one face of a wall, for plaster or bagging: the face's solid runs, standing just proud of it.
+export function buildFinishSkin(floor: Floor, wall: Wall, side: 1 | -1, bottomSamples?: BottomSample[], facadeHead?: number): BufferGeometry | null {
+  const runs = faceRuns(floor, wall, side, bottomSamples, facadeHead)
+  if (runs.length === 0) return null
+  const frame = buildFrame(floor, wall)
+  const along = side * (outerReach(systemOf(wall)) + FINISH_SKIN_M / 2)
+  const unitBox = new BoxGeometry(1, 1, 1)
+  const matrix = new Matrix4()
+  const parts: BufferGeometry[] = []
+  for (const run of runs) placeBox(frame, run.u0, run.u1, run.y0, run.y1, unitBox, matrix, parts, FINISH_SKIN_M, along)
+  const merged = mergeGeometries(parts, false)
+  for (const part of parts) part.dispose()
+  unitBox.dispose()
+  return merged
 }
 
 export function buildLintelGeometry(

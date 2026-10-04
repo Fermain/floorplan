@@ -10,6 +10,7 @@
     Float32BufferAttribute,
     Path,
     Shape,
+    ShapeGeometry,
   } from 'three'
   import { buildContourLines, CONTOUR_LIFT_M } from '../../lib/geometry/contours'
   import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../../lib/geometry/deck'
@@ -31,10 +32,14 @@
     GLASS_OPACITY,
     type OpeningPanelMesh,
   } from '../../lib/geometry/frames'
-  import { buildCourseFaceGeometries, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { buildCourseFaceGeometries, buildFinishSkin, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
+  import { outsideFaces, resolveFinish } from '../../lib/geometry/finishes'
   import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
   import { coveringOf } from '../../lib/geometry/coverings'
   import { coveringTexture } from './roofTexture'
+  import { floorTexture } from './floorTexture'
+  import { floorFinishSpec } from '../../lib/model/floorFinishes'
+  import { layoutSpaces } from '../../lib/geometry/spaces'
   import type { CanvasTexture } from 'three'
   import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
@@ -43,7 +48,8 @@
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
-  import { buildFixtureParts, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
+  import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
   import ContextPanel from '../shared/ContextPanel.svelte'
@@ -91,6 +97,8 @@
     frame: BufferGeometry | null
     glass: BufferGeometry | null
     panels: OpeningPanelMesh[]
+    // Plaster or bagging over a face, in its paint colour; bagging lets the coursing show through.
+    skins: { geometry: BufferGeometry; colour: string; opacity: number }[]
   }
   type FloorSlab = { key: string; storey: number; geometry: BufferGeometry; y: number; color: string; polygonOffset?: boolean }
   type RoofMesh = {
@@ -106,10 +114,12 @@
   type StairMesh = { key: string; storey: number; geometry: BufferGeometry; y: number }
 
   const DECK_THICKNESS = deckThickness()
+  const FLOOR_COVER_LIFT_M = 0.006
 
   let locked = $state(false)
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
+  let pavingMeshes = $state<PavingPart[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -118,6 +128,9 @@
   let contourMajor = $state<BufferGeometry | null>(null)
   let wallMeshes = $state<WallMeshes[]>([])
   let floorSlabs = $state<FloorSlab[]>([])
+  // The finish laid in each room: tiles, boards, carpet, lying just over the slab or deck.
+  type FloorCover = { key: string; storey: number; geometry: BufferGeometry; y: number; colour: string; texture: CanvasTexture | null }
+  let floorCovers = $state<FloorCover[]>([])
   let roofMeshes = $state<RoofMesh[]>([])
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
@@ -395,6 +408,7 @@
     })
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
+    const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -413,6 +427,7 @@
       for (const [key, group] of Object.entries(groups)) {
         pillars.push({ key: `${floor.id}:${key}`, parts: buildPillarParts(group.type, group.spots, system, group.datum) })
       }
+      const outside = outsideFaces(floor)
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') {
           const line = wall.fence ? fenceFrame(floor, wall) : null
@@ -434,6 +449,13 @@
         const frame = buildOpeningFrameGeometry(floor, wall, samples)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
         const panels = buildOpeningPanelMeshes(floor, wall, samples)
+        const skins: WallMeshes['skins'] = []
+        for (const side of [1, -1] as const) {
+          const finish = resolveFinish(doc, wall, side, outside(wall, side))
+          if (finish.finish === 'exposed' || !finish.colour) continue
+          const geometry = buildFinishSkin(floor, wall, side, samples, head)
+          if (geometry) skins.push({ geometry, colour: finish.colour, opacity: finish.finish === 'bagged' ? 0.82 : 1 })
+        }
         if (geoms.length === 0 && courses.length === 0 && !lintel && !frame && !glass && panels.length === 0) continue
         built.push({
           key: `${floor.id}:${wall.id}`,
@@ -446,10 +468,12 @@
           frame,
           glass,
           panels,
+          skins,
         })
       }
     }
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
+    const covers = floors.flatMap((floor) => coversFor(floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) + finishedFloor(floor)))
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
     const trims = floors.map((floor) => {
@@ -468,10 +492,12 @@
       })
     groundGeometry = ground
     roadMeshes = roadParts
+    pavingMeshes = pavingParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
     floorSlabs = slabs
+    floorCovers = covers
     roofMeshes = roofs
     stairMeshes = stairs
     fenceMeshes = fences
@@ -485,6 +511,7 @@
       for (const fence of fences) for (const part of fence.parts) part.geometry.dispose()
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
+      for (const part of pavingParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -494,8 +521,10 @@
         wall.frame?.dispose()
         wall.glass?.dispose()
         for (const panel of wall.panels) panel.geometry.dispose()
+        for (const skin of wall.skins) skin.geometry.dispose()
       }
       for (const slab of slabs) slab.geometry.dispose()
+      for (const cover of covers) cover.geometry.dispose()
       for (const roof of roofs) {
         roof.meshes.top?.dispose()
         roof.meshes.under?.dispose()
@@ -635,6 +664,35 @@
       })
     })
     return slabs
+  }
+
+  // A thin sheet over each named room, in its floor finish, with any stair well cut out of it.
+  function coversFor(floor: Floor, datum: number): FloorCover[] {
+    if (floor.roof) return []
+    const voids = stairVoids(doc, floor)
+    const covers: FloorCover[] = []
+    for (const resolved of layoutSpaces(floor).spaces) {
+      if (resolved.space.finish === 'none') continue
+      const spec = floorFinishSpec(resolved.space.finish)
+      resolved.cells.forEach((cell, index) => {
+        if (cell.net.length < 3) return
+        const shape = ringShape(cell.net)
+        for (const hole of voids) {
+          if (hole.length >= 3 && hole.every((point) => pointInRing(cell.net, point.x, point.z))) shape.holes.push(ringPath(hole))
+        }
+        const geometry = new ShapeGeometry(shape)
+        geometry.rotateX(-Math.PI / 2)
+        covers.push({
+          key: `cover-${floor.id}-${resolved.space.id}-${index}`,
+          storey: floor.index,
+          geometry,
+          y: datum + FLOOR_COVER_LIFT_M,
+          colour: spec.colour,
+          texture: floorTexture(spec),
+        })
+      })
+    }
+    return covers
   }
 
   function decksFor(
@@ -783,6 +841,11 @@
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
       </T.Mesh>
     {/each}
+    {#each pavingMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
     {#if contourMinor}
       <T.LineSegments geometry={contourMinor}>
         <T.LineBasicMaterial color="#3f3428" />
@@ -793,6 +856,19 @@
         <T.LineBasicMaterial color="#1a120c" />
       </T.LineSegments>
     {/if}
+
+    {#each floorCovers.filter((cover) => shown(cover.storey)) as cover (cover.key)}
+      <T.Mesh geometry={cover.geometry} position.y={cover.y} receiveShadow>
+        <T.MeshStandardMaterial
+          map={cover.texture}
+          color={cover.texture ? '#ffffff' : cover.colour}
+          roughness={0.85}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
+        />
+      </T.Mesh>
+    {/each}
 
     {#each floorSlabs.filter((slab) => shown(slab.storey)) as slab (slab.key)}
       <T.Mesh geometry={slab.geometry} position.y={slab.y} receiveShadow>
@@ -915,6 +991,11 @@
             <T.MeshStandardMaterial color="#c4b5a0" roughness={0.92} />
           </T.Mesh>
         {/each}
+        {#each wall.skins as skin (skin.geometry.uuid)}
+          <T.Mesh geometry={skin.geometry} castShadow receiveShadow {...wallHandlers(wall)}>
+            <T.MeshStandardMaterial color={skin.colour} roughness={0.95} transparent={skin.opacity < 1} opacity={skin.opacity} />
+          </T.Mesh>
+        {/each}
         {#if wall.lintel}
           <T.Mesh geometry={wall.lintel} castShadow receiveShadow {...wallHandlers(wall)}>
             <T.MeshStandardMaterial color="#8a8680" />
@@ -953,7 +1034,7 @@
     <!-- The wall picked or under the pointer, washed blue: a copy of its faces drawn over it, cut like the wall. -->
     {#each highlightedWalls as item (item.key)}
       <T.Group position.y={item.wall.datumY} userData={halfCut(item.wall.datumY)}>
-        {#each [...item.wall.geoms, ...item.wall.courses] as geom, i (`${item.key}-${i}`)}
+        {#each [...item.wall.geoms, ...item.wall.courses, ...item.wall.skins.map((skin) => skin.geometry)] as geom, i (`${item.key}-${i}`)}
           <T.Mesh geometry={geom} renderOrder={2}>
             <T.MeshBasicMaterial
               color={item.colour}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { solidWallPolygonsForFloor } from '$lib/export/svg'
+  import { PAVING, pavingPieces } from '$lib/geometry/paving'
   import { roadReach, roadStrips } from '$lib/geometry/roads'
   import type { Document } from '$lib/model/types'
 
@@ -30,6 +31,13 @@
       <polygon points={points(strip.road)} fill="#6b6b70" />
     {/each}
     <polygon points={points(ring)} fill="#eceae4" stroke="#18181b" stroke-width={box.w / 300} />
+    {#each pavingPieces(document) as piece (piece.id)}
+      <path
+        d={[piece.polygon.outer, ...piece.polygon.holes].map((part) => `M ${part.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}
+        fill-rule="evenodd"
+        fill={PAVING[piece.surface].colour}
+      />
+    {/each}
     {#each walls as polygon, i (i)}
       <polygon points={polygon.map(([x, z]) => `${x},${z}`).join(' ')} fill="#18181b" />
     {/each}
