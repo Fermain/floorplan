@@ -64,3 +64,21 @@ export function flipFrame(frame: WallElevationFrame): WallElevationFrame {
     axisZ: frame.axisZ.clone().negate(),
   }
 }
+
+// The frame a face of the wall is seen in. Plan coordinates run x east and z north, which three.js, right-handed
+// with y up, would draw as a mirror image; so the scene is drawn with z turned over and this frame is given in
+// that world. Seen from outside its face, a wall runs the other way from the way it is drawn on plan seen from
+// the far side: on the +1 face the view reads from the wall's far end back to its start, and on the -1 face from
+// its start. In both, axisX points to the right of the view and axisZ at the viewer.
+export function viewFrameFor(frame: WallElevationFrame, side: 1 | -1): WallElevationFrame {
+  const turned = (v: Vector3) => new Vector3(v.x, v.y, -v.z)
+  const origin = side === 1 ? frame.origin.clone().addScaledVector(frame.axisX, frame.length) : frame.origin.clone()
+  const axisX = side === 1 ? frame.axisX.clone().negate() : frame.axisX.clone()
+  const axisZ = side === 1 ? frame.axisZ.clone() : frame.axisZ.clone().negate()
+  return { ...frame, origin: turned(origin), axisX: turned(axisX), axisZ: turned(axisZ) }
+}
+
+// Whether the view of a face reads from the wall's far end back to its start.
+export function viewReversed(side: 1 | -1): boolean {
+  return side === 1
+}

@@ -35,7 +35,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { WALL_HEAD } from '../../lib/plot/fixture'
   import { configureOrthoCamera, pointerToWallUv } from './elevation'
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
-  import { computeWallElevationFrame, flipFrame } from './wallFrame'
+  import { computeWallElevationFrame, viewFrameFor, viewReversed } from './wallFrame'
   import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
@@ -163,7 +163,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   const side = $derived<WallSide>(
     sideChoice && sideChoice.wallId === wall?.id ? sideChoice.side : defaultWallSide(faces),
   )
-  const viewFrame = $derived(frame && side === -1 ? flipFrame(frame) : frame)
+  const viewFrame = $derived(frame ? viewFrameFor(frame, side) : frame)
+  // Whether this face reads from the wall's far end back to its start, so that distances along it turn round.
+  const reversed = $derived(viewReversed(side))
   const viewFace = $derived(faces?.find((face) => face.side === side) ?? null)
   const farFace = $derived(faces?.find((face) => face.side !== side) ?? null)
 
@@ -187,7 +189,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   // Openings as seen from the current face: measured from the left of the view.
   function shownOpenings(openings: Opening[]): Opening[] {
-    if (side === 1 || !frame) return openings
+    if (!reversed || !frame) return openings
     const length = frame.length
     return openings.map((opening) => ({ ...opening, u: length - opening.u - opening.width }))
   }
@@ -231,7 +233,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   }
 
   function viewU(u: number): number {
-    return side === -1 && frame ? frame.length - u : u
+    return reversed && frame ? frame.length - u : u
   }
 
   const fittingMarks = $derived(
@@ -790,7 +792,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       picked.rect.height,
       viewFrame,
     )
-    if (!uv || side === 1) return uv
+    if (!uv || !reversed) return uv
     return { u: frame.length - uv.u, v: uv.v }
   }
 
@@ -968,7 +970,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       return { text: `Click the wall to place a ${fixtureSpec(insertFixture).name.toLowerCase()}.`, error: false }
     }
     if (readout) {
-      const shownU = side === -1 && frame ? frame.length - readout.u : readout.u
+      const shownU = reversed && frame ? frame.length - readout.u : readout.u
       const parts = [`u ${mm(shownU)} mm`, `v ${mm(readout.v)} mm`]
       if (selectedOpening) {
         parts.push(
