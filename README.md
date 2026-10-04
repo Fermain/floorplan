@@ -75,6 +75,7 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 - **Fittings:** sockets, switches, lights, sanitary ware, geysers, gas appliances and bottles, and rainwater tanks. A room can be fitted out in one step, and tanks snap under downpipes.
 - **Paving:** driveways, paths and patios are drawn on the ground as rectangles or outlines, in concrete, cement or clay pavers, gravel or grass blocks. An apron round the house is a project setting.
 - **Counters:** kitchen counters drawn along the inside face of a wall, and islands and bars standing free, with a choice of worktop and cupboards on the wall above. **Lay out this room** on a room's panel closes the plan in on that room and veils the rest.
+- **Retaining walls:** drawn point to point along the foot of a bank, in retaining blocks, brick or concrete. What each holds back is read from the ground as it lies; the ground itself is not reshaped. Over a metre is flagged as needing an engineer.
 - **Carports:** a roof on posts, standing free, for one, two or three cars, under steel sheeting or shade cloth. R turns it before you place it, and its corners snap to the house, the plot and paving.
 - **Road access:** mark which sides of the plot face a street.
 - **Logical walls:** these divide or close off a space without building anything. They can carry a fence or supports, and a roof may rest on them.

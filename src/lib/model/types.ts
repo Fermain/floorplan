@@ -289,6 +289,15 @@ export type Carport = {
   roof: CarportRoof
 }
 
+// A retaining wall: a wall along a line on the ground that holds the higher ground on one side back from the
+// lower ground on the other. How much it holds comes from the ground itself; the wall does not reshape it.
+export type RetainingType = 'blocks' | 'masonry' | 'concrete'
+export type RetainingWall = {
+  id: string
+  points: [number, number][]
+  type: RetainingType
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
@@ -297,6 +306,7 @@ export type Document = {
   services?: SiteServices
   paving?: PavingArea[]
   carports?: Carport[]
+  retaining?: RetainingWall[]
 }
 
 export type DerivedRoom = {

@@ -13,6 +13,7 @@ import {
 import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { carportProblem } from './carports'
 import { counterProblem } from './counters'
+import { retainingProblem } from './retaining'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -37,6 +38,7 @@ import type {
   Carport,
   Counter,
   Document,
+  RetainingWall,
   FaceFinish,
   FaceTrim,
   Fence,
@@ -1086,6 +1088,30 @@ export function removeCounter(document: Document, floorId: string, id: string): 
   if (counters.length > 0) return ok(replaceFloor(document, { ...floor, counters }))
   const { counters: _gone, ...rest } = floor
   return ok(replaceFloor(document, rest))
+}
+
+export function addRetainingWall(document: Document, wall: Omit<RetainingWall, 'id'>): MutationResult {
+  const problem = retainingProblem(document, wall)
+  if (problem) return fail(document, problem)
+  const added: RetainingWall = { id: newId('retaining'), type: wall.type, points: wall.points.map(([x, z]) => [x, z]) }
+  return ok({ ...document, retaining: [...(document.retaining ?? []), added] })
+}
+
+export function updateRetainingWall(document: Document, id: string, patch: Partial<Omit<RetainingWall, 'id'>>): MutationResult {
+  const current = document.retaining?.find((item) => item.id === id)
+  if (!current) return fail(document, 'retaining wall not found')
+  const next = { ...current, ...patch }
+  const problem = retainingProblem(document, next)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, retaining: (document.retaining ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removeRetainingWall(document: Document, id: string): MutationResult {
+  if (!document.retaining?.some((item) => item.id === id)) return fail(document, 'retaining wall not found')
+  const retaining = document.retaining.filter((item) => item.id !== id)
+  if (retaining.length > 0) return ok({ ...document, retaining })
+  const { retaining: _gone, ...rest } = document
+  return ok(rest)
 }
 
 export function addCarport(document: Document, carport: Omit<Carport, 'id'>): MutationResult {

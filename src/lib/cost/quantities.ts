@@ -19,6 +19,8 @@ import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
 import { carportQuantities } from '../geometry/carports'
 import { counterTotals } from '../geometry/counters'
+import { retainingTotals } from '../geometry/retaining'
+import { RETAINING_TYPES } from '../model/retaining'
 import { COUNTER_KINDS, COUNTER_TOPS } from '../model/counters'
 import { CARPORT_ROOFS, carportName } from '../model/carports'
 import { plumbingLayout, wallChases, waterTrench } from '../geometry/plumbing'
@@ -38,7 +40,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -57,7 +59,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -684,6 +686,14 @@ export function takeoff(doc: Document): QuantityLine[] {
     if (area > 0) drafts.push({ id: `worktop:${spec.id}`, group: 'Joinery', label: `${spec.name} worktop`, note: 'Over the cupboards, with its overhang', unit: 'm²', quantity: round(area * waste, 2), rateKey: `worktop:${spec.id}` })
   }
   if (joinery.wallUnits > 0) drafts.push({ id: 'counter-wall-units', group: 'Joinery', label: 'Wall cupboards', note: 'Above the counter, 350 mm deep', unit: 'm', quantity: round(joinery.wallUnits, 2), rateKey: 'counter-wall-units' })
+
+  // Retaining walls: by the area of their face, with a drain behind them.
+  const held = retainingTotals(doc)
+  for (const spec of RETAINING_TYPES) {
+    const face = held.face[spec.id]
+    if (face > 0) drafts.push({ id: `retaining:${spec.id}`, group: 'Retaining walls', label: spec.name, note: 'The face of the wall, from 300 mm in the ground to the top of what it holds', unit: 'm²', quantity: round(face, 1), rateKey: `retaining:${spec.id}` })
+  }
+  if (held.length > 0) drafts.push({ id: 'retaining-drain', group: 'Retaining walls', label: 'Drain behind the wall', note: 'A perforated pipe in stone, wrapped in geotextile', unit: 'm', quantity: Math.ceil(held.length), rateKey: 'retaining-drain' })
 
   // Carports: a steel frame on posts set in concrete, under sheeting or shade cloth.
   const carports = doc.carports ?? []

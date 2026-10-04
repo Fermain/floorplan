@@ -50,6 +50,7 @@
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
+  import { buildRetainingParts, type RetainingPart } from '../../lib/geometry/retaining'
   import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
@@ -124,6 +125,7 @@
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
+  let retainingMeshes = $state<RetainingPart[]>([])
   let counterMeshes = $state<{ key: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
@@ -423,6 +425,7 @@
     const roadParts = buildRoadParts(doc.plot, (x, z) => bilinearHeight(surroundings, x, z))
     const pavingParts = buildPavingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
     const carportParts = buildCarportParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
+    const retainingParts = buildRetainingParts(doc, (x, z) => bilinearHeight(surroundings, x, z))
     const minor = lineGeometry(contours.minor)
     const major = lineGeometry(contours.major)
     const built: WallMeshes[] = []
@@ -515,6 +518,7 @@
     roadMeshes = roadParts
     pavingMeshes = pavingParts
     carportMeshes = carportParts
+    retainingMeshes = retainingParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -536,6 +540,7 @@
       for (const part of roadParts) part.geometry.dispose()
       for (const part of pavingParts) part.geometry.dispose()
       for (const part of carportParts) part.geometry.dispose()
+      for (const part of retainingParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -870,6 +875,11 @@
     {/if}
     {#each roadMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow userData={{ keepWhole: true }}>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each retainingMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
         <T.MeshStandardMaterial color={part.colour} roughness={0.95} side={DoubleSide} />
       </T.Mesh>
     {/each}

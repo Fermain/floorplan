@@ -15,6 +15,7 @@
   import Grid2x2 from '@lucide/svelte/icons/grid-2x2'
   import CarFront from '@lucide/svelte/icons/car-front'
   import ChefHat from '@lucide/svelte/icons/chef-hat'
+  import Mountain from '@lucide/svelte/icons/mountain'
   import Maximize2 from '@lucide/svelte/icons/maximize-2'
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
@@ -79,6 +80,9 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, snapCarport } from '../../lib/geometry/carports'
+  import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
+  import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
+  import type { RetainingType } from '../../lib/model/types'
   import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
   import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
@@ -134,7 +138,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'draw-counter' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'draw-counter' | 'draw-retaining' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -199,6 +203,10 @@
   let counterStart = $state<{ face: CounterFace | null; point: { x: number; z: number } } | null>(null)
   // The room being laid out on its own, by the id of its space; the rest of the plan is veiled.
   let focusedRoom = $state<string | null>(null)
+  // Retaining walls: the one picked, the kind of the next, and the points of one being drawn.
+  let selectedRetaining = $state<string | null>(null)
+  let retainingType = $state<RetainingType>('blocks')
+  let retainingDraft = $state<{ x: number; z: number }[]>([])
   // Carports: the one picked, and the size, roof and turn of the next one to be placed.
   let selectedCarport = $state<string | null>(null)
   let carportBays = $state<Carport['bays']>(2)
@@ -779,6 +787,12 @@
   }
 
   function cancelDraw() {
+    if (tool === 'draw-retaining') {
+      if (retainingDraft.length > 0) retainingDraft = []
+      else setTool('select')
+      errorMessage = null
+      return
+    }
     if (tool === 'draw-counter') {
       if (counterStart) counterStart = null
       else setTool('select')
@@ -813,6 +827,10 @@
       finishPavingOutline()
       return
     }
+    if (tool === 'draw-retaining' && event.button === 0) {
+      finishRetaining()
+      return
+    }
     if (tool !== 'select' || event.button !== 0) return
     const svg = svgEl
     if (!svg || !activeFloor) return
@@ -845,7 +863,9 @@
     paving?: string | null
     carport?: string | null
     counter?: string | null
+    retaining?: string | null
   }) {
+    selectedRetaining = next.retaining ?? null
     selectedCounter = next.counter ?? null
     selectedPaving = next.paving ?? null
     selectedCarport = next.carport ?? null
@@ -918,6 +938,11 @@
       return
     }
 
+    if (tool === 'draw-retaining') {
+      retainingClick(plan)
+      return
+    }
+
     if (tool === 'select') {
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
@@ -971,6 +996,11 @@
           return
         }
         chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
+        return
+      }
+      const held = activeStoreyIndex === 0 ? retainingAt(document, plan, s(0.3)) : null
+      if (held) {
+        chooseSelection({ retaining: held.id })
         return
       }
       const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
@@ -1977,7 +2007,6 @@
   }
   const pavingGuide = $derived(pointerPlan && tool === 'draw-paving' ? pavingSnap(pointerPlan) : null)
   const pavingPoint = $derived(pavingGuide?.point ?? null)
-  const guideTraces = $derived(snapTraces.length > 0 ? snapTraces : (pavingGuide?.traces ?? []))
   // An outline closes when the pointer is back on its first corner.
   const pavingCloses = $derived.by(() => {
     const first = pavingDraft[0]
@@ -2133,6 +2162,66 @@
     // The room focused on may be renamed, but if it goes, so does the focus.
     if (focusedRoom && !focusedCells) focusedRoom = null
   })
+
+  // A retaining wall is drawn point to point along the ground and finished with a double-click, Enter or Finish.
+  // What it holds back is read from the ground as it lies.
+  const planGround = $derived((document.retaining ?? []).length > 0 || tool === 'draw-retaining' ? groundOf(document) : null)
+  function retainingSnap(plan: { x: number; z: number }) {
+    return guidePavingPoint(plan, pavingTargets, s(0.5), { axis: pavingAxis, nodes: retainingDraft, align: s(0.3) })
+  }
+  const retainingGuide = $derived(pointerPlan && tool === 'draw-retaining' ? retainingSnap(pointerPlan) : null)
+  const guideTraces = $derived(snapTraces.length > 0 ? snapTraces : (pavingGuide?.traces ?? retainingGuide?.traces ?? []))
+  const retainingPreview = $derived.by((): [number, number][] => {
+    if (tool !== 'draw-retaining' || retainingDraft.length === 0) return []
+    const at = retainingGuide?.point
+    return [...retainingDraft, ...(at ? [at] : [])].map((p) => [p.x, p.z] as [number, number])
+  })
+
+  function retainingClick(plan: { x: number; z: number }) {
+    if (activeStoreyIndex !== 0) {
+      errorMessage = 'A retaining wall stands on the ground. Switch to the ground floor to draw it.'
+      return
+    }
+    const at = retainingSnap(plan).point
+    const last = retainingDraft.at(-1)
+    // A second click on the point just placed (a double-click) adds nothing.
+    if (last && Math.hypot(last.x - at.x, last.z - at.z) < 0.02) return
+    retainingDraft = [...retainingDraft, at]
+  }
+
+  function finishRetaining() {
+    if (tool !== 'draw-retaining' || retainingDraft.length < 2) return
+    if (applyResult(documentStore.addRetainingWall({ type: retainingType, points: retainingDraft.map((p) => [p.x, p.z]) }))) {
+      const added = documentStore.document.retaining?.at(-1)
+      retainingDraft = []
+      if (added) chooseSelection({ retaining: added.id })
+    }
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-retaining') return
+    const onKey = (event: KeyboardEvent) => {
+      if (typingTarget(event)) return
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        finishRetaining()
+      } else if (event.key === 'Backspace' && retainingDraft.length > 0) {
+        event.preventDefault()
+        retainingDraft = retainingDraft.slice(0, -1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const chosenRetaining = $derived.by(() => {
+    const wall = selectedRetaining ? document.retaining?.find((item) => item.id === selectedRetaining) : undefined
+    return wall && planGround ? { wall, measure: measureRetaining(wall, planGround) } : null
+  })
+
+  function removeChosenRetaining() {
+    if (chosenRetaining && applyResult(documentStore.removeRetainingWall(chosenRetaining.wall.id))) chooseSelection({})
+  }
 
   // A carport being placed follows the pointer, square to the drawing grid; R turns it a quarter turn.
   const carportGhost = $derived.by((): { carport: Omit<Carport, 'id'>; problem: string | null } | null => {
@@ -2303,6 +2392,7 @@
     if (chosenPaving) return { label: chosenPaving.apron ? 'Remove the apron' : 'Delete paving', run: removeChosenPaving }
     if (chosenCarport) return { label: 'Delete carport', run: removeChosenCarport }
     if (chosenCounter) return { label: 'Delete counter', run: removeChosenCounter }
+    if (chosenRetaining) return { label: 'Delete retaining wall', run: removeChosenRetaining }
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
@@ -2330,6 +2420,12 @@
   })
 
   const drawHintBody = $derived.by(() => {
+    if (tool === 'draw-retaining') {
+      const name = retainingSpec(retainingType).name
+      if (retainingDraft.length === 0) return `${name}. Click along the foot of the bank it is to hold, point by point. What it holds is read from the ground.`
+      if (retainingDraft.length === 1) return 'Click the next point. Backspace takes the last one back; Esc starts again.'
+      return 'Click on, or click Finish, double-click or press Enter to build the wall.'
+    }
     if (tool === 'draw-counter') {
       const spec = counterKindSpec(counterKind)
       if (!counterStart) {
@@ -2503,6 +2599,9 @@
       <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
         <CarFront /><span class="hidden sm:inline">Carport</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
+        <Mountain /><span class="hidden sm:inline">Retaining</span>
+      </ToggleGroup.Item>
       <ToggleGroup.Item value="draw-counter" aria-label="Counters" title="Counters: kitchen cupboards and worktops" class="max-sm:px-2">
         <ChefHat /><span class="hidden sm:inline">Counters</span>
       </ToggleGroup.Item>
@@ -2511,6 +2610,21 @@
       <Button size="sm" variant="outline" title="Back to the whole plan" onclick={leaveRoom}>
         <Maximize2 />{focusedCells.name}: whole plan
       </Button>
+    {/if}
+    {#if tool === 'draw-retaining'}
+      <Select.Root type="single" value={retainingType} onValueChange={(next) => next && (retainingType = next as RetainingType)}>
+        <Select.Trigger size="sm" class="w-44" aria-label="Kind of retaining wall">{retainingSpec(retainingType).name}</Select.Trigger>
+        <Select.Content>
+          {#each RETAINING_TYPES as spec (spec.id)}
+            <Select.Item value={spec.id} label={spec.name} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      {#if retainingDraft.length > 0}
+        <Button size="sm" disabled={retainingDraft.length < 2} title="Build the wall (Enter)" onclick={finishRetaining}>
+          <Check />Finish
+        </Button>
+      {/if}
     {/if}
     {#if tool === 'draw-counter'}
       <ToggleGroup.Root
@@ -2815,6 +2929,51 @@
           pointer-events="none"
         />
       {/if}
+    {/if}
+    {#if activeStoreyIndex === 0}
+      <g class="retaining" pointer-events="none">
+        {#each document.retaining ?? [] as wall (wall.id)}
+          {@const picked = selectedRetaining === wall.id}
+          <polyline
+            points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))}
+            fill="none"
+            stroke={picked ? '#2563eb' : retainingSpec(wall.type).colour}
+            stroke-width={retainingSpec(wall.type).thickness}
+            stroke-linejoin="round"
+          />
+          <polyline points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))} fill="none" stroke={picked ? '#1d4ed8' : '#44403c'} stroke-width={s(0.02)} />
+          <!-- Ticks on the downhill side, the way the ground falls away from the wall. -->
+          {#if planGround}
+            {#each retainingSamples(wall, planGround).filter((_, i) => i % 2 === 0) as sample, i (i)}
+              <line
+                x1={sample.x}
+                y1={sample.z}
+                x2={sample.x + sample.down.x * 0.45}
+                y2={sample.z + sample.down.z * 0.45}
+                stroke={picked ? '#1d4ed8' : '#44403c'}
+                stroke-width={s(0.02)}
+              />
+            {/each}
+          {/if}
+        {/each}
+        {#if retainingPreview.length >= 2}
+          <polyline
+            points={pointsAttr(retainingPreview.map(([x, z]) => [x, z] as SvgPoint))}
+            fill="none"
+            stroke="#2563eb"
+            stroke-width={s(0.05)}
+            stroke-dasharray={dash(0.2, 0.12)}
+          />
+        {/if}
+        {#if tool === 'draw-retaining'}
+          {#each retainingDraft as point, i (i)}
+            <circle cx={point.x} cy={point.z} r={s(0.1)} fill="#ffffff" stroke="#2563eb" stroke-width={s(0.04)} />
+          {/each}
+          {#if retainingGuide}
+            <circle cx={retainingGuide.point.x} cy={retainingGuide.point.z} r={s(0.12)} fill="#2563eb" />
+          {/if}
+        {/if}
+      </g>
     {/if}
     {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
       {@const ring = carportRing(carport)}
@@ -3705,6 +3864,45 @@
           </p>
         </ContextPanel>
       {/if}
+    {/if}
+    {#if chosenRetaining && !roofFloor}
+      {@const measure = chosenRetaining.measure}
+      <ContextPanel
+        label="Retaining wall"
+        title={retainingSpec(chosenRetaining.wall.type).name}
+        description={retainingSpec(chosenRetaining.wall.type).text}
+        onclose={() => chooseSelection({})}
+      >
+        <div class="grid gap-1.5">
+          <Label for="retaining-type">Built of</Label>
+          <Select.Root
+            type="single"
+            value={chosenRetaining.wall.type}
+            onValueChange={(next) => next && chosenRetaining && applyResult(documentStore.updateRetainingWall(chosenRetaining.wall.id, { type: next as RetainingType }))}
+          >
+            <Select.Trigger id="retaining-type" size="sm" class="w-full">{retainingSpec(chosenRetaining.wall.type).name}</Select.Trigger>
+            <Select.Content>
+              {#each RETAINING_TYPES as spec (spec.id)}
+                <Select.Item value={spec.id} label={spec.name} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        <table class="sheet still rounded-md border">
+          <tbody>
+            <tr><td class="label">Length</td><td class="text-right font-medium tabular-nums">{checkFormat.format(measure.length)} m</td></tr>
+            <tr>
+              <td class="label">Holds back, at most</td>
+              <td class="text-right font-medium tabular-nums" class:warn={measure.highest > RETAINING_ENGINEER_M}>{checkFormat.format(measure.highest)} m</td>
+            </tr>
+            <tr><td class="label">On average</td><td class="text-right font-medium tabular-nums">{checkFormat.format(measure.average)} m</td></tr>
+          </tbody>
+        </table>
+        {#if measure.highest > RETAINING_ENGINEER_M}
+          <p class="text-amber-700">Over {RETAINING_ENGINEER_M} m of retained ground needs an engineer's design.</p>
+        {/if}
+        <Button variant="destructive" onclick={removeChosenRetaining}>Remove</Button>
+      </ContextPanel>
     {/if}
     {#if chosenCounter && !roofFloor}
       <ContextPanel
