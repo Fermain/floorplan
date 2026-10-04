@@ -4,6 +4,7 @@
   import { autoFinish, finishSpec, NO_PAINT, PAINTS, paintSpec, WALL_FINISHES } from '$lib/model/finishes'
   import type { WallFinish, WallSystemId } from '$lib/model/types'
   import SwatchPicker from './SwatchPicker.svelte'
+  import InfoTip from './InfoTip.svelte'
 
   // How the walls are finished and painted, outside and in. Any face can be changed on its own in Focus.
   let {
@@ -47,7 +48,14 @@
     {@const shown = resolved(face.finish, face.outside)}
     <div class="grid content-start gap-3">
       <div class="grid gap-1.5">
-        <Label for="finish-{face.id}">{face.label}</Label>
+        <div class="flex items-center gap-1.5">
+          <Label for="finish-{face.id}">{face.label}</Label>
+          <InfoTip label="About the finishes">
+            {#each WALL_FINISHES as spec (spec.id)}
+              <p><span class="font-medium">{spec.name}.</span> {spec.text}</p>
+            {/each}
+          </InfoTip>
+        </div>
         <Select.Root type="single" value={face.finish} onValueChange={(next) => next && setFinish(face.outside, next as WallFinish | 'auto')}>
           <Select.Trigger id="finish-{face.id}" class="w-full">{finishLabel(face.finish, face.outside)}</Select.Trigger>
           <Select.Content>
@@ -57,7 +65,6 @@
             {/each}
           </Select.Content>
         </Select.Root>
-        <p class="text-sm text-muted-foreground">{finishSpec(shown).text}</p>
       </div>
       <div class="grid gap-1.5">
         <div class="flex items-baseline justify-between gap-2">

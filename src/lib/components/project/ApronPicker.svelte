@@ -4,6 +4,7 @@
   import { PAVING, PAVING_LIST } from '$lib/geometry/paving'
   import type { PavingSurface } from '$lib/model/types'
   import SwatchPicker from './SwatchPicker.svelte'
+  import InfoTip from './InfoTip.svelte'
   import { pavingSwatch } from './swatches'
 
   // The apron laid round the outside of the house: how wide, and what of.
@@ -20,7 +21,13 @@
 
 <div class="grid gap-3 sm:grid-cols-2">
   <div class="grid gap-1.5">
-    <Label for="apron-width-choice">Width</Label>
+    <div class="flex items-center gap-1.5">
+      <Label for="apron-width-choice">Width</Label>
+      <InfoTip label="About the apron">
+        A strip along every outside wall, sloping away to carry rain clear of the foundations. Draw driveways, paths
+        and patios with the Paving tool on the plan.
+      </InfoTip>
+    </div>
     <Select.Root type="single" value={String(width)} onValueChange={(next) => next !== undefined && (width = Number(next))}>
       <Select.Trigger id="apron-width-choice" class="w-full">{widthLabel}</Select.Trigger>
       <Select.Content>
@@ -44,8 +51,4 @@
       compact
     />
   </div>
-  <p class="text-sm text-muted-foreground sm:col-span-2">
-    A strip along every outside wall, sloping away to carry rain clear of the foundations. Draw driveways, paths and
-    patios with the Paving tool on the plan.
-  </p>
 </div>
