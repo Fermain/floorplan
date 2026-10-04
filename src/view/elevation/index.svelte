@@ -247,8 +247,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   // The ground along this wall, turned to run the way the face in view does.
   const ground = $derived.by((): GroundLine | null => {
     const line = floor && wall ? groundLine(doc, floor, wall) : null
-    if (!line || side === 1 || !frame) return line
-    const turn = (points: [number, number][]) => points.map(([u, v]): [number, number] => [frame.length - u, v]).reverse()
+    // Turned the same way as everything else measured along this face.
+    if (!line || viewU(0) === 0) return line
+    const turn = (points: [number, number][]) => points.map(([u, v]): [number, number] => [viewU(u), v]).reverse()
     return { ...line, finished: turn(line.finished), natural: turn(line.natural) }
   })
 
