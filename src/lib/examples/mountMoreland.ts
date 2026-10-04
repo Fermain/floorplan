@@ -17,9 +17,9 @@ export function mountMoreland(): Document {
     [0, deep],
   ]
 
-  // The main house, turned 32° from the boundaries: 7.6 m wide and 17.5 m long inside its walls. Its short north
+  // The main house, turned 32° from the boundaries: 7.6 m wide and 17.4 m long inside its walls. Its short north
   // face and its front, the long west side, look towards the gate.
-  const [INSIDE_WIDE, INSIDE_LONG] = [7.6, 17.5]
+  const [INSIDE_WIDE, INSIDE_LONG] = [7.6, 17.4]
   const HALF_WALL = 0.07
   const centre = { x: 28.5, z: 36.5 }
   const turn = (32 * Math.PI) / 180
@@ -110,24 +110,37 @@ export function mountMoreland(): Document {
     b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, p).id, { type: 'half-wall', height: 1 }), 'garden wall')
   }
 
-  // The main house. The open-plan lounge and kitchen fill the north end; a corridor runs south from it, 3 m in
-  // from the front and 1.2 m wide. West of it are the guest room (3 × 3 m) and the main bedroom in the corner;
-  // east of it the kitchen runs on 1.9 m, then bedroom 2 (3.7 × 3.2 m), a lobby the corridor opens into, and the
-  // bathroom (3 × 2.5 m) in the corner.
+  // The main house, from measurements taken inside it. The open-plan lounge and kitchen fill the north end, the
+  // kitchen running on 1.9 m beside the mouth of the corridor. The corridor starts 3 m in from the front, 1.2 m
+  // wide, with 0.5 m of built-in storage down its east side, and runs south past the doors of bedroom 2 and
+  // bedroom 1. It stops 3 m short of the south face, before the guest room, and turns east for 2.67 m. Across the
+  // south end are the guest room (3 × 3 m) in the south-west corner and the bathroom (2.5 × 3 m) in the
+  // south-east, either side of a small lobby off the end of the corridor.
+  // Not known, and drawn as found: what lies east of the storage, and how bedroom 1 comes to be 4.5 m wide.
   const thin = { systemId: 'block-90' as const, skin: 'single' as const }
   const OPEN = 6.3 + 0.045
-  const [HALL_W, HALL_E] = [3.045, 4.355]
+  const [HALL_W, HALL_E] = [3.245, 4.535]
+  const STORE = HALL_E + 0.5 + 0.09
   const KITCHEN_END = OPEN + 1.9
-  const BED2_END = KITCHEN_END + 3.7 + 0.09
-  const LOBBY_END = BED2_END + 2.67 + 0.09
-  const GUEST_END = OPEN + 3 + 0.09
+  const BED2_END = OPEN + 3.7 + 0.09
+  const SOUTH = S - 3 - 0.07 - 0.045
+  const LEG_N = SOUTH - 1.2 - 0.09
+  const LEG_E = HALL_W + 0.045 + 2.67 + 0.045
+  const [GUEST_E, BATH_W] = [3.045, INSIDE_WIDE - 2.5 - 0.045]
   b.walls(0, [at(N, W), at(OPEN, W), at(S, W), at(S, E), at(N, E)], { ...block, closed: true })
-  b.walls(0, [at(OPEN, W), at(OPEN, HALL_W), at(GUEST_END, HALL_W), at(S, HALL_W)], thin)
-  b.walls(0, [at(GUEST_END, W), at(GUEST_END, HALL_W)], thin)
-  b.walls(0, [at(OPEN, HALL_E), at(KITCHEN_END, HALL_E), at(BED2_END, HALL_E)], thin)
-  b.walls(0, [at(KITCHEN_END, HALL_E), at(KITCHEN_END, E)], thin)
-  b.walls(0, [at(BED2_END, HALL_E), at(BED2_END, E)], thin)
-  b.walls(0, [at(S, HALL_E), at(LOBBY_END, HALL_E), at(LOBBY_END, E)], thin)
+  // West of the corridor: bedroom 2 (3.7 m long), then bedroom 1 down to the south rooms.
+  b.walls(0, [at(OPEN, W), at(OPEN, HALL_W), at(BED2_END, HALL_W), at(SOUTH, HALL_W)], thin)
+  b.walls(0, [at(BED2_END, W), at(BED2_END, HALL_W)], thin)
+  // East of it: the kitchen's short wall, then the storage, as far as the turn.
+  b.walls(0, [at(OPEN, HALL_E), at(KITCHEN_END, HALL_E), at(LEG_N, HALL_E)], thin)
+  b.walls(0, [at(KITCHEN_END, HALL_E), at(KITCHEN_END, STORE), at(KITCHEN_END, E)], thin)
+  b.walls(0, [at(KITCHEN_END, STORE), at(LEG_N, STORE)], thin)
+  // The turn east, 2.67 m long.
+  b.walls(0, [at(LEG_N, HALL_E), at(LEG_N, STORE), at(LEG_N, LEG_E), at(SOUTH, LEG_E)], thin)
+  // The rooms across the south end.
+  b.walls(0, [at(SOUTH, W), at(SOUTH, GUEST_E), at(SOUTH, HALL_W), at(SOUTH, BATH_W), at(SOUTH, LEG_E), at(SOUTH, E)], thin)
+  b.walls(0, [at(SOUTH, GUEST_E), at(S, GUEST_E)], thin)
+  b.walls(0, [at(SOUTH, BATH_W), at(S, BATH_W)], thin)
   // Lines with nothing built on them: across the mouth of the corridor, and round the kitchen.
   b.walls(0, [at(OPEN, HALL_W), at(OPEN, HALL_E)], { skin: 'logical' })
   b.walls(0, [at(OPEN, HALL_E), at(3, HALL_E), at(3, E)], { skin: 'logical' })
@@ -135,30 +148,33 @@ export function mountMoreland(): Document {
   // The front door is 1.7 m wide, 0.46 m from the north face; the back door is 3.8 m down the east wall.
   b.opening(0, 'door', at(0.46 + 0.85, W), 1.7)
   b.opening(0, 'external-door', at(3.8 + 0.45, E), 0.9)
-  // Bedroom 2's door frame is 9.3 m from the north face and the main bedroom's 10.45 m.
-  b.opening(0, 'internal-door', at(8.4, HALL_W))
-  b.opening(0, 'internal-door', at(9.3 + 0.4, HALL_E))
+  // Bedroom 2's door frame is 9.3 m from the north face and bedroom 1's 10.45 m.
+  b.opening(0, 'internal-door', at(9.3 + 0.4, HALL_W))
   b.opening(0, 'internal-door', at(10.45 + 0.4, HALL_W))
-  b.opening(0, 'internal-door', at(LOBBY_END, 5))
+  // The lobby opens off the end of the corridor; the guest room and the bathroom face each other across it.
+  b.opening(0, 'portal', at(SOUTH, (HALL_W + HALL_E) / 2), 0.9)
+  b.opening(0, 'internal-door', at(SOUTH + 1.5, GUEST_E))
+  b.opening(0, 'internal-door', at(SOUTH + 1.5, BATH_W))
   // Windows, placed by eye.
   b.opening(0, 'window', at(4.4, W), 1.6)
   b.opening(0, 'window', at(N, 2), 2.2)
   b.opening(0, 'window', at(N, 5.6), 2.2)
   b.opening(0, 'window', at(6.4, E), 2)
-  b.opening(0, 'window', at(7.9, W))
-  b.opening(0, 'window', at(12, W), 1.6)
-  b.opening(0, 'window', at(15.5, W), 1.6)
-  b.opening(0, 'window', at(10.2, E), 1.6)
-  b.opening(0, 'window', at(13.4, E))
-  b.opening(0, 'window', at(16.3, E), 0.6)
+  b.opening(0, 'window', at(8.2, W), 1.6)
+  b.opening(0, 'window', at(12.2, W), 1.6)
+  b.opening(0, 'window', at(SOUTH + 1.5, W))
+  b.opening(0, 'window', at(S, 6.4), 0.6)
 
   b.room(0, at(2, 2), 'Lounge', 'living')
   b.room(0, at(5, 6), 'Kitchen', 'kitchen')
-  b.room(0, at(8, 1.5), 'Guest room', 'bedroom')
-  b.room(0, at(13, 1.5), 'Bedroom 1', 'bedroom')
-  b.room(0, at(10, 6), 'Bedroom 2', 'bedroom')
-  b.room(0, at(16.2, 6), 'Bathroom', 'bathroom')
-  b.room(0, at(13.4, 3.7), 'Corridor', 'passage')
+  b.room(0, at(8.2, 1.5), 'Bedroom 2', 'bedroom')
+  b.room(0, at(12.2, 1.5), 'Bedroom 1', 'bedroom')
+  b.room(0, at(SOUTH + 1.5, 1.5), 'Guest room', 'bedroom')
+  b.room(0, at(SOUTH + 1.5, 6.4), 'Bathroom', 'bathroom')
+  b.room(0, at(9, (HALL_W + HALL_E) / 2), 'Corridor', 'passage', false)
+  b.room(0, at(SOUTH + 1.5, 4), 'Lobby', 'passage', false)
+  b.room(0, at(9.5, HALL_E + 0.3), 'Storage', 'other', false)
+  b.room(0, at(10, 6.5), 'Not measured', 'other', false)
 
   // The patio is a rectangle 2.8 m deep along the front, outside the front door, under the house's roof.
   b.walls(0, [at(N, W), at(N, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
@@ -230,7 +246,7 @@ export function mountMoreland(): Document {
   b.fixture(0, 'db-board', { x: x0 + 0.3, z: z0 + 7 }, { x: 1, z: 0 })
 
   // The main house has its own hot water, between the kitchen and the bathroom.
-  b.fixture(0, 'solar-geyser', at(11, 4.5), { x: v.x, z: v.z })
+  b.fixture(0, 'solar-geyser', at(11, 6.5), { x: v.x, z: v.z })
 
   // The gravel drive comes in at the gate and down to the cottage's front door.
   b.paving([[3, deep - inset], [6.5, deep - inset], [15.5, 32.5], [12.5, 32]], 'gravel')
