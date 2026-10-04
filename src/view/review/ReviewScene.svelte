@@ -151,6 +151,12 @@
     return { x: sx / n, y: 2, z: sz / n }
   })
 
+  // Plan coordinates run x east and z north. three.js is right-handed with y up, so drawn as they stand the
+  // model would be a mirror image of the plan. The scene is therefore drawn with z turned over: in the 3D world
+  // z runs south. Everything placed in the world from plan coordinates outside the mirrored group (the camera,
+  // the sun, the sky) goes through here, and points picked in the world come back the same way.
+  const across = (z: number) => -z
+
   let stableTarget: [number, number, number] = [0, 2, 0]
   let stableCamera: [number, number, number] = [14, 12, 14]
 
@@ -175,20 +181,20 @@
   })
 
   const orbitTarget = $derived.by(() => {
-    const next: [number, number, number] = [focus.x, plotCenter.y, focus.z]
+    const next: [number, number, number] = [focus.x, plotCenter.y, across(focus.z)]
     if (sameTriple(stableTarget, next)) return stableTarget
     stableTarget = next
     return stableTarget
   })
 
   const cameraPosition = $derived.by(() => {
-    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, focus.z + focus.reach]
+    const next: [number, number, number] = [focus.x + focus.reach, plotCenter.y + focus.reach * 0.7, across(focus.z + focus.reach)]
     if (sameTriple(stableCamera, next)) return stableCamera
     stableCamera = next
     return stableCamera
   })
 
-  const sun = $derived(
+  const sunOnPlan = $derived(
     sunDirection(
       sunDate,
       doc.plot.latitude,
@@ -196,6 +202,8 @@
       doc.plot.northBearingDeg,
     ),
   )
+  // The way to the sun in the 3D world.
+  const sun = $derived({ x: sunOnPlan.x, y: sunOnPlan.y, z: across(sunOnPlan.z) })
 
   // The sun fades as it sets: no light, and no shadows thrown upwards, from below the horizon.
   const sunStrength = $derived(1.25 * Math.min(1, Math.max(0, (sun.y + 0.02) / 0.15)))
@@ -210,7 +218,7 @@
   const lightPosition = $derived([
     plotCenter.x + sun.x * (20 + shadowReach),
     plotCenter.y + sun.y * (20 + shadowReach),
-    plotCenter.z + sun.z * (20 + shadowReach),
+    across(plotCenter.z) + sun.z * (20 + shadowReach),
   ] as [number, number, number])
 
   function bottomSamplesForWall(floor: Floor, wall: Wall) {
@@ -286,7 +294,7 @@
     let best: { id: string; d: number } | null = null
     for (const fixture of floor.fixtures ?? []) {
       const ring = fixtureFootprint(fixture).map((p) => ({ x: p.x, z: p.z }))
-      const d = pointInRing(ring, point.x, point.z) ? 0 : ringDistance(ring, point.x, point.z)
+      const d = pointInRing(ring, point.x, across(point.z)) ? 0 : ringDistance(ring, point.x, across(point.z))
       if (d < 0.15 && (!best || d < best.d)) best = { id: fixture.id, d }
     }
     return best ? { kind: 'fixture', floorId, fixtureId: best.id } : null
@@ -766,7 +774,7 @@
   }
 
   function configureSunLight(light: import('three').DirectionalLight) {
-    light.target.position.set(plotCenter.x, plotCenter.y, plotCenter.z)
+    light.target.position.set(plotCenter.x, plotCenter.y, across(plotCenter.z))
     light.shadow.mapSize.set(2048, 2048)
     light.shadow.camera.near = 1
     light.shadow.camera.far = 40 + shadowReach * 2
@@ -786,8 +794,8 @@
     const lifted = liftAboveGround(
       camera.position.y,
       controls.target.y,
-      bilinearHeight(displayField, camera.position.x, camera.position.z),
-      bilinearHeight(displayField, controls.target.x, controls.target.z),
+      bilinearHeight(displayField, camera.position.x, across(camera.position.z)),
+      bilinearHeight(displayField, controls.target.x, across(controls.target.z)),
     )
     camera.position.y = lifted.cameraY
     controls.target.y = lifted.targetY
@@ -804,7 +812,7 @@
       makeDefault
       position={cameraPosition}
       oncreate={(ref) => {
-        ref.lookAt(focus.x, plotCenter.y, focus.z)
+        ref.lookAt(focus.x, plotCenter.y, across(focus.z))
       }}
     >
       <OrbitControls
@@ -819,7 +827,7 @@
       />
     </T.PerspectiveCamera>
 
-    <ReviewSky {sun} centre={plotCenter} />
+    <ReviewSky {sun} centre={{ x: plotCenter.x, y: plotCenter.y, z: across(plotCenter.z) }} />
     <ReviewCutaway depth={cutDepth} shape={cutShape} />
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
@@ -831,6 +839,8 @@
       }}
     />
 
+    <!-- The model, drawn with z turned over so that it matches the plan rather than mirroring it. -->
+    <T.Group scale.z={-1}>
     {#if groundGeometry}
       <T.Mesh geometry={groundGeometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial vertexColors roughness={0.95} />
@@ -1056,6 +1066,7 @@
         <T.LineBasicMaterial color={box.colour} depthTest={false} transparent opacity={0.9} />
       </T.LineSegments>
     {/each}
+    </T.Group>
     </ReviewInteractivity>
   </Canvas>
   {#if chosenWall}
