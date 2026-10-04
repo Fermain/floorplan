@@ -54,7 +54,7 @@ export function mountMoreland(): Document {
     const lower = ease(Math.hypot(outside(x, 5, 22), outside(z, 13.5, 35)))
     const s = (x - centre.x) * u.x + (z - centre.z) * u.z
     const t = (x - centre.x) * v.x + (z - centre.z) * v.z
-    const upper = ease(Math.hypot(outside(s, -13, 10.5), outside(t, -7.6, 6.5)))
+    const upper = ease(Math.hypot(outside(s, -16, 10.5), outside(t, -7.6, 6.5)))
     const stepped = slope + (LOWER - slope) * lower
     return stepped + (UPPER - stepped) * upper
   }
@@ -71,30 +71,33 @@ export function mountMoreland(): Document {
   // The cottage, 9 × 9 m, square to the boundaries, its gable ends to the north and south.
   const [x0, z0] = [9.5, 21.5]
   b.rect(0, x0, z0, x0 + 9, z0 + 9, block)
-  // A full-height wall cuts a 3 m slice off the east side: the bedroom, with its en suite at the far end.
-  b.walls(0, [{ x: x0 + 6, z: z0 }, { x: x0 + 6, z: z0 + 9 }], { systemId: 'block-90', skin: 'single' })
-  b.walls(0, [{ x: x0 + 6, z: z0 + 3 }, { x: x0 + 9, z: z0 + 3 }], { systemId: 'block-90', skin: 'single' })
-  // The rest is one open room; a line with nothing built on it tells the kitchen from the living area.
-  b.walls(0, [{ x: x0, z: z0 + 6 }, { x: x0 + 6, z: z0 + 6 }], { skin: 'logical' })
+  // A full-height wall cuts a 3 m slice off the west side: the bedroom, with its en suite at the front end.
+  b.walls(0, [{ x: x0 + 3, z: z0 }, { x: x0 + 3, z: z0 + 9 }], { systemId: 'block-90', skin: 'single' })
+  b.walls(0, [{ x: x0, z: z0 + 6 }, { x: x0 + 3, z: z0 + 6 }], { systemId: 'block-90', skin: 'single' })
+  // The rest is one open room. The kitchenette is the 3 × 3 m in its south-east corner, open to the north; lines
+  // with nothing built on them mark it off. Its bar is not drawn.
+  b.walls(0, [{ x: x0 + 6, z: z0 }, { x: x0 + 6, z: z0 + 3 }, { x: x0 + 9, z: z0 + 3 }], { skin: 'logical' })
 
-  // The front gable: a window, double doors and a window. The back: double doors onto the deck, and a window.
-  b.opening(0, 'window', { x: x0 + 1.8, z: z0 + 9 })
+  // The front gable: a window, double doors and a window. The back: double doors from the bedroom onto the deck,
+  // a window to the living area and one over the kitchenette.
+  b.opening(0, 'window', { x: x0 + 1.5, z: z0 + 9 }, 0.9)
   b.opening(0, 'door', { x: x0 + 4.5, z: z0 + 9 }, 1.6)
   b.opening(0, 'window', { x: x0 + 7.4, z: z0 + 9 })
   b.opening(0, 'door', { x: x0 + 1.6, z: z0 }, 1.6)
-  b.opening(0, 'window', { x: x0 + 4.4, z: z0 })
-  // Two windows down the west side, and one each for the bedroom and the en suite on the east.
+  b.opening(0, 'window', { x: x0 + 4.5, z: z0 })
+  b.opening(0, 'window', { x: x0 + 7.5, z: z0 })
+  // Two windows down the west side, in the bedroom, and two on the east.
   b.opening(0, 'window', { x: x0, z: z0 + 4.4 })
   b.opening(0, 'window', { x: x0, z: z0 + 1.8 })
   b.opening(0, 'window', { x: x0 + 9, z: z0 + 6 }, 1.6)
-  b.opening(0, 'window', { x: x0 + 9, z: z0 + 1.5 }, 0.6)
-  b.opening(0, 'internal-door', { x: x0 + 6, z: z0 + 7.5 })
-  b.opening(0, 'internal-door', { x: x0 + 7.5, z: z0 + 3 })
+  b.opening(0, 'window', { x: x0 + 9, z: z0 + 1.5 }, 0.9)
+  b.opening(0, 'internal-door', { x: x0 + 3, z: z0 + 4.5 })
+  b.opening(0, 'internal-door', { x: x0 + 1.5, z: z0 + 6 })
 
-  b.room(0, { x: x0 + 3, z: z0 + 7.5 }, 'Kitchen', 'kitchen')
-  b.room(0, { x: x0 + 3, z: z0 + 3 }, 'Living', 'living')
-  b.room(0, { x: x0 + 7.5, z: z0 + 6 }, 'Bedroom', 'bedroom')
-  b.room(0, { x: x0 + 7.5, z: z0 + 1.5 }, 'En suite', 'bathroom')
+  b.room(0, { x: x0 + 7.5, z: z0 + 1.5 }, 'Kitchenette', 'kitchen')
+  b.room(0, { x: x0 + 5, z: z0 + 6 }, 'Living', 'living')
+  b.room(0, { x: x0 + 1.5, z: z0 + 3 }, 'Bedroom', 'bedroom')
+  b.room(0, { x: x0 + 1.5, z: z0 + 7.5 }, 'En suite', 'bathroom')
 
   // The deck behind the cottage: 3 m wide and 6 m out, down the west side of the walled garden.
   const gap = 0.05
@@ -108,22 +111,24 @@ export function mountMoreland(): Document {
     b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, p).id, { type: 'precast', height: 1.2 }), 'garden wall')
   }
 
-  // The main house. The open-plan living area and kitchen fill the north end; a corridor runs south from it,
-  // 3 m in from the front, with rooms 3 m deep on its west side and the main bedroom on its east.
+  // The main house. The open-plan lounge and kitchen fill the north end; a corridor runs south from it, 3 m in
+  // from the front and 1.2 m wide. West of it are the guest room (3 × 3 m) and the main bedroom in the corner;
+  // east of it the kitchen runs on 1.9 m, then bedroom 2 (3.7 × 3.2 m), a lobby the corridor opens into, and the
+  // bathroom (3 × 2.5 m) in the corner.
   const thin = { systemId: 'block-90' as const, skin: 'single' as const }
   const OPEN = 6.3 + 0.045
-  const [HALL_W, HALL_E] = [3.045, 4.145]
+  const [HALL_W, HALL_E] = [3.045, 4.355]
   const KITCHEN_END = OPEN + 1.9
+  const BED2_END = KITCHEN_END + 3.7 + 0.09
+  const LOBBY_END = BED2_END + 2.67 + 0.09
+  const GUEST_END = OPEN + 3 + 0.09
   b.walls(0, [at(N, W), at(OPEN, W), at(S, W), at(S, E), at(N, E)], { ...block, closed: true })
-  b.walls(0, [at(OPEN, W), at(OPEN, HALL_W), at(S, HALL_W)], thin)
-  b.walls(0, [at(OPEN, HALL_E), at(KITCHEN_END, HALL_E), at(16.445, HALL_E)], thin)
+  b.walls(0, [at(OPEN, W), at(OPEN, HALL_W), at(GUEST_END, HALL_W), at(S, HALL_W)], thin)
+  b.walls(0, [at(GUEST_END, W), at(GUEST_END, HALL_W)], thin)
+  b.walls(0, [at(OPEN, HALL_E), at(KITCHEN_END, HALL_E), at(BED2_END, HALL_E)], thin)
   b.walls(0, [at(KITCHEN_END, HALL_E), at(KITCHEN_END, E)], thin)
-  // The corridor turns east at its end for 2.67 m, past the foot of the main bedroom.
-  b.walls(0, [at(16.445, HALL_E), at(16.445, 6.86), at(16.445, E)], thin)
-  b.walls(0, [at(16.445, 6.86), at(S, 6.86)], thin)
-  // West of the corridor: a bedroom, the shared bathroom (3 × 2.5 m) and the guest room (3 × 3 m) in the corner.
-  b.walls(0, [at(11.745, W), at(11.745, HALL_W)], thin)
-  b.walls(0, [at(14.345, W), at(14.345, HALL_W)], thin)
+  b.walls(0, [at(BED2_END, HALL_E), at(BED2_END, E)], thin)
+  b.walls(0, [at(S, HALL_E), at(LOBBY_END, HALL_E), at(LOBBY_END, E)], thin)
   // Lines with nothing built on them: across the mouth of the corridor, and round the kitchen.
   b.walls(0, [at(OPEN, HALL_W), at(OPEN, HALL_E)], { skin: 'logical' })
   b.walls(0, [at(OPEN, HALL_E), at(3, HALL_E), at(3, E)], { skin: 'logical' })
@@ -131,33 +136,40 @@ export function mountMoreland(): Document {
   // The front door is 1.7 m wide, 0.46 m from the north face; the back door is 3.8 m down the east wall.
   b.opening(0, 'door', at(0.46 + 0.85, W), 1.7)
   b.opening(0, 'external-door', at(3.8 + 0.45, E), 0.9)
-  b.opening(0, 'internal-door', at(9.3 + 0.4, HALL_W))
-  b.opening(0, 'internal-door', at(10.45 + 0.4, HALL_E))
-  b.opening(0, 'internal-door', at(12.4, HALL_W))
-  b.opening(0, 'internal-door', at(15.6, HALL_W))
+  // Bedroom 2's door frame is 9.3 m from the north face and the main bedroom's 10.45 m.
+  b.opening(0, 'internal-door', at(8.4, HALL_W))
+  b.opening(0, 'internal-door', at(9.3 + 0.4, HALL_E))
+  b.opening(0, 'internal-door', at(10.45 + 0.4, HALL_W))
+  b.opening(0, 'internal-door', at(LOBBY_END, 5))
   // Windows, placed by eye.
   b.opening(0, 'window', at(4.4, W), 1.6)
-  b.opening(0, 'window', at(N, 2), 1.6)
-  b.opening(0, 'window', at(N, 5.6), 1.6)
+  b.opening(0, 'window', at(N, 2), 2.2)
+  b.opening(0, 'window', at(N, 5.6), 2.2)
   b.opening(0, 'window', at(6.4, E), 2)
-  b.opening(0, 'window', at(9, W), 1.8)
-  b.opening(0, 'window', at(13.1, W), 0.6)
-  b.opening(0, 'window', at(16, W))
-  b.opening(0, 'window', at(11, E), 1.6)
-  b.opening(0, 'window', at(14.5, E), 1.6)
+  b.opening(0, 'window', at(7.9, W))
+  b.opening(0, 'window', at(12, W), 1.6)
+  b.opening(0, 'window', at(15.5, W), 1.6)
+  b.opening(0, 'window', at(10.2, E), 1.6)
+  b.opening(0, 'window', at(13.4, E))
+  b.opening(0, 'window', at(16.3, E), 0.6)
 
   b.room(0, at(2, 2), 'Lounge', 'living')
-  b.room(0, at(5, 6), 'Main kitchen', 'kitchen')
-  b.room(0, at(9, 1.5), 'Bedroom 2', 'bedroom')
-  b.room(0, at(13, 1.5), 'Bathroom', 'bathroom')
-  b.room(0, at(16, 1.5), 'Guest room', 'bedroom')
-  b.room(0, at(12, 6), 'Bedroom 1', 'bedroom')
-  b.room(0, at(12, 3.6), 'Corridor', 'passage')
+  b.room(0, at(5, 6), 'Kitchen', 'kitchen')
+  b.room(0, at(8, 1.5), 'Guest room', 'bedroom')
+  b.room(0, at(13, 1.5), 'Bedroom 1', 'bedroom')
+  b.room(0, at(10, 6), 'Bedroom 2', 'bedroom')
+  b.room(0, at(16.2, 6), 'Bathroom', 'bathroom')
+  b.room(0, at(13.4, 3.7), 'Corridor', 'passage')
 
-  // The patio is an L, 2.8 m deep, round the north-west corner: across the north face and down the front as far
-  // as the open-plan room goes, looking towards the gate.
-  b.walls(0, [at(N, E), at(N - PATIO, E), at(N - PATIO, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
-  b.room(0, at(N - PATIO / 2, 3), 'Patio', 'other', false)
+  // The patio is a rectangle 2.8 m deep along the front, outside the front door, under the house's roof.
+  b.walls(0, [at(N, W), at(N, W - PATIO), at(OPEN, W - PATIO), at(OPEN, W)], { skin: 'logical' })
+  b.room(0, at(3, W - PATIO / 2), 'Patio', 'other', false)
+
+  // The carport stands against the north face, stopping 3.5 m short of the house's east end.
+  const [CAR_OUT, CAR_GAP] = [5.5, 0.05]
+  const carport = [at(N - CAR_GAP, W), at(N - CAR_GAP - CAR_OUT, W), at(N - CAR_GAP - CAR_OUT, E - 3.5), at(N - CAR_GAP, E - 3.5)]
+  b.walls(0, carport, { skin: 'logical', closed: true })
+  b.room(0, at(N - 3, 2), 'Carport', 'garage', false)
 
   // A palisade fence 300 mm inside the boundary, with a 3.5 m gate in the north side, 3 m from the north-west corner.
   const inset = 0.3
@@ -175,9 +187,11 @@ export function mountMoreland(): Document {
     b.apply(mutations.setFence(b.doc, floor().id, b.wallAt(0, mid).id, { type: 'palisade', height: 1.8 }), 'boundary fence')
   }
 
-  // A tiled gable over the cottage, its ridge running north to south, and a tiled hip over the main house and its patio.
+  // A tiled gable over the cottage, its ridge running north to south; tiled hips over the main house with its
+  // patio, and over the carport.
   b.cover({ x: x0, z: z0 }, { pitchDeg: 17.5, eaves: 0.5, form: 'gable', covering: 'concrete-tile', turns: 1 })
   b.cover(at(S, E), { pitchDeg: 22, eaves: 0.5, form: 'hip', covering: 'concrete-tile' })
+  b.cover(carport[1], { pitchDeg: 17.5, eaves: 0.3, form: 'hip', covering: 'concrete-tile' })
 
   // The deck is timber; the patio is paved.
   for (const space of floor().spaces ?? []) {
@@ -205,15 +219,17 @@ export function mountMoreland(): Document {
   const geyser = floor().fixtures?.find((fixture) => fixture.kind === 'geyser')
   if (geyser) {
     b.apply(mutations.setFixtureKind(b.doc, floor().id, geyser.id, 'solar-geyser'), 'solar geyser')
-    b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: x0 + 5.7, z: z0 + 5.5 }), 'geyser in the middle')
+    b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: x0 + 3.3, z: z0 + 4.2 }), 'geyser in the middle')
   }
-  b.fixture(0, 'db-board', { x: x0 + 0.3, z: z0 + 3.1 }, { x: 1, z: 0 })
+  b.fixture(0, 'db-board', { x: x0 + 8.7, z: z0 + 7.6 }, { x: -1, z: 0 })
 
-  // The main house has its own hot water, by the bathroom.
-  b.fixture(0, 'solar-geyser', at(12.2, 2.9), { x: -v.x, z: -v.z })
+  // The main house has its own hot water, between the kitchen and the bathroom.
+  b.fixture(0, 'solar-geyser', at(11, 4.5), { x: v.x, z: v.z })
 
   // The gravel drive comes in at the gate and down to the cottage's front door.
   b.paving([[3, deep - inset], [6.5, deep - inset], [15.5, 32.5], [12.5, 32]], 'gravel')
+  // A second arm runs along the top of the stand to the carport.
+  b.paving([[5, deep - inset], [5, deep - inset - 3.2], [17.9, 46.3], [19.2, 48.4]], 'gravel')
   b.apply(mutations.setRainfall(b.doc, 1000), 'rainfall')
   return b.doc
 }
