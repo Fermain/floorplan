@@ -5,7 +5,7 @@ import { addCarport, addWallRing, removeCarport, setProjectDefaults, updateCarpo
 import { deriveRooms } from '../model/rooms'
 import type { Carport, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildCarportParts, carportAt, carportQuantities, snapCarport } from './carports'
+import { buildCarportParts, carportAt, carportIssues, carportQuantities, snapCarport } from './carports'
 import { apronPolygons, pavingPieces, pavingSnapTargets } from './paving'
 
 const double: Omit<Carport, 'id'> = { x: 15, z: 8, dx: 0, dz: 1, bays: 2, roof: 'sheet' }
@@ -18,6 +18,16 @@ function house(): Document {
 }
 
 describe('carports', () => {
+  it('are flagged when they stand over a room or over each other, but not when they butt up to the house', () => {
+    // Clear of the house, whose outside face is at about x = 12.1.
+    const clear = addCarport(house(), double).document
+    expect(carportIssues(clear)).toEqual([])
+    const over = addCarport(house(), { ...double, x: 10, z: 7 }).document
+    expect(carportIssues(over).map((issue) => issue.id)).toEqual([`carport-room:${over.carports![0].id}`])
+    const pair = addCarport(clear, { ...double, x: 16, z: 9 }).document
+    expect(carportIssues(pair).map((issue) => issue.id)).toEqual([`carport-carport:${pair.carports![1].id}`])
+  })
+
   it('are placed, changed and removed, and refused off the plot or in a size that does not exist', () => {
     let doc = house()
     const placed = addCarport(doc, double)
