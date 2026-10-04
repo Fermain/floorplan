@@ -177,6 +177,13 @@ export async function openProject(
   return { ok: true, project, document: stored.document }
 }
 
+// A saved drawing read for a look, a copy or a backup, without making it the project last worked on.
+export async function readProject(id: string): Promise<Document | null> {
+  const db = await database()
+  const stored = await db.get('documents', id)
+  return stored && isDocument(stored.document) ? stored.document : null
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const db = await database()
   const last = await lastProjectId()

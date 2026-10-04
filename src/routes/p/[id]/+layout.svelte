@@ -4,6 +4,7 @@
   import { untrack } from 'svelte'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
+  import { settings } from '$lib/state/settings.svelte'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Redo2 from '@lucide/svelte/icons/redo-2'
   import Undo2 from '@lucide/svelte/icons/undo-2'
@@ -233,7 +234,7 @@
       {/if}
     </div>
   </main>
-  {#if statusLine.text}
+  {#if statusLine.text && (statusLine.error || settings.hints)}
     <!-- A status bar under the drawing rather than a note floating over it, so it never covers the controls.
          One line; a tap or click opens a long message out in full. -->
     <footer

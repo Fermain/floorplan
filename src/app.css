@@ -247,3 +247,13 @@
   min-height: 0;
   padding: 0;
 }
+/* The row picked in a sheet that is a list to choose from. */
+.sheet tbody tr.picked td {
+  background: color-mix(in oklab, var(--primary) 9%, var(--background));
+}
+.sheet tbody tr.pick {
+  cursor: default;
+}
+.sheet tbody tr.pick:hover:not(.picked) td {
+  background: color-mix(in oklab, var(--primary) 4%, var(--background));
+}
