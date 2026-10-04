@@ -10,6 +10,7 @@ import { plumbingLayout } from '../geometry/plumbing'
 import { powerLayout } from '../geometry/power'
 import { buildingChecks } from '../geometry/sans'
 import { layoutSpaces } from '../geometry/spaces'
+import { counterUnder } from '../model/counters'
 import type { Document } from '../model/types'
 import { isDocument } from '../state/projects'
 import { EXAMPLES } from '.'
@@ -25,8 +26,33 @@ describe('example projects', () => {
     for (const example of EXAMPLES) {
       const doc = await example.load()
       expect(isDocument(doc), example.id).toBe(true)
-      expect(warnings(doc), example.id).toEqual([])
+      // The Verulam bank is held by a retaining wall tall enough to want an engineer, which is as it should be.
+      const expected = example.id === 'verulam' ? [expect.stringContaining('retaining wall')] : []
+      expect(warnings(doc), example.id).toEqual(expected)
     }
+  })
+
+  it('each has a kitchen laid out with counters, with its sink set into one', async () => {
+    for (const example of EXAMPLES) {
+      const doc = await example.load()
+      const floors = doc.building.floors.filter((floor) => (floor.counters ?? []).length > 0)
+      expect(floors.length, example.id).toBeGreaterThan(0)
+      for (const floor of floors) {
+        const sinks = (floor.fixtures ?? []).filter((fixture) => fixture.kind === 'sink')
+        expect(sinks.every((sink) => counterUnder(floor.counters, sink.x, sink.z) !== null), example.id).toBe(true)
+      }
+    }
+  })
+
+  it('show a built-in hob, an island, a bar and a retaining wall between them', async () => {
+    const farm = await byId('multi-generation')
+    const kitchen = farm.building.floors.find((floor) => floor.index === 0)!
+    expect((kitchen.fixtures ?? []).filter((fixture) => fixture.builtIn)).toHaveLength(1)
+    expect((kitchen.counters ?? []).filter((counter) => counter.kind === 'island')).toHaveLength(1)
+    const verulam = await byId('verulam')
+    expect(verulam.building.floors.flatMap((floor) => floor.counters ?? []).some((counter) => counter.kind === 'bar')).toBe(true)
+    expect(verulam.retaining).toHaveLength(1)
+    expect(retainingIssues(verulam)).toHaveLength(1)
   })
 
   it('the off-grid house runs on its own sun, rain and gas', async () => {

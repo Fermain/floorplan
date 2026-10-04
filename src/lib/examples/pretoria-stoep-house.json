@@ -1974,6 +1974,19 @@
       "y": 0,
       "id": "fixture-de71b5a5-3960-461d-ba6f-aa652f3f2ae0"
      }
+    ],
+    "counters": [
+     {
+      "x": 13.600000000000001,
+      "z": 19.93,
+      "dx": -1,
+      "dz": 0,
+      "length": 3.45,
+      "depth": 0.6,
+      "kind": "base",
+      "top": "granite",
+      "id": "counter-20b31f28-0f82-4dbf-8501-6d46454c59cd"
+     }
     ]
    },
    {

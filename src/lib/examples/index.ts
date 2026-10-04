@@ -27,8 +27,8 @@ export const EXAMPLES: readonly Example[] = [
     name: 'Multi generation farmhouse',
     place: 'Mpumalanga, on a farm stand of nearly half a hectare',
     description:
-      'Three homes on one stand: a face-brick family house between two painted cottages, each cottage with its own carport, a double garage on the drive, sixteen panels and two rainwater tanks on the main roof, a septic tank, and paved drive, yard, paths and patio.',
-    highlights: ['Three dwellings', 'Garage and two carports', 'Solar and rainwater', 'Paving and paint'],
+      'Three homes on one stand: a face-brick family house between two painted cottages, each cottage with its own carport, a double garage on the drive, sixteen panels and two rainwater tanks on the main roof, a septic tank, and paved drive, yard, paths and patio. The main kitchen has granite counters with a built-in hob and an island.',
+    highlights: ['Three dwellings', 'Garage and two carports', 'Kitchen with an island', 'Solar and rainwater'],
     author: 'Floorplan',
     load: async () => (await import('./multiGeneration')).multiGeneration(),
   },
@@ -37,8 +37,8 @@ export const EXAMPLES: readonly Example[] = [
     name: 'Verulam house and cottage',
     place: 'Verulam, KwaZulu-Natal, on a steep 2,023 m² stand',
     description:
-      'A real stand traced from the municipal map and an aerial photograph: a main house on an upper terrace, laid out from measurements taken inside it, and a 9 × 9 m open-plan cottage on a lower one, with a bank between, a deck and walled garden behind the cottage, and a gravel drive in from the gate.',
-    highlights: ['A real plot', 'Two terraces', 'Open-plan cottage', 'Deck and walled garden'],
+      'A real stand traced from the municipal map and an aerial photograph: a main house on an upper terrace, laid out from measurements taken inside it, and a 9 × 9 m open-plan cottage on a lower one, with a bank between held by a wall of retaining blocks, a deck and walled garden behind the cottage, a bar in its kitchenette, and a gravel drive in from the gate.',
+    highlights: ['A real plot', 'Two terraces', 'Retaining wall', 'Open-plan cottage'],
     author: 'Fermain',
     load: async () => (await import('./verulam')).verulam(),
   },

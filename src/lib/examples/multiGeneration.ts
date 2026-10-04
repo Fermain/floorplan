@@ -54,6 +54,9 @@ export function multiGeneration(): Document {
   b.room(0, { x: 33, z: 38 }, 'Bathroom', 'bathroom')
   b.room(0, { x: 37, z: 38 }, 'Bedroom 2', 'bedroom')
   b.room(0, { x: 41, z: 38 }, 'Laundry', 'laundry')
+  // The kitchen: granite counters with the sink and a hob set into them, and an island in the middle of the room.
+  b.counters(0, { x: 40, z: 43 }, { top: 'granite', wallUnits: true, builtIn: true })
+  b.island(0, { x: 40, z: 42.75 }, { x: 1, z: 0 }, 2.2, 'granite')
 
   // A cottage, 9 × 7 m in plastered block: kitchen and bathroom to the south, living and a bedroom to the north.
   const cottage = (x0: number, z0: number) => {
@@ -74,6 +77,7 @@ export function multiGeneration(): Document {
     b.room(0, { x: x0 + 2.5, z: z0 + 1.3 }, 'Kitchenette', 'kitchen')
     b.room(0, { x: x0 + 7, z: z0 + 5 }, 'Bedroom', 'bedroom')
     b.room(0, { x: x0 + 7, z: z0 + 1.3 }, 'Shower', 'bathroom')
+    b.counters(0, { x: x0 + 2.5, z: z0 + 1.3 }, { top: 'laminate', wallUnits: true })
   }
   cottage(8, 30)
   cottage(53, 30)

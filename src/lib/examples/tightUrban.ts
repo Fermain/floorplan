@@ -37,6 +37,7 @@ export function tightUrban(): Document {
   b.room(0, { x: 2.5, z: 7 }, 'Kitchen', 'kitchen')
   b.room(0, { x: 5.75, z: 7 }, 'Hall', 'passage')
   b.room(0, { x: 3.75, z: 12.5 }, 'Living', 'living')
+  b.counters(0, { x: 2.5, z: 7 }, { top: 'laminate', wallUnits: true })
 
   // Upstairs: a landing down the east side, the bathroom at its end, the bedrooms off it.
   b.storey(0, { x: w, z: s })

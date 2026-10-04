@@ -1,3 +1,4 @@
+import { counterFace } from '../geometry/counters'
 import { suggestRoomFixtures } from '../geometry/suggest'
 import { gutterLayout } from '../geometry/gutters'
 import { placeFixture, type FixtureSetup } from '../geometry/fixtures'
@@ -9,6 +10,8 @@ import { wallSystem } from '../model/systems'
 import type {
   Carport,
   CarportRoof,
+  CounterTop,
+  RetainingType,
   Document,
   FixtureKind,
   Floor,
@@ -166,6 +169,107 @@ export class Builder {
   carport(at: Point, direction: Point, bays: Carport['bays'], roof: CarportRoof): this {
     const length = Math.hypot(direction.x, direction.z) || 1
     return this.apply(mutations.addCarport(this.doc, { x: at.x, z: at.z, dx: direction.x / length, dz: direction.z / length, bays, roof }), `carport at ${at.x}, ${at.z}`)
+  }
+
+  // A counter along the wall the room's sink stands against, with the sink set into it. It runs up to `reach`
+  // either side of the sink, stopping short of a door, the end of the wall, or a stove standing in its way.
+  // With builtIn, the room's stove becomes a hob in the worktop and the counter runs through it.
+  counters(index: number, p: Point, options: { top?: CounterTop; wallUnits?: boolean; builtIn?: boolean; reach?: number } = {}): this {
+    const cellOf = () => floorCells(this.floor(index)).find((item) => pointInCell(item.ring, p))
+    const cell = cellOf()
+    if (!cell) throw new Error(`no room at ${p.x}, ${p.z}`)
+    const inRoom = (kinds: FixtureKind[]) => (this.floor(index).fixtures ?? []).filter((item) => kinds.includes(item.kind) && pointInCell(cell.ring, item))
+    const sink = inRoom(['sink'])[0]
+    if (!sink) throw new Error(`no sink in the room at ${p.x}, ${p.z}`)
+    const behind = { x: sink.x - sink.dx * 0.25, z: sink.z - sink.dz * 0.25 }
+    if (options.builtIn) {
+      // Only a stove on the sink's own wall: one across the room stays a stove standing on its own.
+      const wallId = counterFace(this.floor(index), behind, 0.45)?.wallId
+      for (const stove of inRoom(['stove', 'gas-stove'])) {
+        const back = { x: stove.x - stove.dx * 0.25, z: stove.z - stove.dz * 0.25 }
+        if (wallId && counterFace(this.floor(index), back, 0.45)?.wallId === wallId) {
+          this.apply(mutations.updateFixture(this.doc, this.floor(index).id, stove.id, { builtIn: true }), 'built-in hob')
+        }
+      }
+    }
+    const floor = this.floor(index)
+    const face = counterFace(floor, behind, 0.45)
+    if (!face) throw new Error(`no wall behind the sink at ${sink.x}, ${sink.z}`)
+    const { dir, point } = face
+    const at = (q: Point) => (q.x - point.x) * dir.x + (q.z - point.z) * dir.z
+    const middle = at(sink)
+    const reach = options.reach ?? 1.8
+    const CORNER_M = 0.14
+    let from = Math.max(-face.before + CORNER_M, middle - reach)
+    let to = Math.min(face.after - CORNER_M, middle + reach)
+    for (const span of face.spans) {
+      if (!span.stop) continue
+      if (span.from >= middle) to = Math.min(to, span.from)
+      else from = Math.max(from, span.to)
+    }
+    // Doors in this wall, as stretches along the face.
+    const wall = floor.walls.find((item) => item.id === face.wallId)!
+    const start = cornerById(floor.corners, wall.startCornerId)!
+    const end = cornerById(floor.corners, wall.endCornerId)!
+    const length = Math.hypot(end.x - start.x, end.z - start.z)
+    const t = { x: (end.x - start.x) / length, z: (end.z - start.z) / length }
+    const way = dir.x * t.x + dir.z * t.z > 0 ? 1 : -1
+    const origin = (point.x - start.x) * t.x + (point.z - start.z) * t.z
+    let window = false
+    const stretches = wall.openings.map((opening) => {
+      const ends = [(opening.u - origin) * way, (opening.u + opening.width - origin) * way]
+      return { kind: opening.kind, from: Math.min(...ends), to: Math.max(...ends) }
+    })
+    for (const stretch of stretches) {
+      if (stretch.kind === 'window') continue
+      if (stretch.from >= middle) to = Math.min(to, stretch.from - 0.1)
+      else from = Math.max(from, stretch.to + 0.1)
+    }
+    const half = 0.6
+    from = Math.min(Math.ceil(from * 20 - 1e-6) / 20, middle - half)
+    to = Math.max(Math.floor(to * 20 + 1e-6) / 20, middle + half)
+    for (const stretch of stretches) if (stretch.kind === 'window' && stretch.to > from && stretch.from < to) window = true
+    return this.apply(
+      mutations.addCounter(this.doc, floor.id, {
+        x: point.x + dir.x * from,
+        z: point.z + dir.z * from,
+        dx: dir.x,
+        dz: dir.z,
+        length: to - from,
+        depth: 0.6,
+        kind: 'base',
+        top: options.top ?? 'laminate',
+        // No cupboards across a window.
+        ...(options.wallUnits && !window ? { wallUnits: true } : {}),
+      }),
+      `counter in the room at ${p.x}, ${p.z}`,
+    )
+  }
+
+  // An island or a bar standing free: its middle, the way it runs, its length and its worktop.
+  island(index: number, at: Point, direction: Point, length: number, top: CounterTop = 'granite', kind: 'island' | 'bar' = 'island'): this {
+    const depth = kind === 'bar' ? 0.4 : 0.9
+    const size = Math.hypot(direction.x, direction.z) || 1
+    const dir = { x: direction.x / size, z: direction.z / size }
+    const out = { x: -dir.z, z: dir.x }
+    return this.apply(
+      mutations.addCounter(this.doc, this.floor(index).id, {
+        x: at.x - (dir.x * length) / 2 - (out.x * depth) / 2,
+        z: at.z - (dir.z * length) / 2 - (out.z * depth) / 2,
+        dx: dir.x,
+        dz: dir.z,
+        length,
+        depth,
+        kind,
+        top,
+      }),
+      `island at ${at.x}, ${at.z}`,
+    )
+  }
+
+  // A retaining wall along the foot of a bank.
+  retaining(points: [number, number][], type: RetainingType): this {
+    return this.apply(mutations.addRetainingWall(this.doc, { type, points }), `retaining wall from ${points[0][0]}, ${points[0][1]}`)
   }
 
   stair(index: number, p: Point, direction: Point, width?: number): this {
