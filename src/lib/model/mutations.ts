@@ -498,8 +498,8 @@ export function removeFixture(document: Document, floorId: string, fixtureId: st
   return ok(replaceFloor(document, { ...floor, fixtures: floor.fixtures.filter((item) => item.id !== fixtureId) }))
 }
 
-// Stairs and fixtures inside the rooms that move go with them.
-function carryContents(floor: Floor, moving: Set<string>, move: (x: number, z: number) => { x: number; z: number }, turn: (dx: number, dz: number) => { x: number; z: number }): Pick<Floor, 'stairs' | 'fixtures'> {
+// Stairs, fixtures and counters inside the rooms that move go with them.
+function carryContents(floor: Floor, moving: Set<string>, move: (x: number, z: number) => { x: number; z: number }, turn: (dx: number, dz: number) => { x: number; z: number }): Pick<Floor, 'stairs' | 'fixtures' | 'counters'> {
   const rings = deriveRooms(floor)
     .filter((room) => room.cornerIds.every((id) => moving.has(id)))
     .map((room) => room.cornerIds.map((id) => floor.corners.find((corner) => corner.id === id)!))
@@ -517,9 +517,19 @@ function carryContents(floor: Floor, moving: Set<string>, move: (x: number, z: n
     const dir = turn(fixture.dx, fixture.dz)
     return { ...fixture, x: at.x, z: at.z, dx: dir.x, dz: dir.z }
   })
+  // A counter is judged by its middle, a little out from its back so that one against a wall counts as in the room.
+  const counters = floor.counters?.map((counter) => {
+    const mx = counter.x + (counter.dx * counter.length) / 2 - (counter.dz * counter.depth) / 2
+    const mz = counter.z + (counter.dz * counter.length) / 2 + (counter.dx * counter.depth) / 2
+    if (!inside(mx, mz)) return counter
+    const at = move(counter.x, counter.z)
+    const dir = turn(counter.dx, counter.dz)
+    return { ...counter, x: at.x, z: at.z, dx: dir.x, dz: dir.z }
+  })
   return {
     ...(stairs ? { stairs } : {}),
     ...(fixtures ? { fixtures } : {}),
+    ...(counters ? { counters } : {}),
   }
 }
 

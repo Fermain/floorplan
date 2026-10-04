@@ -163,7 +163,10 @@ export function fixtureSpec(kind: FixtureKind): FixtureSpec {
   return FIXTURES.find((item) => item.id === kind) ?? FIXTURES[0]
 }
 
-export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'y' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): string | null {
+// Fittings that can be built into a counter: a hob in the worktop with an oven under it.
+export const BUILT_IN: readonly FixtureKind[] = ['stove', 'gas-stove']
+
+export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'y' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn'>): string | null {
   if (!FIXTURES.some((item) => item.id === fixture.kind)) return 'unknown fixture'
   if (![fixture.x, fixture.z, fixture.dx, fixture.dz, fixture.y].every(Number.isFinite)) return 'fixture position is not a number'
   if (Math.abs(Math.hypot(fixture.dx, fixture.dz) - 1) > 1e-6) return 'fixture needs a facing direction'
@@ -173,6 +176,7 @@ export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' 
   if (bottleKg !== undefined && !BOTTLE_SIZES.includes(bottleKg)) return 'unknown gas bottle size'
   if (cage !== undefined && typeof cage !== 'boolean') return 'cage is yes or no'
   if (fixture.litres !== undefined && !TANK_SIZES.includes(fixture.litres)) return 'unknown tank size'
+  if (fixture.builtIn !== undefined && (typeof fixture.builtIn !== 'boolean' || !BUILT_IN.includes(fixture.kind))) return 'only a stove can be built in'
   return null
 }
 

@@ -518,14 +518,14 @@
         return {
           key: floor.id,
           datum,
-          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture)),
+          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture), floor.counters ?? []),
         }
       })
     const counters = floors
       .filter((floor) => (floor.counters ?? []).length > 0)
       .map((floor) => {
         const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
-        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor)) }
+        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor), floor.fixtures ?? []) }
       })
     counterMeshes = counters
     groundGeometry = ground
