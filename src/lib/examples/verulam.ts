@@ -76,7 +76,7 @@ export function verulam(): Document {
   b.walls(0, [{ x: x0 + 6, z: z0 }, { x: x0 + 6, z: z0 + 9 }], { systemId: 'block-90', skin: 'single' })
   b.walls(0, [{ x: x0 + 6, z: z0 + 3 }, { x: x0 + 9, z: z0 + 3 }], { systemId: 'block-90', skin: 'single' })
   // The rest is one open room, 6 × 9 m. The kitchenette is the 3 × 3 m in its south-east corner, against the
-  // en suite and open to the north; lines with nothing built on them mark it off. Its bar is not drawn.
+  // en suite and open to the north; lines with nothing built on them mark it off, and its bar stands along the open side.
   b.walls(0, [{ x: x0 + 3, z: z0 }, { x: x0 + 3, z: z0 + 3 }, { x: x0 + 6, z: z0 + 3 }], { skin: 'logical' })
 
   // The front gable: a window, double doors and a window. The back: double doors onto the deck, and the
@@ -98,6 +98,8 @@ export function verulam(): Document {
   b.room(0, { x: x0 + 3, z: z0 + 6 }, 'Living', 'living')
   b.room(0, { x: x0 + 7.5, z: z0 + 6 }, 'Bedroom', 'bedroom')
   b.room(0, { x: x0 + 7.5, z: z0 + 1.5 }, 'En suite', 'bathroom')
+  b.counters(0, { x: x0 + 4.5, z: z0 + 1.5 }, { top: 'laminate' })
+  b.island(0, { x: x0 + 4.6, z: z0 + 3 }, { x: 1, z: 0 }, 2, 'timber', 'bar')
 
   // The deck behind the cottage: 3 m wide and 6 m out, down the west side of the walled garden.
   const gap = 0.05
@@ -174,6 +176,7 @@ export function verulam(): Document {
   b.room(0, at(12.6, 1.5), 'Bedroom 1', 'bedroom')
   b.room(0, at(13, 6), 'Guest room', 'bedroom')
   b.room(0, at(9.2, 6.4), 'Bathroom', 'bathroom')
+  b.counters(0, at(5, 6), { top: 'granite', wallUnits: true })
   b.room(0, at(9, (HALL_W + HALL_E) / 2), 'Corridor', 'passage', false)
   b.room(0, at(9.2, HALL_E + 0.3), 'Storage', 'other', false)
 
@@ -246,6 +249,11 @@ export function verulam(): Document {
     b.apply(mutations.updateFixture(b.doc, floor().id, geyser.id, { x: x0 + 5.7, z: z0 + 3.4 }), 'geyser in the middle')
   }
   b.fixture(0, 'db-board', { x: x0 + 0.3, z: z0 + 7 }, { x: 1, z: 0 })
+
+  // The bank below the main house's terrace is held by a wall of retaining blocks, south of where the drive
+  // comes down. It holds back more than a metre, so Checks asks for an engineer, as it would on the real stand.
+  const bank = (s: number, t: number): [number, number] => [round(centre.x + u.x * s + v.x * t), round(centre.z + u.z * s + v.z * t)]
+  b.retaining([bank(3.5, -9), bank(10.5, -9)], 'blocks')
 
   // The main house has its own hot water, between the kitchen and the bathroom.
   b.fixture(0, 'solar-geyser', at(8.6, 6.4), { x: -u.x, z: -u.z })

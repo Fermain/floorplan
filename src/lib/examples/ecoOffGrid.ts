@@ -65,6 +65,8 @@ export function ecoOffGrid(): Document {
     if (fixture.kind === 'stove-isolator') b.apply(mutations.removeFixture(b.doc, floor().id, fixture.id), 'no stove isolator')
   }
   b.fixture(0, 'gas-cylinder', { x: e + 0.5, z: 57.5 }, { x: 1, z: 0 })
+  // Timber counters, with the sink and the gas hob set into them.
+  b.counters(0, { x: 45, z: 62 }, { top: 'timber', builtIn: true })
 
   // The roof slopes down to the north, its face to the sun, and carries the panels.
   b.storey(0, { x: w, z: s })

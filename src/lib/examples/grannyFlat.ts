@@ -48,6 +48,7 @@ export function grannyFlat(): Document {
   b.room(0, { x: 27, z: 23 }, 'Garage', 'garage')
   // The flat's kitchenette along the north wall of its living room.
   b.fixture(0, 'sink', { x: 16.6, z: 27.5 }, { x: 0, z: -1 })
+  b.counters(0, { x: 19, z: 25.5 }, { top: 'laminate', wallUnits: true, reach: 1.5 })
 
   // Upstairs, the main house over the same footprint, up a stair in the hall.
   b.storey(0, { x: w, z: s })
@@ -79,6 +80,7 @@ export function grannyFlat(): Document {
   b.room(1, { x: 17.75, z: 20.5 }, 'Bedroom 1', 'bedroom')
   b.room(1, { x: 21.25, z: 20.5 }, 'Bathroom', 'bathroom')
   b.room(1, { x: 27, z: 20.5 }, 'Main bedroom', 'bedroom')
+  b.counters(1, { x: 27, z: 25.5 }, { top: 'granite', wallUnits: true, builtIn: true })
 
   b.storey(1, { x: w, z: s })
   b.roof(2, { pitchDeg: 26, eaves: 0.6, form: 'hip', covering: 'concrete-tile' })
