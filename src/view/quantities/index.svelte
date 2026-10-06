@@ -154,6 +154,7 @@
                     <td class="cell" class:own>
                       <input
                         data-cell
+                        readonly={documentStore.readOnly}
                         type="text"
                         inputmode="decimal"
                         value={line.rate}
@@ -200,6 +201,7 @@
               <td class="cell w-20">
                 <input
                   data-cell
+                  readonly={documentStore.readOnly}
                   id="assumption-{field.key}"
                   type="number"
                   min="0"

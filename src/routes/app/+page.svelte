@@ -10,7 +10,7 @@
   import { Button } from '$lib/components/ui/button'
   import type { Document } from '$lib/model/types'
   import { resolve } from '$app/paths'
-  import { sectionHref } from '$lib/routes/links'
+  import { exampleHref, sectionHref } from '$lib/routes/links'
   import { deleteProject, isDocument, lastProjectId, listProjects, readProject, saveProject, type ProjectSummary } from '$lib/state/projects'
   import { session } from '$lib/state/session.svelte'
   import { EXAMPLES, type Example } from '$lib/examples'
@@ -361,7 +361,8 @@
                   </td>
                   <td class="text-muted-foreground max-md:hidden">{example.place}</td>
                   <td class="text-right whitespace-nowrap tabular-nums">{costText(costKey(example.id))}</td>
-                  <td class="text-right">
+                  <td class="text-right whitespace-nowrap">
+                    <a class="mr-3 text-muted-foreground underline-offset-2 hover:underline" href={exampleHref(example.id)} onclick={(event) => event.stopPropagation()}>Preview</a>
                     <button
                       type="button"
                       class="font-medium underline-offset-2 hover:underline disabled:opacity-50"
@@ -468,10 +469,11 @@
             <li class="rounded-sm border bg-background px-1.5 py-0.5 text-xs text-muted-foreground">{highlight}</li>
           {/each}
         </ul>
-        <div>
+        <div class="flex flex-wrap gap-2">
           <Button size="sm" disabled={opening !== null} onclick={() => void openExample(example)}>
             {opening === example.id ? 'Opening…' : 'Open a copy'}
           </Button>
+          <Button size="sm" variant="outline" href={exampleHref(example.id)}>Preview</Button>
         </div>
       {/if}
       <p class="text-muted-foreground">Projects are saved in this browser as you work. Back them up from Settings.</p>

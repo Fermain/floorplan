@@ -16,7 +16,8 @@
   import { homeHref, sectionHref, type ProjectSection } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { deleteProject, saveProject } from '$lib/state/projects'
-  import { session } from '$lib/state/session.svelte'
+  import { exampleOf, session } from '$lib/state/session.svelte'
+  import Eye from '@lucide/svelte/icons/eye'
   import { statusLine } from '$lib/state/status.svelte'
   import type { Document } from '$lib/model/types'
 
@@ -44,13 +45,30 @@
   // Whether the status bar is opened out to show a long message in full.
   let statusOpen = $state(false)
 
-  const sections: { id: ProjectSection; label: string }[] = [
+  const allSections: { id: ProjectSection; label: string }[] = [
     { id: 'plan', label: 'Plan' },
     { id: 'review', label: 'Review' },
     { id: 'quantities', label: 'Quantities' },
     { id: 'checks', label: 'Checks' },
     { id: 'project', label: 'Project' },
   ]
+  // An example is previewed, not worked on: nothing in it can be changed, so it has no settings page.
+  const viewing = $derived(ready && session.readOnly)
+  const sections = $derived(viewing ? allSections.filter((section) => section.id !== 'project') : allSections)
+  let copying = $state(false)
+
+  // A copy of the example in this browser, to work on, opened where the example was being looked at.
+  async function openCopy() {
+    const example = exampleOf(id)
+    if (!example || copying) return
+    copying = true
+    try {
+      const saved = await saveProject(null, example.name, $state.snapshot(documentStore.document) as Document)
+      if (saved.ok) await goto(sectionHref(saved.project.id, active))
+    } finally {
+      copying = false
+    }
+  }
 
   const active = $derived.by((): ProjectSection => {
     const route = page.route.id ?? ''
@@ -162,7 +180,10 @@
       <Button variant="ghost" size="icon-sm" href={homeHref()} aria-label="All projects">
         <ArrowLeft />
       </Button>
-      {#if renaming}
+      {#if viewing}
+        <span class="min-w-0 truncate px-1.5 py-0.5 text-sm font-medium">{session.project?.name ?? '…'}</span>
+        <Badge variant="secondary" class="shrink-0 gap-1 font-normal max-sm:hidden"><Eye class="size-3" />Preview</Badge>
+      {:else if renaming}
         <Input
           class="h-7 w-40 max-w-full sm:w-56"
           bind:value={nameDraft}
@@ -190,12 +211,16 @@
       {/if}
     </div>
     <div class="flex items-center justify-end gap-0.5 md:col-start-3">
-      <Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (⌘Z)" onclick={() => documentStore.undo()}>
-        <Undo2 />
-      </Button>
-      <Button variant="ghost" size="icon-sm" aria-label="Redo" title="Redo (⇧⌘Z)" onclick={() => documentStore.redo()}>
-        <Redo2 />
-      </Button>
+      {#if viewing}
+        <Button size="sm" disabled={copying} onclick={() => void openCopy()}>{copying ? 'Opening…' : 'Open a copy to edit'}</Button>
+      {:else}
+        <Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (⌘Z)" onclick={() => documentStore.undo()}>
+          <Undo2 />
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Redo" title="Redo (⇧⌘Z)" onclick={() => documentStore.redo()}>
+          <Redo2 />
+        </Button>
+      {/if}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
           {#snippet child({ props })}
@@ -205,13 +230,19 @@
           {/snippet}
         </DropdownMenu.Trigger>
         <DropdownMenu.Content align="end" class="w-52">
-          <DropdownMenu.Item onclick={startRename}>Rename</DropdownMenu.Item>
-          <DropdownMenu.Item onclick={() => void duplicate()}>Duplicate</DropdownMenu.Item>
+          {#if viewing}
+            <DropdownMenu.Item onclick={() => void openCopy()}>Open a copy to edit</DropdownMenu.Item>
+          {:else}
+            <DropdownMenu.Item onclick={startRename}>Rename</DropdownMenu.Item>
+            <DropdownMenu.Item onclick={() => void duplicate()}>Duplicate</DropdownMenu.Item>
+          {/if}
           <DropdownMenu.Separator />
           <DropdownMenu.Item onclick={exportSvg}>Export plan as SVG</DropdownMenu.Item>
           <DropdownMenu.Item onclick={exportJson}>Download project file</DropdownMenu.Item>
-          <DropdownMenu.Separator />
-          <DropdownMenu.Item variant="destructive" onclick={() => void remove()}>Delete project</DropdownMenu.Item>
+          {#if !viewing}
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item variant="destructive" onclick={() => void remove()}>Delete project</DropdownMenu.Item>
+          {/if}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     </div>

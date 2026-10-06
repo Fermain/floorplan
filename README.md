@@ -8,7 +8,7 @@ Floorplan is a design tool for small, low-cost houses in South Africa. You draw 
 
 ![A face-brick farmhouse with solar panels, a painted cottage and a carport, seen in the 3D Review](static/shots/review.jpg)
 
-*Most of the pictures show the **Multi generation farmhouse**, one of the examples that come with the app: a face-brick family house between two painted cottages, with a double garage, two carports, solar panels, rainwater tanks, a septic tank and paving. Open a copy from the app's project list to look round it.*
+*Most of the pictures show the **Multi generation farmhouse**, one of the examples that come with the app: a face-brick family house between two painted cottages, with a double garage, two carports, solar panels, rainwater tanks, a septic tank and paving. Open a copy from the app's project list to look round it. Each example can also be previewed read-only on the site, at `/examples/<id>`, without making a copy.*
 
 > [!IMPORTANT]
 > Floorplan helps you think through a design and get a rough idea of its cost. It does not replace an architect, an engineer or plan approval. Rates are examples, not quotes. The checks are a guide to SANS 10400 and must be confirmed against the standard.

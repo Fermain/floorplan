@@ -2,6 +2,8 @@
   import { asset, resolve } from '$app/paths'
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import { Button } from '$lib/components/ui/button'
+  import { EXAMPLES } from '$lib/examples'
+  import { exampleHref } from '$lib/routes/links'
 
   const REPO = 'https://github.com/Fermain/floorplan'
   const app = resolve('/app')
@@ -159,11 +161,22 @@
           <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Examples</p>
           <h2 id="examples-heading" class="text-xl font-semibold tracking-tight text-balance">Start from a finished house.</h2>
           <p class="text-sm text-muted-foreground">
-            Five example projects come with the app, from a tight city house to the multi generation farmhouse in these
+            Six example projects come with the app, from a tight city house to the multi generation farmhouse in these
             pictures: three homes, a garage and two carports, with solar, rainwater, a septic tank, paving and paint.
-            Open a copy and change it, or start from an empty plot.
+            Preview any of them here, in the plan, in 3D and down to the bill of quantities, then open a copy
+            and change it.
           </p>
-          <div><Button variant="outline" href={app}>See the examples<ArrowRight /></Button></div>
+          <ul class="grid border-t text-sm">
+            {#each EXAMPLES as example (example.id)}
+              <li class="border-b">
+                <a class="flex items-baseline justify-between gap-3 py-1.5 hover:bg-muted" href={exampleHref(example.id)}>
+                  <span class="font-medium">{example.name}</span>
+                  <span class="truncate text-xs text-muted-foreground">{example.place}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+          <div><Button variant="outline" href={app}>See them in the app<ArrowRight /></Button></div>
         </div>
         <img class="w-full rounded-md border shadow-sm" src={asset('/shots/home.jpg')} width="1456" height="771" loading="lazy" alt="The project picker, with the examples listed beside a preview and an estimate for each" />
       </div>

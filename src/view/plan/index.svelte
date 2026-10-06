@@ -1120,6 +1120,8 @@
 
   function onSvgPointerMove(event: PointerEvent) {
     if (movePan(event)) return
+    // Nothing is dragged about in an example being previewed.
+    if (documentStore.readOnly && event.buttons !== 0) return
     const svg = svgEl
     if (!svg) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
@@ -1342,7 +1344,9 @@
     return () => window.removeEventListener('keydown', onShiftKey)
   })
 
-  function setTool(next: Tool) {
+  function setTool(chosen: Tool) {
+    // An example being previewed can be picked over but not drawn on.
+    const next = documentStore.readOnly ? 'select' : chosen
     tool = next
     pavingDraft = []
     pendingDraw = null
@@ -2596,7 +2600,7 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3">
+  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3" class:hidden={documentStore.readOnly}>
     <ToggleGroup.Root
       type="single"
       variant="outline"
@@ -2807,7 +2811,7 @@
       <Button
         variant="outline"
         size="sm"
-        class="shrink-0"
+        class="shrink-0 {documentStore.readOnly ? 'hidden' : ''}"
         disabled={!storeyTarget || atStoreyLimit}
         title={!storeyTarget
           ? 'Select a closed building first.'
@@ -2819,7 +2823,7 @@
         <Plus />Storey
       </Button>
       {#if storeyUnitId}
-        <Button variant="ghost" size="sm" class="shrink-0 text-muted-foreground" onclick={removeStorey}>
+        <Button variant="ghost" size="sm" class="shrink-0 text-muted-foreground {documentStore.readOnly ? 'hidden' : ''}" onclick={removeStorey}>
           <Minus />Remove
         </Button>
       {/if}
@@ -3871,7 +3875,7 @@
         <FittingSetup floorId={chosenFixture.floorId} fixture={chosenFixture.fixture} onresult={applyResult} />
         <div class="grid gap-2">
           {#if chosenFixture.onWall}
-            <Button variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
+            <Button data-look variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
           {/if}
           <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
         </div>

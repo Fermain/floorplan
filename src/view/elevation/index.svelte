@@ -824,6 +824,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     const uv = uvFromEvent(event)
     if (!uv) return
     readout = uv
+    // Nothing is dragged about in an example being previewed.
+    if (documentStore.readOnly && event.buttons !== 0) return
 
     const fitting = fittingAt(uv.u, uv.v)
     if (fitting) {
@@ -1119,7 +1121,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     <p class="empty">No wall selected</p>
   {:else}
     {#if logical}
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm" class:hidden={documentStore.readOnly}>
         <div class="flex min-w-0 items-center gap-2">
           <span class="text-muted-foreground">Fence</span>
           <Select.Root type="single" value={fence?.type ?? 'none'} onValueChange={chooseFence}>
@@ -1208,7 +1210,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       {/if}
       </div>
     {:else}
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-1.5 text-sm" class:hidden={documentStore.readOnly}>
       <ToggleGroup.Root
         type="single"
         variant="outline"

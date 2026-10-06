@@ -6,6 +6,11 @@ export function homeHref(): string {
   return resolve('/app')
 }
 
+// An example opened read-only, in Review, where it shows best.
+export function exampleHref(exampleId: string): string {
+  return resolve('/app/p/[id]/review', { id: `example-${exampleId}` })
+}
+
 export function planHref(id: string, storey = 0, room?: string): string {
   const base =
     storey > 0
