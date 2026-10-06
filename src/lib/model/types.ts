@@ -309,7 +309,13 @@ export type Document = {
   paving?: PavingArea[]
   carports?: Carport[]
   retaining?: RetainingWall[]
+  // The house as it stood when it was marked as built. With one, the project is an alteration to that house:
+  // what is drawn is compared with it, and only the difference is priced.
+  baseline?: Baseline
 }
+
+// The house as built: the whole project at the moment it was marked, and when that was.
+export type Baseline = { at: number; document: Omit<Document, 'baseline'> }
 
 export type DerivedRoom = {
   cornerIds: string[]

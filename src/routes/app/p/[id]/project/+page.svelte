@@ -12,6 +12,7 @@
   import TrimPicker from '$lib/components/project/TrimPicker.svelte'
   import InfoTip from '$lib/components/project/InfoTip.svelte'
   import ApronPicker from '$lib/components/project/ApronPicker.svelte'
+  import AsBuilt from '$lib/components/project/AsBuilt.svelte'
   import FinishPicker from '$lib/components/project/FinishPicker.svelte'
   import { projectDefaults } from '$lib/model/defaults'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
@@ -254,6 +255,7 @@
       {/if}
     </aside>
     <div class="min-h-0 flex-1 bg-background lg:overflow-auto">
+      <AsBuilt onmessage={(text) => (defaultsMessage = text)} />
       <div class="flex items-center gap-1.5 border-b px-3 py-1.5 text-sm">
         <h2 class="font-semibold">Defaults</h2>
         <InfoTip label="About the defaults">

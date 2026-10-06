@@ -140,6 +140,8 @@ The page is a sheet. Type your own rate over any example rate; Enter and the arr
 
 <img src="static/shots/quantities.jpg" alt="The quantities sheet: masonry, mortar and lintel lines with rates, amounts and an estimated total" width="100%">
 
+**Alterations.** Draw the house as it stands and mark it as built on the Project page. What you change after that is picked out on the plan, new walls in green and walls taken down in red, and Quantities prices only the difference and the breaking out: walls taken down, openings cut into standing walls or bricked up, and fittings taken out. The whole house can still be priced beside it.
+
 ### Checks
 
 The **Checks** page measures each habitable room against SANS 10400 deemed-to-satisfy rules:

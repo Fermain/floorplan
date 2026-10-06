@@ -1100,6 +1100,27 @@ export function removeCounter(document: Document, floorId: string, id: string): 
   return ok(replaceFloor(document, rest))
 }
 
+// Mark the house as it is drawn now as the house as built. From here on the project is an alteration to it.
+export function markAsBuilt(document: Document, at: number): MutationResult {
+  if (!document.building.floors.some((floor) => floor.walls.some((wall) => wall.skin !== 'logical'))) return fail(document, 'draw the house as it stands first')
+  const { baseline: _old, ...now } = document
+  return ok({ ...now, baseline: { at, document: structuredClone(now) } })
+}
+
+// Forget the house as built: the project is a new house again, priced whole.
+export function clearBaseline(document: Document): MutationResult {
+  if (!document.baseline) return fail(document, 'nothing is marked as built')
+  const { baseline: _gone, ...rest } = document
+  return ok(rest)
+}
+
+// Put the drawing back to the house as built, keeping it marked.
+export function revertToBuilt(document: Document): MutationResult {
+  const baseline = document.baseline
+  if (!baseline) return fail(document, 'nothing is marked as built')
+  return ok({ ...structuredClone(baseline.document), baseline })
+}
+
 export function addRetainingWall(document: Document, wall: Omit<RetainingWall, 'id'>): MutationResult {
   const problem = retainingProblem(document, wall)
   if (problem) return fail(document, problem)

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { GROUP_ORDER, quantitiesCsv, takeoff, totalCost, type QuantityLine } from '../../lib/cost/quantities'
+  import { alterationTakeoff, GROUP_ORDER, quantitiesCsv, takeoff, totalCost, type QuantityLine } from '../../lib/cost/quantities'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { assumptionsOf, rateIsDefault } from '../../lib/cost/rates'
   import type { CostAssumptions } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
@@ -10,7 +11,11 @@
   import { Button } from '$lib/components/ui/button'
 
   const doc = $derived(documentStore.document)
-  const lines = $derived(takeoff(doc))
+  // A house marked as built is priced by what has changed, unless the whole house is asked for.
+  let scope = $state<'changes' | 'whole'>('changes')
+  const changed = $derived(alterationTakeoff(doc))
+  const altering = $derived(changed !== null && scope === 'changes')
+  const lines = $derived(altering && changed ? changed : takeoff(doc))
   const total = $derived(totalCost(lines))
   const assumptions = $derived(assumptionsOf(doc.costing))
 
@@ -92,16 +97,27 @@
 <div class="flex h-full flex-col">
   <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-1.5 text-sm">
     <p>
-      <span class="text-muted-foreground">Estimated total</span>
+      <span class="text-muted-foreground">{altering ? 'Estimate for the alterations' : 'Estimated total'}</span>
       <span class="ml-1 text-base font-semibold tabular-nums">R {money.format(total)}</span>
       {#if edited > 0}
         <span class="ml-2 text-muted-foreground">{edited} {edited === 1 ? 'rate' : 'rates'} of your own</span>
       {/if}
     </p>
-    <Button variant="outline" size="sm" onclick={downloadCsv} disabled={lines.length === 0}>
-      <Download />Download CSV
-    </Button>
+    <div class="flex flex-wrap items-center gap-2">
+      {#if changed !== null}
+        <ToggleGroup.Root type="single" variant="outline" size="sm" value={scope} onValueChange={(next) => next && (scope = next as 'changes' | 'whole')} aria-label="What is priced">
+          <ToggleGroup.Item value="changes" title="Only what differs from the house as built, and the breaking out">Alterations</ToggleGroup.Item>
+          <ToggleGroup.Item value="whole" title="The house as drawn, as if built new">Whole house</ToggleGroup.Item>
+        </ToggleGroup.Root>
+      {/if}
+      <Button variant="outline" size="sm" onclick={downloadCsv} disabled={lines.length === 0}>
+        <Download />Download CSV
+      </Button>
+    </div>
   </div>
+  {#if altering && lines.length === 0}
+    <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Nothing has changed from the house as built, so there is nothing to price yet.</p>
+  {/if}
   <div class="flex min-h-0 flex-1 flex-col max-lg:overflow-auto lg:flex-row">
     <div class="min-h-0 flex-1 bg-background max-lg:flex-none lg:overflow-auto" data-sheet>
       {#if lines.length === 0}

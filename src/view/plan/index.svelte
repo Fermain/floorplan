@@ -80,6 +80,9 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
+  import { alterations } from '../../lib/geometry/alterations'
+  import GitCompare from '@lucide/svelte/icons/git-compare'
+  import { Toggle } from '$lib/components/ui/toggle'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
@@ -207,6 +210,19 @@
   let selectedRetaining = $state<string | null>(null)
   let retainingType = $state<RetainingType>('blocks')
   let retainingDraft = $state<{ x: number; z: number }[]>([])
+  // A house marked as built: whether what has changed since is picked out on the plan.
+  let showChanges = $state(true)
+  const changes = $derived.by(() => (showChanges ? alterations(document) : null))
+  const changesHere = $derived(
+    changes
+      ? {
+          built: changes.built.filter((piece) => piece.floorIndex === activeStoreyIndex),
+          demolished: changes.demolished.filter((piece) => piece.floorIndex === activeStoreyIndex),
+          cut: changes.cut.filter((opening) => opening.floorIndex === activeStoreyIndex),
+          closed: changes.closed.filter((opening) => opening.floorIndex === activeStoreyIndex),
+        }
+      : null,
+  )
   // Carports: the one picked, and the size, roof and turn of the next one to be placed.
   let selectedCarport = $state<string | null>(null)
   let carportBays = $state<Carport['bays']>(2)
@@ -2793,6 +2809,11 @@
         </div>
       {/if}
     {/if}
+    {#if document.baseline}
+      <Toggle size="sm" variant="outline" bind:pressed={showChanges} aria-label="Show changes" title="Pick out what has changed from the house as built: new in green, taken down in red">
+        <GitCompare />Changes
+      </Toggle>
+    {/if}
     {#if deletable}
       <Button
         variant="ghost"
@@ -3378,6 +3399,24 @@
               </text>
             {/each}
           {/if}
+        </g>
+      {/if}
+      {#if changesHere}
+        <!-- Against the house as built: new wall in green, wall taken down in dashed red, openings cut and closed. -->
+        <g class="changes" pointer-events="none">
+          {#each changesHere.demolished as piece, i (i)}
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#fecaca" stroke-opacity="0.7" stroke-width={piece.thickness} />
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#dc2626" stroke-width={s(0.035)} stroke-dasharray={dash(0.18, 0.12)} />
+          {/each}
+          {#each changesHere.built as piece, i (i)}
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#16a34a" stroke-opacity="0.75" stroke-width={piece.thickness} />
+          {/each}
+          {#each changesHere.cut as opening, i (i)}
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#16a34a" stroke="#ffffff" stroke-width={s(0.03)} />
+          {/each}
+          {#each changesHere.closed as opening, i (i)}
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#dc2626" stroke="#ffffff" stroke-width={s(0.03)} />
+          {/each}
         </g>
       {/if}
       <g class="fixtures" pointer-events="none">
