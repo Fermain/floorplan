@@ -81,6 +81,7 @@
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
+  import { view as shown, workspace } from '../../lib/state/workspace.svelte'
   import GitCompare from '@lucide/svelte/icons/git-compare'
   import { Toggle } from '$lib/components/ui/toggle'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
@@ -211,8 +212,7 @@
   let retainingType = $state<RetainingType>('blocks')
   let retainingDraft = $state<{ x: number; z: number }[]>([])
   // A house marked as built: whether what has changed since is picked out on the plan.
-  let showChanges = $state(true)
-  const changes = $derived.by(() => (showChanges ? alterations(document) : null))
+  const changes = $derived.by(() => (shown.showChanges ? alterations(document) : null))
   const changesHere = $derived(
     changes
       ? {
@@ -2454,6 +2454,17 @@
     }
   })
 
+  // While the plan is open, the menubar can reach its tools, its zoom and what Delete would remove.
+  $effect(() =>
+    workspace.openPlan({
+      tool: () => (tool === 'draw-rect' ? 'draw-double' : tool),
+      setTool: (next) => setTool(next as Tool),
+      zoomBy,
+      fit: fitView,
+      deletable: () => deletable,
+    }),
+  )
+
   $effect(() => {
     const action = deletable
     if (!action) return
@@ -2810,7 +2821,7 @@
       {/if}
     {/if}
     {#if document.baseline}
-      <Toggle size="sm" variant="outline" bind:pressed={showChanges} aria-label="Show changes" title="Pick out what has changed from the house as built: new in green, taken down in red">
+      <Toggle size="sm" variant="outline" bind:pressed={shown.showChanges} aria-label="Show changes" title="Pick out what has changed from the house as built: new in green, taken down in red">
         <GitCompare />Changes
       </Toggle>
     {/if}

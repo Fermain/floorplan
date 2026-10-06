@@ -18,6 +18,8 @@
   import { deleteProject, saveProject } from '$lib/state/projects'
   import { exampleOf, session } from '$lib/state/session.svelte'
   import Eye from '@lucide/svelte/icons/eye'
+  import ProjectMenubar from '$lib/components/app/ProjectMenubar.svelte'
+  import SettingsDialog from '$lib/components/app/SettingsDialog.svelte'
   import { statusLine } from '$lib/state/status.svelte'
   import type { Document } from '$lib/model/types'
 
@@ -56,6 +58,7 @@
   const viewing = $derived(ready && session.readOnly)
   const sections = $derived(viewing ? allSections.filter((section) => section.id !== 'project') : allSections)
   let copying = $state(false)
+  let settingsOpen = $state(false)
 
   // A copy of the example in this browser, to work on, opened where the example was being looked at.
   async function openCopy() {
@@ -263,6 +266,15 @@
       {/each}
     </nav>
   </header>
+  <!-- The menubar: the same actions as the controls round it, under familiar headings. -->
+  <div class="z-10 border-b bg-background px-1.5">
+    <ProjectMenubar
+      {id}
+      {active}
+      {viewing}
+      actions={{ rename: startRename, duplicate: () => void duplicate(), exportSvg, exportJson, remove: () => void remove(), openCopy: () => void openCopy(), settings: () => (settingsOpen = true) }}
+    />
+  </div>
   <main class="relative min-h-0 flex-1">
     <div class="h-full min-h-0">
       {#if ready}
@@ -297,3 +309,4 @@
     </footer>
   {/if}
 </div>
+<SettingsDialog bind:open={settingsOpen} />

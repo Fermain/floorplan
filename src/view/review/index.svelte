@@ -3,6 +3,7 @@
   import Snowflake from '@lucide/svelte/icons/snowflake'
   import Sun from '@lucide/svelte/icons/sun'
   import Scan from '@lucide/svelte/icons/scan'
+  import { view } from '../../lib/state/workspace.svelte'
   import { Toggle } from '$lib/components/ui/toggle'
   import { runLength, SERVICE_KINDS, serviceRuns } from '../../lib/geometry/serviceRuns'
   import { Separator } from '$lib/components/ui/separator'
@@ -85,13 +86,10 @@
     { value: 'half', label: 'Half walls' },
     { value: 'hidden', label: 'No walls' },
   ]
-  let cutaway = $state('box-near')
-  const chosenCut = $derived(CUTAWAYS.find((item) => item.value === cutaway) ?? CUTAWAYS[1])
-  let walls = $state<WallView>('full')
+  const chosenCut = $derived(CUTAWAYS.find((item) => item.value === view.cutaway) ?? CUTAWAYS[1])
   // Services: the building fades and the pipes and cables in it are drawn.
-  let xray = $state(false)
   const serviceLegend = $derived.by(() => {
-    if (!xray) return []
+    if (!view.xray) return []
     const runs = serviceRuns(documentStore.document)
     return SERVICE_KINDS.map((kind) => ({ ...kind, length: runs.filter((run) => run.kind === kind.id).reduce((sum, run) => sum + runLength(run), 0) })).filter((kind) => kind.length > 0)
   })
@@ -139,7 +137,7 @@
       <span class="shrink-0 tabular-nums">{String(hour).padStart(2, '0')}:00 SAST</span>
     </label>
     <div class="flex flex-wrap items-center gap-2">
-      <Select.Root type="single" bind:value={cutaway}>
+      <Select.Root type="single" value={view.cutaway} onValueChange={(next) => next && (view.cutaway = next as typeof view.cutaway)}>
         <Select.Trigger size="sm" class="w-32" aria-label="Cutaway" title="Cut away what is close in front of the camera as you zoom in">
           {chosenCut.label}
         </Select.Trigger>
@@ -149,8 +147,8 @@
           {/each}
         </Select.Content>
       </Select.Root>
-      <Select.Root type="single" value={walls} onValueChange={(next) => next && (walls = next as WallView)}>
-        <Select.Trigger size="sm" class="w-28" aria-label="Walls">{WALL_VIEWS.find((item) => item.value === walls)?.label}</Select.Trigger>
+      <Select.Root type="single" value={view.walls} onValueChange={(next) => next && (view.walls = next as WallView)}>
+        <Select.Trigger size="sm" class="w-28" aria-label="Walls">{WALL_VIEWS.find((item) => item.value === view.walls)?.label}</Select.Trigger>
         <Select.Content>
           {#each WALL_VIEWS as item (item.value)}
             <Select.Item value={item.value} label={item.label} />
@@ -168,11 +166,11 @@
           </Select.Content>
         </Select.Root>
       {/if}
-      <Toggle size="sm" variant="outline" bind:pressed={xray} aria-label="Show services" title="Fade the building to show the pipes and cables in it">
+      <Toggle size="sm" variant="outline" bind:pressed={view.xray} aria-label="Show services" title="Fade the building to show the pipes and cables in it">
         <Scan />Services
       </Toggle>
     </div>
-    {#if xray}
+    {#if view.xray}
       <div class="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
         {#each serviceLegend as kind (kind.id)}
           <span class="flex items-center gap-1.5">
@@ -188,7 +186,7 @@
     {/if}
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} {walls} upTo={upTo === 'all' ? null : Number(upTo)} {xray} />
+    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={upTo === 'all' ? null : Number(upTo)} xray={view.xray} />
   </div>
 </div>
 
