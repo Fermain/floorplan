@@ -4,6 +4,7 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { setMode, userPrefersMode } from 'mode-watcher'
+  import MenuIcon from '@lucide/svelte/icons/menu'
   import * as Menubar from '$lib/components/ui/menubar'
   import { quantitiesCsv, takeoff } from '$lib/cost/quantities'
   import { alterations } from '$lib/geometry/alterations'
@@ -23,10 +24,14 @@
     openCopy: () => void
     settings: () => void
   }
-  let { id, active, viewing, actions }: { id: string; active: ProjectSection; viewing: boolean; actions: Actions } = $props()
+  // Compact, it is one button holding the same menus, for a narrow screen.
+  let { id, active, viewing, actions, compact = false }: { id: string; active: ProjectSection; viewing: boolean; actions: Actions; compact?: boolean } = $props()
 
   const doc = $derived(documentStore.document)
   const plan = $derived(workspace.plan)
+  const focus = $derived(workspace.focus)
+  // The storeys with walls on them, which Review can lift the upper ones off.
+  const built = $derived([...new Set(doc.building.floors.filter((floor) => floor.walls.length > 0).map((floor) => floor.index))].sort((a, b) => a - b))
   const onPlan = $derived(active === 'plan' && plan !== null)
   const deletable = $derived(plan?.deletable() ?? null)
   const changes = $derived(alterations(doc))
@@ -60,10 +65,7 @@
   }
 </script>
 
-<Menubar.Root class="h-7 rounded-none border-0 p-0 text-[13px]">
-  <Menubar.Menu>
-    <Menubar.Trigger class="h-7 px-2 font-normal">File</Menubar.Trigger>
-    <Menubar.Content class="min-w-56">
+{#snippet fileItems()}
       <Menubar.Item onSelect={() => void goto(resolve('/app/new'))}>New project…</Menubar.Item>
       <Menubar.Item onSelect={() => void goto(homeHref())}>All projects and examples</Menubar.Item>
       <Menubar.Separator />
@@ -88,13 +90,9 @@
         <Menubar.Separator />
         <Menubar.Item variant="destructive" onSelect={actions.remove}>Delete project…</Menubar.Item>
       {/if}
-    </Menubar.Content>
-  </Menubar.Menu>
+{/snippet}
 
-  {#if !viewing}
-    <Menubar.Menu>
-      <Menubar.Trigger class="h-7 px-2 font-normal">Edit</Menubar.Trigger>
-      <Menubar.Content class="min-w-56">
+{#snippet editItems()}
         <Menubar.Item onSelect={() => documentStore.undo()}>Undo<Menubar.Shortcut>⌘Z</Menubar.Shortcut></Menubar.Item>
         <Menubar.Item onSelect={() => documentStore.redo()}>Redo<Menubar.Shortcut>⇧⌘Z</Menubar.Shortcut></Menubar.Item>
         <Menubar.Separator />
@@ -114,13 +112,9 @@
         {:else}
           <Menubar.Item onSelect={() => documentStore.markAsBuilt(Date.now())}>Mark the house as built</Menubar.Item>
         {/if}
-      </Menubar.Content>
-    </Menubar.Menu>
-  {/if}
+{/snippet}
 
-  <Menubar.Menu>
-    <Menubar.Trigger class="h-7 px-2 font-normal">View</Menubar.Trigger>
-    <Menubar.Content class="min-w-56">
+{#snippet viewItems()}
       <Menubar.RadioGroup value={active} onValueChange={(next) => void goto(sectionHref(id, next as ProjectSection))}>
         {#each viewing ? sections.filter((section) => section.id !== 'project') : sections as section (section.id)}
           <Menubar.RadioItem value={section.id} closeOnSelect>{section.label}</Menubar.RadioItem>
@@ -169,6 +163,26 @@
           </Menubar.RadioGroup>
         </Menubar.SubContent>
       </Menubar.Sub>
+      {#if built.length > 1}
+        <Menubar.Sub>
+          <Menubar.SubTrigger inset>Storeys shown</Menubar.SubTrigger>
+          <Menubar.SubContent>
+            <Menubar.RadioGroup value={view.upTo} onValueChange={(next) => (view.upTo = next)}>
+              <Menubar.RadioItem value="all">Whole house</Menubar.RadioItem>
+              {#each built as index (index)}
+                <Menubar.RadioItem value={String(index)}>{index === 0 ? 'Ground floor only' : `Up to storey ${index + 1}`}</Menubar.RadioItem>
+              {/each}
+            </Menubar.RadioGroup>
+          </Menubar.SubContent>
+        </Menubar.Sub>
+      {/if}
+      {#if focus}
+        <Menubar.Separator />
+        <Menubar.Label inset class="text-xs font-normal text-muted-foreground">Focus</Menubar.Label>
+        <Menubar.CheckboxItem bind:checked={() => !focus.square(), (next) => focus.setSquare(!next)}>In perspective</Menubar.CheckboxItem>
+        <Menubar.Item inset disabled={!focus.flip} onSelect={() => focus.flip?.()}>See the other face<Menubar.Shortcut>F</Menubar.Shortcut></Menubar.Item>
+        <Menubar.Item inset disabled={!focus.exit} onSelect={() => focus.exit?.()}>Back to the plan<Menubar.Shortcut>Esc</Menubar.Shortcut></Menubar.Item>
+      {/if}
       <Menubar.Separator />
       <Menubar.Sub>
         <Menubar.SubTrigger inset>Theme</Menubar.SubTrigger>
@@ -181,13 +195,18 @@
         </Menubar.SubContent>
       </Menubar.Sub>
       <Menubar.CheckboxItem bind:checked={() => settings.hints, (next) => settings.set({ hints: next })}>Tips in the status bar</Menubar.CheckboxItem>
-    </Menubar.Content>
-  </Menubar.Menu>
+{/snippet}
 
-  {#if !viewing}
-    <Menubar.Menu>
-      <Menubar.Trigger class="h-7 px-2 font-normal">Draw</Menubar.Trigger>
-      <Menubar.Content class="min-w-48">
+{#snippet drawItems()}
+        {#if focus && !viewing}
+          <Menubar.Label inset class="text-xs font-normal text-muted-foreground">On this wall</Menubar.Label>
+          <Menubar.RadioGroup value={focus.mode()} onValueChange={(next) => focus.setMode(next as 'select' | 'place')}>
+            <Menubar.RadioItem value="select" closeOnSelect>Select<Menubar.Shortcut>V</Menubar.Shortcut></Menubar.RadioItem>
+            <Menubar.RadioItem value="place" closeOnSelect>Place a window, door or fitting<Menubar.Shortcut>P</Menubar.Shortcut></Menubar.RadioItem>
+          </Menubar.RadioGroup>
+          <Menubar.Separator />
+          <Menubar.Label inset class="text-xs font-normal text-muted-foreground">On the plan</Menubar.Label>
+        {/if}
         <Menubar.RadioGroup value={onPlan ? (plan?.tool() ?? '') : ''} onValueChange={(next) => draw(next)}>
           {#each PLAN_TOOLS as tool, i (tool.value)}
             {#if i === 1 || i === 4 || i === 8}<Menubar.Separator />{/if}
@@ -196,18 +215,85 @@
             </Menubar.RadioItem>
           {/each}
         </Menubar.RadioGroup>
-      </Menubar.Content>
-    </Menubar.Menu>
-  {/if}
+{/snippet}
 
-  <Menubar.Menu>
-    <Menubar.Trigger class="h-7 px-2 font-normal">Help</Menubar.Trigger>
-    <Menubar.Content class="min-w-52">
+{#snippet helpItems()}
       <Menubar.Item onSelect={() => void goto(resolve('/'))}>About Floorplan</Menubar.Item>
       <Menubar.Item onSelect={() => window.open('https://github.com/Fermain/floorplan', '_blank', 'noopener')}>Source on GitHub</Menubar.Item>
       <Menubar.Item onSelect={() => window.open('https://github.com/Fermain/floorplan/issues', '_blank', 'noopener')}>Report a problem</Menubar.Item>
       <Menubar.Separator />
       <Menubar.Label class="font-normal text-muted-foreground">Version {version}</Menubar.Label>
-    </Menubar.Content>
-  </Menubar.Menu>
-</Menubar.Root>
+{/snippet}
+
+{#snippet menus(sub: boolean)}
+  {#if sub}
+    <Menubar.Sub>
+      <Menubar.SubTrigger>File</Menubar.SubTrigger>
+      <Menubar.SubContent class="min-w-56">{@render fileItems()}</Menubar.SubContent>
+    </Menubar.Sub>
+  {:else}
+    <Menubar.Menu>
+      <Menubar.Trigger class="h-7 px-2 font-normal">File</Menubar.Trigger>
+      <Menubar.Content class="min-w-56">{@render fileItems()}</Menubar.Content>
+    </Menubar.Menu>
+  {/if}
+  {#if !viewing}
+  {#if sub}
+    <Menubar.Sub>
+      <Menubar.SubTrigger>Edit</Menubar.SubTrigger>
+      <Menubar.SubContent class="min-w-56">{@render editItems()}</Menubar.SubContent>
+    </Menubar.Sub>
+  {:else}
+    <Menubar.Menu>
+      <Menubar.Trigger class="h-7 px-2 font-normal">Edit</Menubar.Trigger>
+      <Menubar.Content class="min-w-56">{@render editItems()}</Menubar.Content>
+    </Menubar.Menu>
+  {/if}
+  {/if}
+  {#if sub}
+    <Menubar.Sub>
+      <Menubar.SubTrigger>View</Menubar.SubTrigger>
+      <Menubar.SubContent class="min-w-56">{@render viewItems()}</Menubar.SubContent>
+    </Menubar.Sub>
+  {:else}
+    <Menubar.Menu>
+      <Menubar.Trigger class="h-7 px-2 font-normal">View</Menubar.Trigger>
+      <Menubar.Content class="min-w-56">{@render viewItems()}</Menubar.Content>
+    </Menubar.Menu>
+  {/if}
+  {#if !viewing}
+  {#if sub}
+    <Menubar.Sub>
+      <Menubar.SubTrigger>Draw</Menubar.SubTrigger>
+      <Menubar.SubContent class="min-w-48">{@render drawItems()}</Menubar.SubContent>
+    </Menubar.Sub>
+  {:else}
+    <Menubar.Menu>
+      <Menubar.Trigger class="h-7 px-2 font-normal">Draw</Menubar.Trigger>
+      <Menubar.Content class="min-w-48">{@render drawItems()}</Menubar.Content>
+    </Menubar.Menu>
+  {/if}
+  {/if}
+  {#if sub}
+    <Menubar.Sub>
+      <Menubar.SubTrigger>Help</Menubar.SubTrigger>
+      <Menubar.SubContent class="min-w-52">{@render helpItems()}</Menubar.SubContent>
+    </Menubar.Sub>
+  {:else}
+    <Menubar.Menu>
+      <Menubar.Trigger class="h-7 px-2 font-normal">Help</Menubar.Trigger>
+      <Menubar.Content class="min-w-52">{@render helpItems()}</Menubar.Content>
+    </Menubar.Menu>
+  {/if}
+{/snippet}
+
+{#if compact}
+  <Menubar.Root class="h-8 rounded-none border-0 p-0">
+    <Menubar.Menu>
+      <Menubar.Trigger class="size-8 justify-center p-0" aria-label="Menu"><MenuIcon class="size-4" /></Menubar.Trigger>
+      <Menubar.Content align="end" class="min-w-44">{@render menus(true)}</Menubar.Content>
+    </Menubar.Menu>
+  </Menubar.Root>
+{:else}
+  <Menubar.Root class="h-7 rounded-none border-0 p-0 text-[13px]">{@render menus(false)}</Menubar.Root>
+{/if}

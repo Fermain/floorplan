@@ -82,8 +82,6 @@
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
   import { view as shown, workspace } from '../../lib/state/workspace.svelte'
-  import GitCompare from '@lucide/svelte/icons/git-compare'
-  import { Toggle } from '$lib/components/ui/toggle'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
@@ -2819,11 +2817,6 @@
           <Button variant="outline" size="icon-sm" title="Bigger (+)" aria-label="Bigger" onclick={() => stepPlaceSize(1)}><Plus /></Button>
         </div>
       {/if}
-    {/if}
-    {#if document.baseline}
-      <Toggle size="sm" variant="outline" bind:pressed={shown.showChanges} aria-label="Show changes" title="Pick out what has changed from the house as built: new in green, taken down in red">
-        <GitCompare />Changes
-      </Toggle>
     {/if}
     {#if deletable}
       <Button

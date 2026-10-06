@@ -63,6 +63,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { supportingFloor } from '../../lib/model/stories'
   import { bottleSetup, EITHER_SIDE, FIXTURES, tankLitres, fitFixtureY, fixtureSize, fixtureSpec, indoorBottles } from '../../lib/model/fixtures'
   import { groundLine, type GroundLine } from '../../lib/geometry/groundLine'
+  import { workspace } from '../../lib/state/workspace.svelte'
   import { buildCounterParts, countersOnWall, type CounterPart } from '../../lib/geometry/counters'
   import { buildFixtureParts, finishedFloor, fixtureOnFace, fixtureStandAboveDatum, fixturesOnWall, TANK_SNAP_M, type FixturePart } from '../../lib/geometry/fixtures'
   import {
@@ -170,6 +171,18 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   const reversed = $derived(viewReversed(side))
   const viewFace = $derived(faces?.find((face) => face.side === side) ?? null)
   const farFace = $derived(faces?.find((face) => face.side !== side) ?? null)
+
+  // While a wall is open in Focus, the menubar can reach its tools and how it is seen.
+  $effect(() =>
+    workspace.openFocus({
+      mode: () => mode,
+      setMode: (next) => (mode = next),
+      square: () => locked,
+      setSquare: (next) => (locked = next),
+      flip: viewFace && farFace ? flipSide : null,
+      exit: onExit ?? null,
+    }),
+  )
 
   function flipSide() {
     if (!wall) return

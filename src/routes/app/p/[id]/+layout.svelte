@@ -5,12 +5,10 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { settings } from '$lib/state/settings.svelte'
-  import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Redo2 from '@lucide/svelte/icons/redo-2'
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
-  import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
   import { Input } from '$lib/components/ui/input'
   import { exportFloorSvg } from '$lib/export/svg'
   import { homeHref, sectionHref, type ProjectSection } from '$lib/routes/links'
@@ -59,6 +57,7 @@
   const sections = $derived(viewing ? allSections.filter((section) => section.id !== 'project') : allSections)
   let copying = $state(false)
   let settingsOpen = $state(false)
+  const menuActions = { rename: startRename, duplicate: () => void duplicate(), exportSvg, exportJson, remove: () => void remove(), openCopy: () => void openCopy(), settings: () => (settingsOpen = true) }
 
   // A copy of the example in this browser, to work on, opened where the example was being looked at.
   async function openCopy() {
@@ -224,30 +223,10 @@
           <Redo2 />
         </Button>
       {/if}
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="icon-sm" aria-label="Project menu">
-              <Ellipsis />
-            </Button>
-          {/snippet}
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content align="end" class="w-52">
-          {#if viewing}
-            <DropdownMenu.Item onclick={() => void openCopy()}>Open a copy to edit</DropdownMenu.Item>
-          {:else}
-            <DropdownMenu.Item onclick={startRename}>Rename</DropdownMenu.Item>
-            <DropdownMenu.Item onclick={() => void duplicate()}>Duplicate</DropdownMenu.Item>
-          {/if}
-          <DropdownMenu.Separator />
-          <DropdownMenu.Item onclick={exportSvg}>Export plan as SVG</DropdownMenu.Item>
-          <DropdownMenu.Item onclick={exportJson}>Download project file</DropdownMenu.Item>
-          {#if !viewing}
-            <DropdownMenu.Separator />
-            <DropdownMenu.Item variant="destructive" onclick={() => void remove()}>Delete project</DropdownMenu.Item>
-          {/if}
-        </DropdownMenu.Content>
-      </DropdownMenu.Root>
+      <!-- On a narrow screen the menubar is one button here; on a wide one it is the row below. -->
+      <div class="md:hidden">
+        <ProjectMenubar {id} {active} {viewing} actions={menuActions} compact />
+      </div>
     </div>
     <nav
       class="col-span-2 mt-1.5 flex items-center gap-1 overflow-x-auto md:col-span-1 md:col-start-2 md:row-start-1 md:mt-0 md:justify-center md:overflow-visible md:rounded-lg md:bg-muted md:p-1"
@@ -267,13 +246,8 @@
     </nav>
   </header>
   <!-- The menubar: the same actions as the controls round it, under familiar headings. -->
-  <div class="z-10 border-b bg-background px-1.5">
-    <ProjectMenubar
-      {id}
-      {active}
-      {viewing}
-      actions={{ rename: startRename, duplicate: () => void duplicate(), exportSvg, exportJson, remove: () => void remove(), openCopy: () => void openCopy(), settings: () => (settingsOpen = true) }}
-    />
+  <div class="z-10 border-b bg-background px-1.5 max-md:hidden">
+    <ProjectMenubar {id} {active} {viewing} actions={menuActions} />
   </div>
   <main class="relative min-h-0 flex-1">
     <div class="h-full min-h-0">

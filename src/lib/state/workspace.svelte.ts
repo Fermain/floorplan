@@ -37,6 +37,8 @@ export const view = $state({
   xray: false,
   cutaway: 'box-near' as CutawayChoice,
   walls: 'full' as WallsChoice,
+  // Review: the top storey shown, by its index, or 'all' for the whole house.
+  upTo: 'all',
 })
 
 // What the plan offers while it is open.
@@ -49,7 +51,20 @@ export type PlanHandle = {
   deletable: () => { label: string; run: () => void } | null
 }
 
+// What Focus offers while a wall is open in it.
+export type FocusHandle = {
+  mode: () => 'select' | 'place'
+  setMode: (mode: 'select' | 'place') => void
+  // Whether the wall is seen square on, or in perspective.
+  square: () => boolean
+  setSquare: (square: boolean) => void
+  // Look at the other face, where the wall has one to look at; and go back to the plan.
+  flip: (() => void) | null
+  exit: (() => void) | null
+}
+
 let plan = $state<PlanHandle | null>(null)
+let focus = $state<FocusHandle | null>(null)
 // A tool asked for while the plan was not open: taken up when it opens.
 let wanted: string | null = null
 
@@ -67,6 +82,15 @@ export const workspace = {
     }
     return () => {
       if (plan === handle) plan = null
+    }
+  },
+  get focus() {
+    return focus
+  },
+  openFocus(handle: FocusHandle): () => void {
+    focus = handle
+    return () => {
+      if (focus === handle) focus = null
     }
   },
   // Ask for a tool; if the plan is not open, it is taken up when it next opens.

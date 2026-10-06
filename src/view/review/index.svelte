@@ -10,8 +10,7 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { documentStore } from '../../lib/state/document.svelte'
   import { summerSolstice, winterSolstice } from '../../lib/solar/sun'
-  import * as Select from '$lib/components/ui/select'
-  import type { CutShape, WallView } from './cutaway'
+  import type { CutShape } from './cutaway'
 
   const YEAR = 2026
   const SAST_OFFSET_HOURS = 2
@@ -81,11 +80,6 @@
     { value: 'box-deep', label: 'Deep box cut', shape: 'box', depth: 14 },
     { value: 'cone', label: 'Cone cut', shape: 'cone', depth: 8 },
   ]
-  const WALL_VIEWS: { value: WallView; label: string }[] = [
-    { value: 'full', label: 'Full walls' },
-    { value: 'half', label: 'Half walls' },
-    { value: 'hidden', label: 'No walls' },
-  ]
   const chosenCut = $derived(CUTAWAYS.find((item) => item.value === view.cutaway) ?? CUTAWAYS[1])
   // Services: the building fades and the pipes and cables in it are drawn.
   const serviceLegend = $derived.by(() => {
@@ -93,15 +87,12 @@
     const runs = serviceRuns(documentStore.document)
     return SERVICE_KINDS.map((kind) => ({ ...kind, length: runs.filter((run) => run.kind === kind.id).reduce((sum, run) => sum + runLength(run), 0) })).filter((kind) => kind.length > 0)
   })
-  let upTo = $state('all')
   const storeys = $derived(
     [...new Set(documentStore.document.building.floors.filter((floor) => floor.walls.length > 0).map((floor) => floor.index))].sort((a, b) => a - b),
   )
-  const storeyLabel = (index: number) => (index === 0 ? 'Ground floor' : `Up to storey ${index + 1}`)
-  const upToLabel = $derived(upTo === 'all' ? 'Whole house' : storeyLabel(Number(upTo)))
   // A storey that is no longer there falls back to the whole house.
   $effect(() => {
-    if (upTo !== 'all' && !storeys.includes(Number(upTo))) upTo = 'all'
+    if (view.upTo !== 'all' && !storeys.includes(Number(view.upTo))) view.upTo = 'all'
   })
 
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
@@ -137,35 +128,6 @@
       <span class="shrink-0 tabular-nums">{String(hour).padStart(2, '0')}:00 SAST</span>
     </label>
     <div class="flex flex-wrap items-center gap-2">
-      <Select.Root type="single" value={view.cutaway} onValueChange={(next) => next && (view.cutaway = next as typeof view.cutaway)}>
-        <Select.Trigger size="sm" class="w-32" aria-label="Cutaway" title="Cut away what is close in front of the camera as you zoom in">
-          {chosenCut.label}
-        </Select.Trigger>
-        <Select.Content>
-          {#each CUTAWAYS as item (item.value)}
-            <Select.Item value={item.value} label={item.label} />
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      <Select.Root type="single" value={view.walls} onValueChange={(next) => next && (view.walls = next as WallView)}>
-        <Select.Trigger size="sm" class="w-28" aria-label="Walls">{WALL_VIEWS.find((item) => item.value === view.walls)?.label}</Select.Trigger>
-        <Select.Content>
-          {#each WALL_VIEWS as item (item.value)}
-            <Select.Item value={item.value} label={item.label} />
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      {#if storeys.length > 1}
-        <Select.Root type="single" bind:value={upTo}>
-          <Select.Trigger size="sm" class="w-36" aria-label="Storeys shown">{upToLabel}</Select.Trigger>
-          <Select.Content>
-            <Select.Item value="all" label="Whole house" />
-            {#each storeys as index (index)}
-              <Select.Item value={String(index)} label={storeyLabel(index)} />
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      {/if}
       <Toggle size="sm" variant="outline" bind:pressed={view.xray} aria-label="Show services" title="Fade the building to show the pipes and cables in it">
         <Scan />Services
       </Toggle>
@@ -186,7 +148,7 @@
     {/if}
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={upTo === 'all' ? null : Number(upTo)} xray={view.xray} />
+    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={view.upTo === 'all' ? null : Number(view.upTo)} xray={view.xray} />
   </div>
 </div>
 
