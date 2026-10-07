@@ -998,6 +998,71 @@ export function removeWall(document: Document, floorId: string, wallId: string):
   return ok(next)
 }
 
+// What deleting a corner would do, so that it can be said before it is done. A corner with nothing on it just
+// goes; the end of a single wall takes that wall with it; a corner partway along a straight run of one kind of
+// wall is taken out and the two walls become one; any other corner takes every wall that meets at it.
+export type CornerRemoval = { kind: 'loose' | 'end' | 'join' | 'junction'; wallIds: string[] }
+
+export function cornerRemoval(floor: Floor, cornerId: string): CornerRemoval | null {
+  const corner = floor.corners.find((item) => item.id === cornerId)
+  if (!corner) return null
+  const walls = floor.walls.filter((wall) => wall.startCornerId === cornerId || wall.endCornerId === cornerId)
+  const wallIds = walls.map((wall) => wall.id)
+  if (walls.length === 0) return { kind: 'loose', wallIds }
+  if (walls.length === 1) return { kind: 'end', wallIds }
+  if (walls.length === 2) {
+    const [a, b] = walls
+    const far = (wall: Wall) => floor.corners.find((item) => item.id === (wall.startCornerId === cornerId ? wall.endCornerId : wall.startCornerId))
+    const [p, q] = [far(a), far(b)]
+    const alike = a.skin === b.skin && a.systemId === b.systemId && JSON.stringify(a.fence) === JSON.stringify(b.fence) && JSON.stringify(a.support) === JSON.stringify(b.support)
+    if (p && q && p.id !== q.id && alike) {
+      const [ux, uz] = [p.x - corner.x, p.z - corner.z]
+      const [vx, vz] = [q.x - corner.x, q.z - corner.z]
+      const [lu, lv] = [Math.hypot(ux, uz), Math.hypot(vx, vz)]
+      // Straight through: the two walls leave the corner in opposite directions, to within a hair.
+      const straight = lu > 1e-6 && lv > 1e-6 && Math.abs(ux * vz - uz * vx) / (lu * lv) < 0.002 && ux * vx + uz * vz < 0
+      if (straight && !floor.walls.some((wall) => (wall.startCornerId === p.id && wall.endCornerId === q.id) || (wall.startCornerId === q.id && wall.endCornerId === p.id))) {
+        return { kind: 'join', wallIds }
+      }
+    }
+  }
+  return { kind: 'junction', wallIds }
+}
+
+export function removeCorner(document: Document, floorId: string, cornerId: string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const removal = cornerRemoval(floor, cornerId)
+  if (!removal) return fail(document, 'corner not found')
+  let walls: Wall[]
+  if (removal.kind === 'join') {
+    const [first, second] = removal.wallIds.map((id) => floor.walls.find((wall) => wall.id === id)!)
+    // The wall that runs into the corner keeps its direction, so its faces stay the way they were; the other is
+    // laid on after it, or before it if both run out of the corner.
+    const [base, other] = first.endCornerId === cornerId || second.endCornerId !== cornerId ? [first, second] : [second, first]
+    const length = (wall: Wall) => wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+    const [lb, lo] = [length(base), length(other)]
+    const farOther = other.startCornerId === cornerId ? other.endCornerId : other.startCornerId
+    const turned = (opening: Opening) => ({ ...opening, u: lo - opening.u - opening.width })
+    let merged: Wall
+    if (base.endCornerId === cornerId) {
+      const added = other.openings.map((opening) => (other.startCornerId === cornerId ? opening : turned(opening))).map((opening) => ({ ...opening, u: opening.u + lb }))
+      merged = { ...base, endCornerId: farOther, openings: [...base.openings, ...added] }
+    } else {
+      const before = other.openings.map((opening) => (other.endCornerId === cornerId ? opening : turned(opening)))
+      merged = { ...base, startCornerId: farOther, openings: [...before, ...base.openings.map((opening) => ({ ...opening, u: opening.u + lo }))] }
+    }
+    walls = floor.walls.filter((wall) => wall.id !== other.id).map((wall) => (wall.id === base.id ? merged : wall))
+  } else {
+    walls = floor.walls.filter((wall) => !removal.wallIds.includes(wall.id))
+  }
+  const used = new Set(walls.flatMap((wall) => [wall.startCornerId, wall.endCornerId]))
+  const corners = floor.corners.filter((corner) => used.has(corner.id))
+  let next = replaceFloor(document, { ...floor, walls, corners })
+  if (floor.index === 0) next = syncGroundUnits(next)
+  return ok(next)
+}
+
 export function removeOpening(
   document: Document,
   floorId: string,

@@ -81,6 +81,8 @@
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
+  import { cornerRemoval } from '../../lib/model/mutations'
+  import { systemOf, wallThickness } from '../../lib/model/systems'
   import { view as shown, workspace } from '../../lib/state/workspace.svelte'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
@@ -2442,6 +2444,21 @@
     if (applyResult(documentStore.removeStair(chosen.floorId, chosen.stair.id))) chooseSelection({})
   }
 
+  // The corner picked, the walls that meet at it, and what deleting it would do to them.
+  const chosenCorner = $derived.by(() => {
+    const id = selectedCornerId
+    const floor = id ? levelFloors.find((item) => item.corners.some((corner) => corner.id === id)) : undefined
+    const removal = id && floor ? cornerRemoval(floor, id) : null
+    if (!id || !floor || !removal) return null
+    const lines = removal.wallIds.flatMap((wallId) => {
+      const wall = floor.walls.find((item) => item.id === wallId)
+      const a = wall && cornerById(floor.corners, wall.startCornerId)
+      const b = wall && cornerById(floor.corners, wall.endCornerId)
+      return wall && a && b ? [{ id: wallId, a, b, thickness: wall.skin === 'logical' ? 0.12 : wallThickness(systemOf(wall)) }] : []
+    })
+    return { id, floor, removal, lines }
+  })
+
   const deletable = $derived.by((): { label: string; run: () => void } | null => {
     if (roofFloor) return null
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
@@ -2454,6 +2471,18 @@
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
+    if (!wall && chosenCorner) {
+      const { removal, floor: on, id } = chosenCorner
+      const count = removal.wallIds.length
+      const label =
+        removal.kind === 'join' ? 'Remove corner and join the walls' : removal.kind === 'loose' ? 'Delete corner' : count === 1 ? 'Delete corner and its wall' : `Delete corner and ${count} walls`
+      return {
+        label,
+        run: () => {
+          if (applyResult(documentStore.removeCorner(on.id, id))) chooseSelection({})
+        },
+      }
+    }
     if (!floor || !wall) return null
     return {
       label: wall.skin === 'logical' ? (wall.fence ? 'Delete fence line' : 'Delete logical wall') : 'Delete wall',
@@ -3431,6 +3460,24 @@
           {/each}
           {#each changesHere.closed as opening, i (i)}
             <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#dc2626" stroke="#ffffff" stroke-width={s(0.03)} />
+          {/each}
+        </g>
+      {/if}
+      {#if chosenCorner && !moveDrag && !rotateDrag}
+        <!-- The walls that meet at the corner picked: red where deleting the corner takes them with it, blue where
+             it would join them into one. -->
+        <g class="corner-walls" pointer-events="none">
+          {#each chosenCorner.lines as line (line.id)}
+            <line
+              x1={line.a.x}
+              y1={line.a.z}
+              x2={line.b.x}
+              y2={line.b.z}
+              stroke={chosenCorner.removal.kind === 'join' ? '#2563eb' : '#dc2626'}
+              stroke-opacity="0.6"
+              stroke-width={line.thickness + s(0.08)}
+              stroke-linecap="round"
+            />
           {/each}
         </g>
       {/if}
