@@ -163,7 +163,8 @@
           </Menubar.RadioGroup>
         </Menubar.SubContent>
       </Menubar.Sub>
-      {#if built.length > 1}
+      <Menubar.CheckboxItem bind:checked={view.roofs}>Roofs</Menubar.CheckboxItem>
+      {#if built.length > 0}
         <Menubar.Sub>
           <Menubar.SubTrigger inset>Storeys shown</Menubar.SubTrigger>
           <Menubar.SubContent>
