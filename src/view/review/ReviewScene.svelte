@@ -87,11 +87,16 @@
     cutShape?: CutShape
     walls?: WallView
     upTo?: number | null
+    // Whether the roofs are drawn, with their gutters and gables.
+    roofs?: boolean
+    // Called once the model has first been built, so whatever is waiting on it can stand down.
+    onReady?: () => void
     // Whether the building fades to show the services running through it.
     xray?: boolean
   }
 
-  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, xray = false }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, roofs = true, xray = false, onReady }: Props = $props()
+  let announced = false
 
   // The pipes and cables, built only while they are being looked at.
   const serviceParts = $derived.by((): ServicePart[] => (xray ? buildServiceParts(serviceRuns(doc)) : []))
@@ -557,6 +562,11 @@
     pillarMeshes = pillars
     fixtureMeshes = fittings
     trimMeshes = trims
+    if (!announced) {
+      announced = true
+      // After the meshes have been handed over, so the first frame with the house in it can follow.
+      setTimeout(() => onReady?.(), 0)
+    }
     return () => {
       for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
@@ -1027,7 +1037,7 @@
       </T.Mesh>
     {/each}
 
-    {#each roofMeshes.filter((roof) => shownFloor(roof.key)) as roof (roof.key)}
+    {#each roofMeshes.filter((roof) => roofs && shownFloor(roof.key)) as roof (roof.key)}
       <T.Mesh geometry={roof.meshes.top ?? undefined} position.y={roof.y} castShadow>
         <T.MeshStandardMaterial
           map={roof.texture}

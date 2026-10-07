@@ -39,6 +39,8 @@ export const view = $state({
   walls: 'full' as WallsChoice,
   // Review: the top storey shown, by its index, or 'all' for the whole house.
   upTo: 'all',
+  // Review: whether the roofs are on. Off, the house is open from above with every storey still in place.
+  roofs: true,
 })
 
 // What the plan offers while it is open.

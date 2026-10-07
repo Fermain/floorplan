@@ -3,6 +3,7 @@
   import Snowflake from '@lucide/svelte/icons/snowflake'
   import Sun from '@lucide/svelte/icons/sun'
   import Scan from '@lucide/svelte/icons/scan'
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import { view } from '../../lib/state/workspace.svelte'
   import { Toggle } from '$lib/components/ui/toggle'
   import { runLength, SERVICE_KINDS, serviceRuns } from '../../lib/geometry/serviceRuns'
@@ -95,6 +96,15 @@
     if (view.upTo !== 'all' && !storeys.includes(Number(view.upTo))) view.upTo = 'all'
   })
 
+  // Building the model holds the page up for a moment on a big project. The scene is started a beat after the
+  // view opens, so that the notice saying so is on screen first, and the notice goes when the model is built.
+  let started = $state(false)
+  let built = $state(false)
+  $effect(() => {
+    const timer = setTimeout(() => (started = true), 40)
+    return () => clearTimeout(timer)
+  })
+
   const sunDate = $derived(dateAtHour(solsticeKind, hour))
   const summerLabel = $derived(solsticeLabel('summer'))
   const winterLabel = $derived(solsticeLabel('winter'))
@@ -148,7 +158,15 @@
     {/if}
   </div>
   <div class="viewport">
-    <ReviewScene {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={view.upTo === 'all' ? null : Number(view.upTo)} xray={view.xray} />
+    {#if started}
+      <ReviewScene onReady={() => (built = true)} {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={view.upTo === 'all' ? null : Number(view.upTo)} roofs={view.roofs} xray={view.xray} />
+    {/if}
+    {#if !built}
+      <div class="building" role="status" aria-live="polite">
+        <LoaderCircle class="size-5 animate-spin" />
+        <span>Building the model…</span>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -161,9 +179,24 @@
   }
 
   .viewport {
+    position: relative;
     flex: 1;
     min-height: 0;
     width: 100%;
+  }
+
+  /* Over the scene while a big house is being put together, so the page is never just blank. */
+  .building {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
   }
 
   .viewport :global(canvas) {

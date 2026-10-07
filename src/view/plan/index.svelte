@@ -1116,6 +1116,9 @@
     tool = toolBeforeRect
   }
 
+  // How near a corner a click has to be to mean the corner itself and not the wall running into it.
+  const NODE_DOT_M = 0.15
+
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
     const node = nearestCorner(floor.corners, plan.x, plan.z, NODE_HIT_M)
     if (!node || !svgEl) return false
@@ -1271,8 +1274,16 @@
     const drag = moveDrag
     moveDrag = null
     if (!drag || !activeFloor) return
+    if (drag.dx === 0 && drag.dz === 0) {
+      // A click, not a drag. On a wall and clear of the corner's own dot it picks the wall: a wall shorter than
+      // the reach of its two corners could not be picked at all otherwise.
+      const corner = cornerById(activeFloor.corners, drag.nodeId)
+      const onWall = pickWall(activeFloor, drag.startX, drag.startZ)
+      if (corner && onWall && Math.hypot(drag.startX - corner.x, drag.startZ - corner.z) > NODE_DOT_M) chooseSelection({ wallId: onWall })
+      else chooseSelection({ cornerId: drag.nodeId })
+      return
+    }
     chooseSelection({ cornerId: drag.nodeId })
-    if (drag.dx === 0 && drag.dz === 0) return
     const result = documentStore.moveCorners(
       floorIdFor(drag.nodeId) ?? activeFloorId,
       drag.cornerIds,
