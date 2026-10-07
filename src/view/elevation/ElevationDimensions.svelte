@@ -48,6 +48,9 @@
   })
   const chosenFitting = $derived(fittings.find((fitting) => fitting.selected) ?? null)
   const selected = $derived(openings.find((opening) => opening.id === selectedId) ?? null)
+  // The centre of the wall, and whether the picked opening sits on it.
+  const middle = $derived(length / 2)
+  const centred = $derived(selected !== null && Math.abs(selected.u + selected.width / 2 - middle) < 0.0005)
 
   function mm(m: number): string {
     return String(Math.round(m * 1000))
@@ -87,6 +90,17 @@
       <text x={length / 2} y={y(chainV) - font * 1.7} font-size={font} text-anchor="middle" class="overall">
         {mm(length)} overall
       </text>
+    </g>
+    <!-- The centre line of the wall: a mark above it always, drawn down through the wall while an opening is
+         picked, and green once that opening is on it. -->
+    <g class="centre" class:on={centred}>
+      <line x1={middle} y1={y(head + 0.02)} x2={middle} y2={y(chainV - tick * 2.5)} />
+      {#if selected}
+        <line x1={middle} y1={y(head + 0.02)} x2={middle} y2={y(0)} />
+        <line class="own" x1={selected.u + selected.width / 2} y1={y(selected.v + selected.height + tick * 2)} x2={selected.u + selected.width / 2} y2={y(selected.v + selected.height - tick * 2)} />
+      {/if}
+      <path d="M {middle - tick * 1.4} {y(head + 0.02) - tick * 2.4} L {middle + tick * 1.4} {y(head + 0.02) - tick * 2.4} L {middle} {y(head + 0.02)} Z" />
+      <text x={middle + tick * 2.2} y={y(head + 0.02) - tick * 0.9} font-size={font * 0.9}>{centred ? 'centred' : 'centre'}</text>
     </g>
     {#if selected}
       {@const side = selected.u + selected.width + font * 0.8}
@@ -205,6 +219,37 @@
 
   .overall {
     fill: #52525b;
+  }
+
+  .centre line {
+    stroke: #be185d;
+    stroke-dasharray: 10 3 2 3;
+  }
+
+  .centre line.own {
+    stroke-dasharray: none;
+    stroke-width: 1.5px;
+  }
+
+  .centre path {
+    fill: #be185d;
+    stroke: none;
+  }
+
+  .centre text {
+    fill: #9d174d;
+  }
+
+  .centre.on line {
+    stroke: #15803d;
+  }
+
+  .centre.on path {
+    fill: #15803d;
+  }
+
+  .centre.on text {
+    fill: #166534;
   }
 
   .heights line {
