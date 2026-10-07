@@ -99,7 +99,7 @@ On a logical wall, Focus is where you choose what gets built along it:
 - **Supports:** a classical precast column, a pier in the project's own block, a steel post or a treated timber pole, at a spacing you set.
 
 <p>
-  <img src="static/shots/focus.jpg" width="49%" alt="A plastered and painted cottage wall in Focus with a window and its dimension chain">
+  <img src="static/shots/focus.jpg" width="49%" alt="A face-brick wall in Focus with a window, a rainwater tank, its dimension chain and the ground line">
   <img src="docs/images/focus-balcony.jpg" width="49%" alt="Balcony edge in Focus with classical columns and a palisade balustrade">
 </p>
 
