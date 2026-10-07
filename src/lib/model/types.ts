@@ -101,6 +101,8 @@ export type Space = {
   type: RoomType
   finish: FloorFinish
   seeds: { x: number; z: number }[]
+  // Open to the sky: a deck or a yard. No roof, ceiling or storey goes over it, though it is part of the house.
+  open?: boolean
 }
 
 export type Stair = {

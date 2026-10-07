@@ -316,7 +316,7 @@ export function updateSpace(
   document: Document,
   floorId: string,
   spaceId: string,
-  patch: Partial<Pick<Space, 'name' | 'type' | 'finish'>>,
+  patch: Partial<Pick<Space, 'name' | 'type' | 'finish' | 'open'>>,
 ): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
