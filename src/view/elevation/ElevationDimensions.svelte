@@ -92,7 +92,8 @@
       {@const side = selected.u + selected.width + font * 0.8}
       <g class="heights">
         <line x1={side} y1={y(0)} x2={side} y2={y(selected.v + selected.height)} />
-        {#each [0, selected.v, selected.v + selected.height] as v (v)}
+        <!-- Keyed by place, not by height: a door's sill is on the floor, so two of these are the same height. -->
+        {#each [0, selected.v, selected.v + selected.height] as v, i (i)}
           <line x1={side - tick} y1={y(v)} x2={side + tick} y2={y(v)} />
         {/each}
         {#if selected.v > font * 1.5}
@@ -111,7 +112,7 @@
     {#each ports as port, i (i)}
       <circle class="port {port.kind}" cx={port.u} cy={y(port.v)} r={port.r} />
     {/each}
-    {#each conduits as conduit (conduit.u)}
+    {#each conduits as conduit, i (i)}
       <line class="conduit" class:clash={conduit.clash} x1={conduit.u} y1={y(conduit.bottom)} x2={conduit.u} y2={y(conduit.top)} />
     {/each}
     {#if fittingStops.length > 0}
