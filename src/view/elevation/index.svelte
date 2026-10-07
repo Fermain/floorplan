@@ -837,8 +837,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     const uv = uvFromEvent(event)
     if (!uv) return
     readout = uv
-    // Nothing is dragged about in an example being previewed.
-    if (documentStore.readOnly && event.buttons !== 0) return
 
     const fitting = fittingAt(uv.u, uv.v)
     if (fitting) {
@@ -1061,6 +1059,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     const uv = uvFromEvent(event)
     if (!uv) return
     readout = uv
+    // Nothing is dragged about in an example being previewed: a press there only picks.
+    if (documentStore.readOnly && event.buttons !== 0) return
 
     const sliding = fixtureDrag
     if (sliding && frame) {
@@ -1386,7 +1386,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     </div>
     {/if}
     <div class="scene">
-      <div class="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2">
+      <!-- These sit on the paper, so they take its light colours whatever the theme. -->
+      <div class="paper absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 bg-transparent">
         {#if onExit}
           <Button variant="outline" size="sm" class="shadow-xs" title="Back to the plan (Esc)" onclick={onExit}>
             <ArrowLeft />Back to plan
