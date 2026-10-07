@@ -91,6 +91,7 @@ export type RoomType =
   | 'laundry'
   | 'garage'
   | 'store'
+  | 'deck'
   | 'other'
 
 export type FloorFinish = 'screed' | 'tiles' | 'timber' | 'vinyl' | 'carpet' | 'none'

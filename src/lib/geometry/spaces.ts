@@ -34,8 +34,29 @@ export const ROOM_TYPES: { type: RoomType; label: string; habitable: boolean }[]
   { type: 'passage', label: 'Passage', habitable: false },
   { type: 'garage', label: 'Garage', habitable: false },
   { type: 'store', label: 'Store', habitable: false },
+  // Outside, joined to the house: boarded, and open to the sky unless it is roofed over.
+  { type: 'deck', label: 'Deck', habitable: false },
   { type: 'other', label: 'Other', habitable: false },
 ]
+
+// The way a floor finish is laid in a room: along its longest wall, as an angle in plan from the x axis, so that
+// boards and tiles run square to the room and not to the north point.
+export function layAngle(ring: { x: number; z: number }[]): number {
+  let best = 0
+  let longest = 0
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (length > longest + 1e-6) {
+      longest = length
+      best = Math.atan2(b.z - a.z, b.x - a.x)
+    }
+  }
+  // A lay is the same turned end for end, and one within a hair of square to the axes is square to them.
+  const turned = ((best % Math.PI) + Math.PI) % Math.PI
+  return Math.abs(turned - Math.PI) < 1e-4 ? 0 : turned
+}
 
 export function roomTypeLabel(type: RoomType): string {
   return ROOM_TYPES.find((item) => item.type === type)?.label ?? 'Room'

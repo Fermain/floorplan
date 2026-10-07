@@ -289,7 +289,8 @@ export function nameCell(
   if ('error' in found) return fail(document, found.error)
   const label = name.trim()
   if (!label) return fail(document, 'a room needs a name')
-  const space: Space = { id: newId('space'), name: label, type, finish: 'screed', seeds: [{ x, z }] }
+  // A deck starts boarded and open to the sky; any other room starts on bare screed under the roof.
+  const space: Space = { id: newId('space'), name: label, type, finish: type === 'deck' ? 'timber' : 'screed', seeds: [{ x, z }], ...(type === 'deck' ? { open: true } : {}) }
   const spaces = [...withoutCell(found.floor, found.cell, found.cells), space]
   return ok(replaceFloor(document, { ...found.floor, spaces }))
 }
@@ -323,7 +324,9 @@ export function updateSpace(
   if (!(floor.spaces ?? []).some((space) => space.id === spaceId)) return fail(document, 'room not found')
   if (patch.name !== undefined && !patch.name.trim()) return fail(document, 'a room needs a name')
   const next = patch.name === undefined ? patch : { ...patch, name: patch.name.trim() }
-  const spaces = (floor.spaces ?? []).map((space) => (space.id === spaceId ? { ...space, ...next } : space))
+  // A room turned into a deck is opened to the sky and boarded, unless the same change says otherwise.
+  const asDeck = (space: Space) => (patch.type === 'deck' && space.type !== 'deck' ? { open: true, ...(space.finish === 'screed' ? { finish: 'timber' as const } : {}) } : {})
+  const spaces = (floor.spaces ?? []).map((space) => (space.id === spaceId ? { ...space, ...asDeck(space), ...next } : space))
   return ok(replaceFloor(document, { ...floor, spaces }))
 }
 

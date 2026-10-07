@@ -66,6 +66,7 @@
   import {
     cellAt,
     floorCells,
+    layAngle,
     layoutSpaces,
     ringLabelPoint,
     ROOM_TYPES,
@@ -376,12 +377,34 @@
     return !chosen.resolved && roomKey(chosen.cell.room.cornerIds) === roomKey(cornerIds)
   }
 
+  // The way a room's finish is laid, in tenths of a degree: along its longest wall. Nothing for a room whose
+  // longest wall runs with the pattern as it comes.
+  function layOf(cornerIds: string[]): number {
+    if (!displayFloor) return 0
+    const tenths = Math.round(((layAngle(roomPolygonPoints(cornerIds, displayFloor).map(([x, z]) => ({ x, z }))) * 180) / Math.PI) * 10)
+    return tenths % 1800 === 0 ? 0 : tenths
+  }
+
   function cellFill(cornerIds: string[]): string {
     const space = spaceByRoom[roomKey(cornerIds)]
     if (!space) return 'rgba(120, 120, 120, 0.08)'
     // Each floor finish has its own pattern, drawn to scale: tiles, boards, planks, carpet.
-    return space.finish === 'none' ? 'rgba(120, 120, 120, 0.1)' : `url(#floor-${space.finish})`
+    if (space.finish === 'none') return 'rgba(120, 120, 120, 0.1)'
+    const lay = layOf(cornerIds)
+    return lay === 0 ? `url(#floor-${space.finish})` : `url(#floor-${space.finish}-${lay})`
   }
+
+  // The finishes laid at an angle on this storey, each of which needs its pattern turned to suit.
+  const turnedFinishes = $derived.by(() => {
+    const seen: { finish: string; lay: number }[] = []
+    for (const room of rooms) {
+      const space = spaceByRoom[roomKey(room.cornerIds)]
+      if (!space || space.finish === 'none') continue
+      const lay = layOf(room.cornerIds)
+      if (lay !== 0 && !seen.some((item) => item.finish === space.finish && item.lay === lay)) seen.push({ finish: space.finish, lay })
+    }
+    return seen
+  })
 
   function nameSelectedRoom() {
     const chosen = selectedRoom
@@ -2985,6 +3008,9 @@
             <rect width="1" height="1" fill={spec.colour} fill-opacity="0.3" />
           </pattern>
         {/if}
+      {/each}
+      {#each turnedFinishes as item (`${item.finish}-${item.lay}`)}
+        <pattern id="floor-{item.finish}-{item.lay}" href="#floor-{item.finish}" patternTransform="rotate({item.lay / 10})" />
       {/each}
       {#if outlineClip}
         <clipPath id="plan-storey-clip">

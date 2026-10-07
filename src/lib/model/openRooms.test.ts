@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { roofFacesForFloor } from '../geometry/roof'
 import { fixtureDocument } from '../plot/fixture'
 import { addCorner, addStorey, addWall, addWallRing, nameCell, setRoof, updateSpace } from './mutations'
+import { layAngle } from '../geometry/spaces'
 import { roomsUnder } from './stories'
 import type { Document } from './types'
 
@@ -43,6 +44,33 @@ describe('a room open to the sky', () => {
     expect(reach(doc)[0]).toBeLessThan(4)
     doc = updateSpace(doc, ground(doc).id, deck.id, { open: false }).document
     expect(top(doc).outline).toHaveLength(2)
+  })
+
+  it('is what a deck is from the start: boarded, and left out from under the roof', () => {
+    let doc = house()
+    const fid = ground(doc).id
+    const other = ground(doc).spaces!.find((space) => space.name === 'Deck')!
+    expect(other.open).toBeUndefined()
+    // Turned into a deck, the room is opened and boarded; turned back, it stays as it was left.
+    doc = updateSpace(doc, fid, other.id, { type: 'deck' }).document
+    expect(ground(doc).spaces!.find((space) => space.id === other.id)).toMatchObject({ type: 'deck', open: true, finish: 'timber' })
+    expect(top(doc).outline).toHaveLength(1)
+    // Named as a deck in the first place, it starts that way.
+    const fresh = nameCell(house(), fid, 10.5, 7, 'Back deck', 'deck').document
+    expect(ground(fresh).spaces!.find((space) => space.name === 'Back deck')).toMatchObject({ open: true, finish: 'timber' })
+    // A deck can still be roofed over by unticking it.
+    doc = updateSpace(doc, fid, other.id, { open: false }).document
+    expect(top(doc).outline).toHaveLength(2)
+  })
+
+  it('lays its boards along its longest wall', () => {
+    expect(layAngle([{ x: 0, z: 0 }, { x: 6, z: 0 }, { x: 6, z: 3 }, { x: 0, z: 3 }])).toBeCloseTo(0, 6)
+    expect(layAngle([{ x: 0, z: 0 }, { x: 3, z: 0 }, { x: 3, z: 6 }, { x: 0, z: 6 }])).toBeCloseTo(Math.PI / 2, 6)
+    // Turned 30 degrees, and the same whichever way round the outline is drawn.
+    const turn = (x: number, z: number) => ({ x: x * Math.cos(Math.PI / 6) - z * Math.sin(Math.PI / 6), z: x * Math.sin(Math.PI / 6) + z * Math.cos(Math.PI / 6) })
+    const ring = [turn(0, 0), turn(6, 0), turn(6, 3), turn(0, 3)]
+    expect(layAngle(ring)).toBeCloseTo(Math.PI / 6, 6)
+    expect(layAngle([...ring].reverse())).toBeCloseTo(Math.PI / 6, 6)
   })
 
   it('is still listed among the rooms under the roof, so it can be closed again from there', () => {
