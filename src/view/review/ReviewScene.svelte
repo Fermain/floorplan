@@ -76,6 +76,8 @@
   import ReviewInteractivity from './ReviewInteractivity.svelte'
   import ReviewCutaway from './ReviewCutaway.svelte'
   import ReviewXray from './ReviewXray.svelte'
+  import ReviewPicture from './ReviewPicture.svelte'
+  import type { PictureQuality } from './capture'
   import { buildServiceParts, serviceRuns, type ServicePart } from '../../lib/geometry/serviceRuns'
   import { isCutAway, type CutShape, type WallView } from './cutaway'
   import { Button } from '$lib/components/ui/button'
@@ -92,11 +94,13 @@
     roofs?: boolean
     // Called once the model has first been built, so whatever is waiting on it can stand down.
     onReady?: () => void
+    // Handed the means to take a picture of the scene, once there is a scene to take one of.
+    onPicture?: (take: (quality: PictureQuality, onProgress?: (done: number, total: number) => void) => Promise<Blob>) => void
     // Whether the building fades to show the services running through it.
     xray?: boolean
   }
 
-  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, roofs = true, xray = false, onReady }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, roofs = true, xray = false, onReady, onPicture }: Props = $props()
   let announced = false
 
   // The pipes and cables, built only while they are being looked at.
@@ -926,6 +930,7 @@
     <ReviewSky {sun} centre={{ x: plotCenter.x, y: plotCenter.y, z: across(plotCenter.z) }} />
     <ReviewCutaway depth={cutDepth} shape={cutShape} />
     <ReviewXray on={xray} />
+    {#if onPicture}<ReviewPicture onReady={onPicture} />{/if}
     <T.AmbientLight intensity={0.12} />
     <T.DirectionalLight
       position={lightPosition}

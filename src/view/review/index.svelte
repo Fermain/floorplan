@@ -4,6 +4,10 @@
   import Sun from '@lucide/svelte/icons/sun'
   import Scan from '@lucide/svelte/icons/scan'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Camera from '@lucide/svelte/icons/camera'
+  import { Button } from '$lib/components/ui/button'
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
+  import { PICTURE_QUALITIES, type PictureQuality } from './capture'
   import { view } from '../../lib/state/workspace.svelte'
   import { Toggle } from '$lib/components/ui/toggle'
   import { runLength, SERVICE_KINDS, serviceRuns } from '../../lib/geometry/serviceRuns'
@@ -98,6 +102,30 @@
 
   // Building the model holds the page up for a moment on a big project. The scene is started a beat after the
   // view opens, so that the notice saying so is on screen first, and the notice goes when the model is built.
+  // Taking a picture: the means comes from the scene once it is up; progress shows while one is being taken.
+  let takePicture = $state<((quality: PictureQuality, onProgress?: (done: number, total: number) => void) => Promise<Blob>) | null>(null)
+  let picturing = $state<{ done: number; total: number } | null>(null)
+
+  async function savePicture(quality: PictureQuality) {
+    const take = takePicture
+    if (!take || picturing) return
+    picturing = { done: 0, total: quality.samples }
+    try {
+      const blob = await take(quality, (done, total) => (picturing = { done, total }))
+      const url = URL.createObjectURL(blob)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = `floorplan-${solsticeKind}-${String(hour).padStart(2, '0')}h.png`
+      link.click()
+      URL.revokeObjectURL(url)
+      onStatus?.({ text: 'Picture saved to your downloads.', error: false })
+    } catch (error) {
+      onStatus?.({ text: error instanceof Error ? error.message : 'The picture could not be made.', error: true })
+    } finally {
+      picturing = null
+    }
+  }
+
   let started = $state(false)
   let built = $state(false)
   $effect(() => {
@@ -141,6 +169,23 @@
       <Toggle size="sm" variant="outline" bind:pressed={view.xray} aria-label="Show services" title="Fade the building to show the pipes and cables in it">
         <Scan />Services
       </Toggle>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline" size="sm" disabled={!takePicture || picturing !== null} title="Save a picture of the model as it is shown">
+              <Camera />Picture
+            </Button>
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="end" class="w-72">
+          {#each PICTURE_QUALITIES as quality (quality.id)}
+            <DropdownMenu.Item class="grid gap-0.5" onclick={() => void savePicture(quality)}>
+              <span class="font-medium">{quality.name}</span>
+              <span class="text-xs text-muted-foreground">{quality.text}</span>
+            </DropdownMenu.Item>
+          {/each}
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
     </div>
     {#if view.xray}
       <div class="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
@@ -159,7 +204,13 @@
   </div>
   <div class="viewport">
     {#if started}
-      <ReviewScene onReady={() => (built = true)} {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={view.upTo === 'all' ? null : Number(view.upTo)} roofs={view.roofs} xray={view.xray} />
+      <ReviewScene onReady={() => (built = true)} onPicture={(take) => (takePicture = take)} {sunDate} {onSelectWall} cutDepth={chosenCut.depth} cutShape={chosenCut.shape} walls={view.walls} upTo={view.upTo === 'all' ? null : Number(view.upTo)} roofs={view.roofs} xray={view.xray} />
+    {/if}
+    {#if picturing}
+      <div class="building picturing" role="status" aria-live="polite">
+        <LoaderCircle class="size-5 animate-spin" />
+        <span>Taking the picture… {picturing.done} of {picturing.total}</span>
+      </div>
     {/if}
     {#if !built}
       <div class="building" role="status" aria-live="polite">
@@ -197,6 +248,11 @@
     background: var(--muted);
     color: var(--muted-foreground);
     font-size: 0.875rem;
+  }
+
+  /* While a picture is taken the scene is being drawn at another size: a veil keeps that off the screen. */
+  .building.picturing {
+    background: color-mix(in oklab, var(--muted) 88%, transparent);
   }
 
   .viewport :global(canvas) {
