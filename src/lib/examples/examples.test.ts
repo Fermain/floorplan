@@ -110,6 +110,12 @@ describe('example projects', () => {
     const mainRoof = doc.building.floors.filter((floor) => floor.roof?.form === 'gable').at(-1)!
     expect(gutterLayout(doc).downpipes.filter((pipe) => pipe.roofFloorId === mainRoof.id).length).toBeLessThanOrEqual(6)
     expect(buildingChecks(doc).rooms.every((room) => room.ok)).toBe(true)
+    // The cottage's deck is part of the cottage and open to the sky: no roof stands over it.
+    const deck = (ground.spaces ?? []).find((space) => space.name === 'Deck')!
+    expect(deck).toMatchObject({ type: 'deck', open: true, finish: 'timber' })
+    const covered = doc.building.floors.filter((floor) => floor.roof).flatMap((floor) => floor.outline ?? [])
+    const inside = (ring: { x: number; z: number }[], p: { x: number; z: number }) => ring.reduce((hit, a, i) => { const b = ring[(i + 1) % ring.length]; return a.z > p.z !== b.z > p.z && p.x < ((b.x - a.x) * (p.z - a.z)) / (b.z - a.z) + a.x ? !hit : hit }, false)
+    expect(covered.some((ring) => inside(ring, deck.seeds[0]))).toBe(false)
     // The boundary fence does not close, so it makes no room, and nothing else is left over.
     expect(layoutSpaces(ground).loose).toEqual([])
     // Every wall stays on the stand.

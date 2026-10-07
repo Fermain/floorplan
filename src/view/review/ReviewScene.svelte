@@ -39,7 +39,7 @@
   import { coveringTexture } from './roofTexture'
   import { floorTexture } from './floorTexture'
   import { floorFinishSpec } from '../../lib/model/floorFinishes'
-  import { layoutSpaces } from '../../lib/geometry/spaces'
+  import { layAngle, layoutSpaces } from '../../lib/geometry/spaces'
   import type { CanvasTexture } from 'three'
   import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
@@ -753,6 +753,18 @@
           if (hole.length >= 3 && hole.every((point) => pointInRing(cell.net, point.x, point.z))) shape.holes.push(ringPath(hole))
         }
         const geometry = new ShapeGeometry(shape)
+        // The finish is laid along the room's longest wall: its pattern is turned to that, not left to the north.
+        const lay = layAngle(cell.net)
+        if (Math.abs(Math.sin(lay)) > 1e-3) {
+          const uv = geometry.getAttribute('uv')
+          const [cos, sin] = [Math.cos(lay), Math.sin(lay)]
+          // The shape is drawn with z turned over, so the wall's angle there is the other way round.
+          for (let i = 0; i < uv.count; i++) {
+            const [u, v] = [uv.getX(i), uv.getY(i)]
+            uv.setXY(i, u * cos - v * sin, u * sin + v * cos)
+          }
+          uv.needsUpdate = true
+        }
         geometry.rotateX(-Math.PI / 2)
         covers.push({
           key: `cover-${floor.id}-${resolved.space.id}-${index}`,
