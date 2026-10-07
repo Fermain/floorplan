@@ -14,7 +14,7 @@ import type { Floor, Roof, Wall } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
 import { unionRings, type DeckPolygon } from './deck'
 import { clean, DEFAULT_REACH, offsetEdges, wallBetween, wallReach, widestReach } from './outline'
-import type { Ring } from './pad'
+import { pointInRing, type Ring } from './pad'
 
 export const WALL_HEAD_M = WALL_HEAD
 
@@ -171,7 +171,14 @@ export function roofInfills(below: Floor, floor: Floor, roof: Roof, reach = DEFA
   if (!heightAt) return []
   const count = new Map<string, number>()
   const walls = new Map<string, Wall>()
+  // A room open to the sky is outside as far as the roof goes: a wall with a roofed room on one side and a deck
+  // on the other is an outside wall, and is built up to the roof like any other.
+  const open = (below.spaces ?? []).filter((space) => space.open).flatMap((space) => space.seeds)
   for (const room of deriveRooms(below)) {
+    if (open.length > 0) {
+      const ring = room.cornerIds.flatMap((id) => below.corners.filter((corner) => corner.id === id))
+      if (open.some((seed) => pointInRing(ring, seed.x, seed.z))) continue
+    }
     for (let i = 0; i < room.cornerIds.length; i++) {
       const wall = wallBetween(below, room.cornerIds[i], room.cornerIds[(i + 1) % room.cornerIds.length])
       if (!wall || wall.skin === 'logical') continue

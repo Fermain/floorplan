@@ -101,11 +101,11 @@ export function verulam(): Document {
   b.counters(0, { x: x0 + 4.5, z: z0 + 1.5 }, { top: 'laminate' })
   b.island(0, { x: x0 + 4.6, z: z0 + 3 }, { x: 1, z: 0 }, 2, 'timber', 'bar')
 
-  // The deck behind the cottage: 3 m wide and 6 m out, down the west side of the walled garden.
-  const gap = 0.05
-  const [gz0, gz1] = [z0 - 6, z0 - gap]
-  b.rect(0, x0, gz0, x0 + 3, gz1, { skin: 'logical' })
-  b.room(0, { x: x0 + 1.5, z: z0 - 3 }, 'Deck', 'other', false)
+  // The deck behind the cottage: 3 m wide and 6 m out, down the west side of the walled garden. It is part of the
+  // cottage, off its back wall, and open to the sky.
+  const gz0 = z0 - 6
+  b.walls(0, [{ x: x0, z: z0 }, { x: x0, z: gz0 }, { x: x0 + 3, z: gz0 }, { x: x0 + 3, z: z0 }], { skin: 'logical' })
+  b.room(0, { x: x0 + 1.5, z: z0 - 3 }, 'Deck', 'deck', false)
   // The garden wall runs round the deck and the 6 × 6 m lawn beside it, with a gate left by the house.
   b.walls(0, [{ x: x0 + 3, z: gz0 }, { x: x0 + 9, z: gz0 }, { x: x0 + 9, z: z0 - 1.2 }], { skin: 'logical' })
   const floor = () => b.floor(0)

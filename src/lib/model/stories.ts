@@ -61,7 +61,7 @@ export function storeyFootprint(document: Document, floor: Floor): Ring[] | null
     (item) => item.unitId === floor.unitId && item.index === floor.index - 1,
   )
   if (!below) return []
-  return structureRings(below)
+  return roofedRings(below)
 }
 
 export function supportingFloor(document: Document, floor: Floor): Floor | undefined {
@@ -110,11 +110,26 @@ export function topStoreyIndex(document: Document, unitId: string): number {
 
 function componentRings(floor: Floor, ids: string[]): Ring[] {
   const keep = new Set(ids)
-  return structureRings({
+  return roofedRings({
     ...floor,
     corners: floor.corners.filter((corner) => keep.has(corner.id)),
     walls: floor.walls.filter((wall) => keep.has(wall.startCornerId) && keep.has(wall.endCornerId)),
   })
+}
+
+// The rooms of a storey that something can stand over: all of them but those marked open to the sky.
+export function roofedRings(floor: Floor): Ring[] {
+  const open = (floor.spaces ?? []).filter((space) => space.open).flatMap((space) => space.seeds)
+  const rings = structureRings(floor)
+  return open.length === 0 ? rings : rings.filter((ring) => !open.some((seed) => pointInRing(ring, seed.x, seed.z)))
+}
+
+// The named rooms under a storey, open ones included, for saying which of them a roof leaves out.
+export function roomsUnder(document: Document, floor: Floor): { floorId: string; space: NonNullable<Floor['spaces']>[number] }[] {
+  const below = supportingFloor(document, floor)
+  if (!below) return []
+  const rings = structureRings(below)
+  return (below.spaces ?? []).filter((space) => space.seeds.some((seed) => rings.some((ring) => pointInRing(ring, seed.x, seed.z)))).map((space) => ({ floorId: below.id, space }))
 }
 
 function cornersInside(floor: Floor, rings: Ring[]): number {

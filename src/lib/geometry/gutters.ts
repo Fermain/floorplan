@@ -68,22 +68,44 @@ export function gutterOf(roof: Roof): GutterType {
   return roof.gutter ?? DEFAULT_GUTTER
 }
 
-// The low, level edges of the roof faces: where the water leaves the roof.
+// The level edges the water runs off: on each face, an edge of the roof that lies level with the face falling
+// towards it. Most are the lowest edges of the roof. A roof cut back round a deck or a courtyard also sheds water
+// from a level edge partway up its slope, and that edge is an eave like any other.
 function eaveEdges(faces: RoofVertex[][]): { a: RoofVertex; b: RoofVertex; out: { x: number; z: number } }[] {
   const low = Math.min(...faces.flat().map((v) => v.y))
+  const key = (a: RoofVertex, b: RoofVertex) => {
+    const [p, q] = [a, b].map((v) => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`).sort()
+    return `${p}|${q}`
+  }
+  // An edge two faces share is a ridge, a hip or a valley, not the edge of the roof.
+  const shared = new Map<string, number>()
+  for (const face of faces) for (let i = 0; i < face.length; i++) shared.set(key(face[i], face[(i + 1) % face.length]), (shared.get(key(face[i], face[(i + 1) % face.length])) ?? 0) + 1)
   const edges: { a: RoofVertex; b: RoofVertex; out: { x: number; z: number } }[] = []
   for (const face of faces) {
-    const cx = face.reduce((sum, v) => sum + v.x, 0) / face.length
-    const cz = face.reduce((sum, v) => sum + v.z, 0) / face.length
+    // Which way the face falls, from its normal, and which way round it is drawn.
+    let [nx, ny, nz, turn] = [0, 0, 0, 0]
     for (let i = 0; i < face.length; i++) {
       const a = face[i]
       const b = face[(i + 1) % face.length]
-      if (Math.abs(a.y - low) > 1e-3 || Math.abs(b.y - low) > 1e-3) continue
+      nx += (a.y - b.y) * (a.z + b.z)
+      ny += (a.z - b.z) * (a.x + b.x)
+      nz += (a.x - b.x) * (a.y + b.y)
+      turn += a.x * b.z - b.x * a.z
+    }
+    if (ny < 0) [nx, nz] = [-nx, -nz]
+    const fall = Math.hypot(nx, nz)
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i]
+      const b = face[(i + 1) % face.length]
+      if (Math.abs(a.y - b.y) > 1e-3) continue
       const length = Math.hypot(b.x - a.x, b.z - a.z)
       if (length < 0.2) continue
-      let out = { x: -(b.z - a.z) / length, z: (b.x - a.x) / length }
-      const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
-      if ((mid.x - cx) * out.x + (mid.z - cz) * out.z < 0) out = { x: -out.x, z: -out.z }
+      const side = turn > 0 ? 1 : -1
+      const out = { x: ((b.z - a.z) / length) * side, z: (-(b.x - a.x) / length) * side }
+      const lowest = Math.abs(a.y - low) < 1e-3
+      // A flat face has no fall to judge by: its lowest edges are its eaves, as before.
+      const downhill = fall > 1e-6 ? (out.x * nx + out.z * nz) / fall > 0.5 : lowest
+      if (!downhill || (!lowest && (shared.get(key(a, b)) ?? 0) > 1)) continue
       edges.push({ a, b, out })
     }
   }

@@ -51,6 +51,10 @@ export function outsideFaces(floor: Floor): (wall: Wall, side: WallSide) => bool
     if (left && !right) open.add(root(left))
     if (right && !left) open.add(root(right))
   }
+  // A room marked open to the sky is outside too, whatever walls it has: a deck walled in on three sides.
+  for (const resolved of layout.spaces) {
+    if (resolved.space.open) for (const cell of resolved.cells) open.add(root(cell))
+  }
   return (wall, side) => {
     const cell = beside(wall, side, wallThickness(systemOf(wall)) / 2 + 0.05)
     return !cell || open.has(root(cell))

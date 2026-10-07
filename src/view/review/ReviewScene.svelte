@@ -17,6 +17,7 @@
   import {
     floorWorldDatum,
     groundPad,
+    padDatumAt,
     pointInRing,
     ringDistance,
     SURFACE_BED_THICKNESS_M,
@@ -39,7 +40,7 @@
   import { coveringTexture } from './roofTexture'
   import { floorTexture } from './floorTexture'
   import { floorFinishSpec } from '../../lib/model/floorFinishes'
-  import { layoutSpaces } from '../../lib/geometry/spaces'
+  import { layAngle, layoutSpaces, ringLabelPoint } from '../../lib/geometry/spaces'
   import type { CanvasTexture } from 'three'
   import { buildGableGeometries } from '../../lib/geometry/gable'
   import { stairVoids } from '../../lib/geometry/stairs'
@@ -52,7 +53,7 @@
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
   import { buildRetainingParts, pinchedGround, retainingDistance, RETAINING_GROUND_REACH_M, type RetainingPart } from '../../lib/geometry/retaining'
   import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
-  import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, type FixturePart } from '../../lib/geometry/fixtures'
+  import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, standsOnGrade, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
   import ContextPanel from '../shared/ContextPanel.svelte'
@@ -87,11 +88,16 @@
     cutShape?: CutShape
     walls?: WallView
     upTo?: number | null
+    // Whether the roofs are drawn, with their gutters and gables.
+    roofs?: boolean
+    // Called once the model has first been built, so whatever is waiting on it can stand down.
+    onReady?: () => void
     // Whether the building fades to show the services running through it.
     xray?: boolean
   }
 
-  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, xray = false }: Props = $props()
+  let { sunDate, onSelectWall, cutDepth = 0, cutShape = 'box', walls = 'full', upTo = null, roofs = true, xray = false, onReady }: Props = $props()
+  let announced = false
 
   // The pipes and cables, built only while they are being looked at.
   const serviceParts = $derived.by((): ServicePart[] => (xray ? buildServiceParts(serviceRuns(doc)) : []))
@@ -139,7 +145,7 @@
   let pavingMeshes = $state<PavingPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
   let retainingMeshes = $state<RetainingPart[]>([])
-  let counterMeshes = $state<{ key: string; datum: number; parts: CounterPart[] }[]>([])
+  let counterMeshes = $state<{ key: string; floorId: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
   const LAWN = '#6a8f5c'
@@ -155,8 +161,8 @@
   let stairMeshes = $state<StairMesh[]>([])
   let fenceMeshes = $state<{ key: string; parts: FencePart[] }[]>([])
   let pillarMeshes = $state<{ key: string; parts: PillarPart[] }[]>([])
-  let fixtureMeshes = $state<{ key: string; datum: number; parts: FixturePart[] }[]>([])
-  let trimMeshes = $state<{ key: string; datum: number; parts: TrimPart[] }[]>([])
+  let fixtureMeshes = $state<{ key: string; floorId: string; datum: number; parts: FixturePart[] }[]>([])
+  let trimMeshes = $state<{ key: string; floorId: string; datum: number; parts: TrimPart[] }[]>([])
   const doc = $derived(documentStore.document)
 
   const plotCenter = $derived.by(() => {
@@ -516,30 +522,49 @@
         })
       }
     }
+    // What stands on a floor stands at the level of its own building: on a plot with a house on each of two
+    // terraces the ground floor is one floor at two levels. Each is gathered by the level it stands at.
+    const gradeAt = (floor: Floor, x: number, z: number) => floorWorldDatum(floor.datumHeight, (floor.index === 0 ? padDatumAt(pad, x, z) : null) ?? supportGrade(floor, pad))
     const slabs = pad ? [...slabsFor(pad.structures), ...decksFor(floors, pad)] : []
-    const covers = floors.flatMap((floor) => coversFor(floor, floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) + finishedFloor(floor)))
+    const covers = floors.flatMap((floor) => coversFor(floor, (x, z) => gradeAt(floor, x, z) + finishedFloor(floor)))
     const roofs = roofsFor(pad)
     const stairs = stairsFor(pad)
-    const trims = floors.map((floor) => {
-      const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
-      return { key: floor.id, datum, parts: buildTrimParts(trimRuns(doc, floor), floor, datum) }
-    })
-    const fittings = floors
-      .filter((floor) => (floor.fixtures ?? []).length > 0)
-      .map((floor) => {
-        const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
-        return {
-          key: floor.id,
-          datum,
-          parts: buildFixtureParts(floor.fixtures ?? [], (fixture) => datum + fixtureStandAboveDatum(doc, floor, fixture), floor.counters ?? []),
-        }
-      })
-    const counters = floors
-      .filter((floor) => (floor.counters ?? []).length > 0)
-      .map((floor) => {
-        const datum = floorWorldDatum(floor.datumHeight, supportGrade(floor, pad))
-        return { key: floor.id, datum, parts: buildCounterParts(floor.counters ?? [], datum + finishedFloor(floor), floor.fixtures ?? []) }
-      })
+    const byLevel = <T,>(floor: Floor, items: T[], at: (item: T) => { x: number; z: number }) => {
+      const levels: { datum: number; items: T[] }[] = []
+      for (const item of items) {
+        const point = at(item)
+        const datum = gradeAt(floor, point.x, point.z)
+        const level = levels.find((entry) => Math.abs(entry.datum - datum) < 1e-6)
+        if (level) level.items.push(item)
+        else levels.push({ datum, items: [item] })
+      }
+      return levels.map((level, i) => ({ key: `${floor.id}@${i}`, floorId: floor.id, ...level }))
+    }
+    const middle = (a: { x: number; z: number }, b: { x: number; z: number }) => ({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 })
+    const trims = floors.flatMap((floor) =>
+      byLevel(floor, trimRuns(doc, floor), (run) => middle(run.a, run.b)).map((level) => ({ key: level.key, floorId: level.floorId, datum: level.datum, parts: buildTrimParts(level.items, floor, level.datum) })),
+    )
+    const fittings = floors.flatMap((floor) =>
+      byLevel(floor, floor.fixtures ?? [], (fixture) => fixture).map((level) => ({
+        key: level.key,
+        floorId: level.floorId,
+        datum: level.datum,
+        // A fitting standing outside on the ground is measured from the floor's own level, as its pad is.
+        parts: buildFixtureParts(
+          level.items,
+          (fixture) => (standsOnGrade(floor, fixture) ? floorWorldDatum(floor.datumHeight, supportGrade(floor, pad)) : level.datum) + fixtureStandAboveDatum(doc, floor, fixture),
+          floor.counters ?? [],
+        ),
+      })),
+    )
+    const counters = floors.flatMap((floor) =>
+      byLevel(floor, floor.counters ?? [], (counter) => ({ x: counter.x + (counter.dx * counter.length) / 2 - (counter.dz * counter.depth) / 2, z: counter.z + (counter.dz * counter.length) / 2 + (counter.dx * counter.depth) / 2 })).map((level) => ({
+        key: level.key,
+        floorId: level.floorId,
+        datum: level.datum,
+        parts: buildCounterParts(level.items, level.datum + finishedFloor(floor), floor.fixtures ?? []),
+      })),
+    )
     counterMeshes = counters
     groundGeometry = ground
     roadMeshes = roadParts
@@ -557,6 +582,11 @@
     pillarMeshes = pillars
     fixtureMeshes = fittings
     trimMeshes = trims
+    if (!announced) {
+      announced = true
+      // After the meshes have been handed over, so the first frame with the house in it can follow.
+      setTimeout(() => onReady?.(), 0)
+    }
     return () => {
       for (const trim of trims) for (const part of trim.parts) part.geometry.dispose()
       for (const fitting of fittings) for (const part of fitting.parts) part.geometry.dispose()
@@ -729,7 +759,7 @@
   }
 
   // A thin sheet over each named room, in its floor finish, with any stair well cut out of it.
-  function coversFor(floor: Floor, datum: number): FloorCover[] {
+  function coversFor(floor: Floor, levelAt: (x: number, z: number) => number): FloorCover[] {
     if (floor.roof) return []
     const voids = stairVoids(doc, floor)
     const covers: FloorCover[] = []
@@ -743,12 +773,24 @@
           if (hole.length >= 3 && hole.every((point) => pointInRing(cell.net, point.x, point.z))) shape.holes.push(ringPath(hole))
         }
         const geometry = new ShapeGeometry(shape)
+        // The finish is laid along the room's longest wall: its pattern is turned to that, not left to the north.
+        const lay = layAngle(cell.net)
+        if (Math.abs(Math.sin(lay)) > 1e-3) {
+          const uv = geometry.getAttribute('uv')
+          const [cos, sin] = [Math.cos(lay), Math.sin(lay)]
+          // The shape is drawn with z turned over, so the wall's angle there is the other way round.
+          for (let i = 0; i < uv.count; i++) {
+            const [u, v] = [uv.getX(i), uv.getY(i)]
+            uv.setXY(i, u * cos - v * sin, u * sin + v * cos)
+          }
+          uv.needsUpdate = true
+        }
         geometry.rotateX(-Math.PI / 2)
         covers.push({
           key: `cover-${floor.id}-${resolved.space.id}-${index}`,
           storey: floor.index,
           geometry,
-          y: datum + FLOOR_COVER_LIFT_M,
+          y: levelAt(ringLabelPoint(cell.net).x, ringLabelPoint(cell.net).z) + FLOOR_COVER_LIFT_M,
           colour: spec.colour,
           texture: floorTexture(spec),
         })
@@ -963,7 +1005,7 @@
       </T.Mesh>
     {/each}
 
-    {#each trimMeshes.filter((trim) => shownFloor(trim.key)) as trim (trim.key)}
+    {#each trimMeshes.filter((trim) => shownFloor(trim.floorId)) as trim (trim.key)}
       <T.Group userData={halfCut(trim.datum)}>
       {#each trim.parts as part (part.geometry.uuid)}
         <T.Mesh geometry={part.geometry} receiveShadow>
@@ -973,7 +1015,7 @@
       </T.Group>
     {/each}
 
-    {#each counterMeshes.filter((counter) => shownFloor(counter.key)) as counter (counter.key)}
+    {#each counterMeshes.filter((counter) => shownFloor(counter.floorId)) as counter (counter.key)}
       <T.Group userData={halfCut(counter.datum)}>
         {#each counter.parts as part (part.geometry.uuid)}
           <T.Mesh geometry={part.geometry} castShadow receiveShadow>
@@ -982,10 +1024,10 @@
         {/each}
       </T.Group>
     {/each}
-    {#each fixtureMeshes.filter((fitting) => shownFloor(fitting.key)) as fitting (fitting.key)}
+    {#each fixtureMeshes.filter((fitting) => shownFloor(fitting.floorId)) as fitting (fitting.key)}
       <T.Group userData={halfCut(fitting.datum)}>
       {#each fitting.parts as part (part.geometry.uuid)}
-        <T.Mesh geometry={part.geometry} castShadow receiveShadow {...fixtureHandlers(fitting.key)}>
+        <T.Mesh geometry={part.geometry} castShadow receiveShadow {...fixtureHandlers(fitting.floorId)}>
           <T.MeshStandardMaterial
             color={part.colour}
             roughness={part.roughness}
@@ -1027,7 +1069,7 @@
       </T.Mesh>
     {/each}
 
-    {#each roofMeshes.filter((roof) => shownFloor(roof.key)) as roof (roof.key)}
+    {#each roofMeshes.filter((roof) => roofs && shownFloor(roof.key)) as roof (roof.key)}
       <T.Mesh geometry={roof.meshes.top ?? undefined} position.y={roof.y} castShadow>
         <T.MeshStandardMaterial
           map={roof.texture}

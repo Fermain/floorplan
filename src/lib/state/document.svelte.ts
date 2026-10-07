@@ -84,6 +84,7 @@ export const documentStore = {
   addStorey: bind(mutations.addStorey),
   removeTopStorey: bind(mutations.removeTopStorey),
   removeWall: bind(mutations.removeWall),
+  removeCorner: bind(mutations.removeCorner),
   removeOpening: bind(mutations.removeOpening),
   replacePlot: bind(mutations.replacePlot),
   replaceHeightfield: bind(mutations.replaceHeightfield),

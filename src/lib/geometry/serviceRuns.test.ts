@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { EXAMPLES } from '../examples'
 import { addWallRing } from '../model/mutations'
 import { fixtureDocument } from '../plot/fixture'
+import { siteField } from './fixtures'
+import { groundPad, ringDistance } from './pad'
 import { buildServiceParts, runLength, serviceRuns } from './serviceRuns'
+import { bilinearHeight } from './terrain'
 
 describe('service runs', () => {
   it('are none for a house with no fittings', () => {
@@ -27,6 +30,18 @@ describe('service runs', () => {
       const parts = buildServiceParts(runs)
       expect(parts.map((part) => part.kind).sort()).toEqual([...kinds].sort())
       for (const part of parts) part.geometry.dispose()
+    }
+  })
+
+  it('go underground between buildings, never through the air', async () => {
+    for (const id of ['multi-generation', 'verulam']) {
+      const doc = await EXAMPLES.find((example) => example.id === id)!.load()
+      const rings = (groundPad(doc)?.structures ?? []).flatMap((structure) => structure.rings)
+      const field = siteField(doc)
+      // Well clear of every building, each point of each run is at or below the ground.
+      const open = serviceRuns(doc).flatMap((run) => run.points.filter(([x, , z]) => rings.every((ring) => ringDistance(ring, x, z) > 2)))
+      expect(open.length, id).toBeGreaterThan(0)
+      for (const [x, y, z] of open) expect(y, `${id} at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeLessThanOrEqual(bilinearHeight(field, x, z) + 0.01)
     }
   })
 

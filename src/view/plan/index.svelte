@@ -66,6 +66,7 @@
   import {
     cellAt,
     floorCells,
+    layAngle,
     layoutSpaces,
     ringLabelPoint,
     ROOM_TYPES,
@@ -81,6 +82,8 @@
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
+  import { cornerRemoval } from '../../lib/model/mutations'
+  import { systemOf, wallThickness } from '../../lib/model/systems'
   import { view as shown, workspace } from '../../lib/state/workspace.svelte'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
@@ -97,6 +100,7 @@
     MAX_STOREYS,
     topStoreyIndex,
     supportingFloor,
+    roomsUnder,
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
   import { GUTTERS, gutterLayout, gutterOf, linkTanks } from '../../lib/geometry/gutters'
@@ -373,12 +377,34 @@
     return !chosen.resolved && roomKey(chosen.cell.room.cornerIds) === roomKey(cornerIds)
   }
 
+  // The way a room's finish is laid, in tenths of a degree: along its longest wall. Nothing for a room whose
+  // longest wall runs with the pattern as it comes.
+  function layOf(cornerIds: string[]): number {
+    if (!displayFloor) return 0
+    const tenths = Math.round(((layAngle(roomPolygonPoints(cornerIds, displayFloor).map(([x, z]) => ({ x, z }))) * 180) / Math.PI) * 10)
+    return tenths % 1800 === 0 ? 0 : tenths
+  }
+
   function cellFill(cornerIds: string[]): string {
     const space = spaceByRoom[roomKey(cornerIds)]
     if (!space) return 'rgba(120, 120, 120, 0.08)'
     // Each floor finish has its own pattern, drawn to scale: tiles, boards, planks, carpet.
-    return space.finish === 'none' ? 'rgba(120, 120, 120, 0.1)' : `url(#floor-${space.finish})`
+    if (space.finish === 'none') return 'rgba(120, 120, 120, 0.1)'
+    const lay = layOf(cornerIds)
+    return lay === 0 ? `url(#floor-${space.finish})` : `url(#floor-${space.finish}-${lay})`
   }
+
+  // The finishes laid at an angle on this storey, each of which needs its pattern turned to suit.
+  const turnedFinishes = $derived.by(() => {
+    const seen: { finish: string; lay: number }[] = []
+    for (const room of rooms) {
+      const space = spaceByRoom[roomKey(room.cornerIds)]
+      if (!space || space.finish === 'none') continue
+      const lay = layOf(room.cornerIds)
+      if (lay !== 0 && !seen.some((item) => item.finish === space.finish && item.lay === lay)) seen.push({ finish: space.finish, lay })
+    }
+    return seen
+  })
 
   function nameSelectedRoom() {
     const chosen = selectedRoom
@@ -390,7 +416,7 @@
     applyResult(documentStore.nameCell(chosen.floorId, pick.x, pick.z, name, newRoomType))
   }
 
-  function patchSelectedSpace(patch: Partial<Pick<Space, 'name' | 'type' | 'finish'>>) {
+  function patchSelectedSpace(patch: Partial<Pick<Space, 'name' | 'type' | 'finish' | 'open'>>) {
     const chosen = selectedRoom
     if (!chosen?.resolved) return
     applyResult(documentStore.updateSpace(chosen.floorId, chosen.resolved.space.id, patch))
@@ -445,7 +471,9 @@
 
   const MIN_ZOOM = 0.5
   const MAX_ZOOM = 40
-  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number } } | null>(null)
+  // A pan under way. One begun by dragging the plan itself with Select carries what a plain click there would
+  // have picked, which is done on release if the pointer never moved.
+  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number }; pick?: () => void; moved?: boolean } | null>(null)
   let spaceHeld = $state(false)
 
   $effect(() => {
@@ -493,7 +521,22 @@
       if (event.code === 'Space') {
         spaceHeld = true
         event.preventDefault()
+        return
       }
+      // With Select in hand, the arrow keys and W, A, S and D move the plan about; Shift moves it further.
+      if (tool !== 'select' || event.metaKey || event.ctrlKey || event.altKey) return
+      if (target instanceof HTMLElement && (target.tagName === 'SELECT' || target.isContentEditable || target.closest('[role="menu"], [role="menubar"], [role="listbox"], [role="dialog"]'))) return
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      const arrow = key.startsWith('Arrow')
+      // On a toolbar button the arrows already move along the toolbar; the letters still pan.
+      if (arrow && target instanceof HTMLElement && target.closest('button, [role="radio"], [role="tab"], a')) return
+      const dx = key === 'ArrowLeft' || key === 'a' ? -1 : key === 'ArrowRight' || key === 'd' ? 1 : 0
+      const dy = key === 'ArrowUp' || key === 'w' ? -1 : key === 'ArrowDown' || key === 's' ? 1 : 0
+      if (dx === 0 && dy === 0) return
+      event.preventDefault()
+      const step = (event.shiftKey ? 240 : 80) * pixelsToView()
+      const c = view.c
+      centre = { x: c.x + dx * step, y: c.y + dy * step }
     }
     const up = (event: KeyboardEvent) => {
       if (event.code === 'Space') spaceHeld = false
@@ -573,9 +616,20 @@
     return true
   }
 
+  // Dragging the plan itself with Select: a pan, unless the pointer is let go where it went down, when it is the
+  // click it would have been.
+  function armPan(event: PointerEvent, pick: () => void) {
+    svgEl?.setPointerCapture(event.pointerId)
+    panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: view.c, pick, moved: false }
+  }
+
   function movePan(event: PointerEvent): boolean {
     const pan = panning
     if (!pan || pan.pointerId !== event.pointerId) return false
+    if (pan.pick && !pan.moved) {
+      if (Math.hypot(event.clientX - pan.x, event.clientY - pan.y) < 4) return true
+      panning = { ...pan, moved: true }
+    }
     const k = pixelsToView()
     centre = { x: pan.from.x - (event.clientX - pan.x) * k, y: pan.from.y - (event.clientY - pan.y) * k }
     return true
@@ -586,6 +640,7 @@
     if (!pan || pan.pointerId !== event.pointerId) return false
     panning = null
     if (svgEl?.hasPointerCapture(event.pointerId)) svgEl.releasePointerCapture(event.pointerId)
+    if (pan.pick && !pan.moved) pan.pick()
     return true
   }
 
@@ -1014,12 +1069,12 @@
           )
           return
         }
-        chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
+        armPan(event, () => chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } }))
         return
       }
       const held = activeStoreyIndex === 0 ? retainingAt(document, plan, s(0.3)) : null
       if (held) {
-        chooseSelection({ retaining: held.id })
+        armPan(event, () => chooseSelection({ retaining: held.id }))
         return
       }
       const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
@@ -1031,11 +1086,11 @@
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
       if (paved) {
-        chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id })
+        armPan(event, () => chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id }))
         return
       }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
-      chooseSelection({ edge: edge ?? null })
+      armPan(event, () => chooseSelection({ edge: edge ?? null }))
       return
     }
 
@@ -1115,6 +1170,9 @@
     // A rectangle is a one-off: the next click draws walls again.
     tool = toolBeforeRect
   }
+
+  // How near a corner a click has to be to mean the corner itself and not the wall running into it.
+  const NODE_DOT_M = 0.15
 
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
     const node = nearestCorner(floor.corners, plan.x, plan.z, NODE_HIT_M)
@@ -1271,8 +1329,16 @@
     const drag = moveDrag
     moveDrag = null
     if (!drag || !activeFloor) return
+    if (drag.dx === 0 && drag.dz === 0) {
+      // A click, not a drag. On a wall and clear of the corner's own dot it picks the wall: a wall shorter than
+      // the reach of its two corners could not be picked at all otherwise.
+      const corner = cornerById(activeFloor.corners, drag.nodeId)
+      const onWall = pickWall(activeFloor, drag.startX, drag.startZ)
+      if (corner && onWall && Math.hypot(drag.startX - corner.x, drag.startZ - corner.z) > NODE_DOT_M) chooseSelection({ wallId: onWall })
+      else chooseSelection({ cornerId: drag.nodeId })
+      return
+    }
     chooseSelection({ cornerId: drag.nodeId })
-    if (drag.dx === 0 && drag.dz === 0) return
     const result = documentStore.moveCorners(
       floorIdFor(drag.nodeId) ?? activeFloorId,
       drag.cornerIds,
@@ -1295,7 +1361,7 @@
     }
     if (!hoverNodeId) return
     const corner = cornerById(floor.corners, hoverNodeId)
-    const keep = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M) + ROTATE_HIT_M + 0.2
+    const keep = Math.hypot(turnOffset, turnOffset) + turnRadius + 0.2 * turnScale
     if (!corner || Math.hypot(plan.x - corner.x, plan.z - corner.z) > keep) hoverNodeId = null
   }
 
@@ -1404,6 +1470,7 @@
   )
 
   const roofFloor = $derived(roofableFloor(floors, selectedPlateFloorId))
+  const roofRooms = $derived(roofFloor ? roomsUnder(document, roofFloor) : [])
 
   function addRoof() {
     const floor = roofFloor
@@ -1647,17 +1714,23 @@
     return { ...rect, widthLabel: width, depthLabel: depth }
   })
 
+  // The turn handle is its drawn size until the plan is zoomed in past it, and from there keeps the same size on
+  // the screen, so that close in it does not grow to cover the corner it belongs to.
+  const turnScale = $derived(Math.min(1, s(2.4)))
+  const turnOffset = $derived(ROTATE_OFFSET_M * turnScale)
+  const turnRadius = $derived(ROTATE_HIT_M * turnScale)
+
   const rotateHandle = $derived.by(() => {
     if (tool !== 'select' || !activeFloor || moveDrag) return null
     const id = rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
     if (!id || connectedCornerIds(activeFloor, id).length < 2) return null
     const corner = cornerById(activeFloor.corners, id)
     if (!corner) return null
-    const radius = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M)
-    let x = corner.x + ROTATE_OFFSET_M
-    let z = corner.z - ROTATE_OFFSET_M
+    const radius = Math.hypot(turnOffset, turnOffset)
+    let x = corner.x + turnOffset
+    let z = corner.z - turnOffset
     if (rotateDrag && rotateDrag.pivotId === id) {
-      const a = Math.atan2(-ROTATE_OFFSET_M, ROTATE_OFFSET_M) + rotateDrag.angle
+      const a = Math.atan2(-turnOffset, turnOffset) + rotateDrag.angle
       x = corner.x + Math.cos(a) * radius
       z = corner.z + Math.sin(a) * radius
     }
@@ -1668,7 +1741,7 @@
     if (!rotateDrag || !rotateHandle || !activeFloor) return null
     const pivot = cornerById(activeFloor.corners, rotateDrag.pivotId)
     if (!pivot) return null
-    const radius = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M) + 0.85
+    const radius = Math.hypot(turnOffset, turnOffset) + 0.85 * turnScale
     const a = Math.atan2(rotateHandle.z - pivot.z, rotateHandle.x - pivot.x)
     return {
       x: pivot.x + Math.cos(a) * radius,
@@ -2431,6 +2504,21 @@
     if (applyResult(documentStore.removeStair(chosen.floorId, chosen.stair.id))) chooseSelection({})
   }
 
+  // The corner picked, the walls that meet at it, and what deleting it would do to them.
+  const chosenCorner = $derived.by(() => {
+    const id = selectedCornerId
+    const floor = id ? levelFloors.find((item) => item.corners.some((corner) => corner.id === id)) : undefined
+    const removal = id && floor ? cornerRemoval(floor, id) : null
+    if (!id || !floor || !removal) return null
+    const lines = removal.wallIds.flatMap((wallId) => {
+      const wall = floor.walls.find((item) => item.id === wallId)
+      const a = wall && cornerById(floor.corners, wall.startCornerId)
+      const b = wall && cornerById(floor.corners, wall.endCornerId)
+      return wall && a && b ? [{ id: wallId, a, b, thickness: wall.skin === 'logical' ? 0.12 : wallThickness(systemOf(wall)) }] : []
+    })
+    return { id, floor, removal, lines }
+  })
+
   const deletable = $derived.by((): { label: string; run: () => void } | null => {
     if (roofFloor) return null
     if (chosenStair) return { label: 'Delete stair', run: removeChosenStair }
@@ -2443,6 +2531,18 @@
     const wallId = selectedWallId
     const floor = activeFloor
     const wall = wallId ? floor?.walls.find((item) => item.id === wallId) : undefined
+    if (!wall && chosenCorner) {
+      const { removal, floor: on, id } = chosenCorner
+      const count = removal.wallIds.length
+      const label =
+        removal.kind === 'join' ? 'Remove corner and join the walls' : removal.kind === 'loose' ? 'Delete corner' : count === 1 ? 'Delete corner and its wall' : `Delete corner and ${count} walls`
+      return {
+        label,
+        run: () => {
+          if (applyResult(documentStore.removeCorner(on.id, id))) chooseSelection({})
+        },
+      }
+    }
     if (!floor || !wall) return null
     return {
       label: wall.skin === 'logical' ? (wall.fence ? 'Delete fence line' : 'Delete logical wall') : 'Delete wall',
@@ -2895,7 +2995,7 @@
   <svg
     bind:this={svgEl}
     class="canvas paper"
-    class:panning={spaceHeld || panning !== null}
+    class:panning={spaceHeld || (panning !== null && panning.moved !== false)}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
     onpointerdown={onSvgPointerDown}
@@ -2937,6 +3037,9 @@
             <rect width="1" height="1" fill={spec.colour} fill-opacity="0.3" />
           </pattern>
         {/if}
+      {/each}
+      {#each turnedFinishes as item (`${item.finish}-${item.lay}`)}
+        <pattern id="floor-{item.finish}-{item.lay}" href="#floor-{item.finish}" patternTransform="rotate({item.lay / 10})" />
       {/each}
       {#if outlineClip}
         <clipPath id="plan-storey-clip">
@@ -3423,6 +3526,24 @@
           {/each}
         </g>
       {/if}
+      {#if chosenCorner && !moveDrag && !rotateDrag}
+        <!-- The walls that meet at the corner picked: red where deleting the corner takes them with it, blue where
+             it would join them into one. -->
+        <g class="corner-walls" pointer-events="none">
+          {#each chosenCorner.lines as line (line.id)}
+            <line
+              x1={line.a.x}
+              y1={line.a.z}
+              x2={line.b.x}
+              y2={line.b.z}
+              stroke={chosenCorner.removal.kind === 'join' ? '#2563eb' : '#dc2626'}
+              stroke-opacity="0.6"
+              stroke-width={line.thickness + s(0.08)}
+              stroke-linecap="round"
+            />
+          {/each}
+        </g>
+      {/if}
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
@@ -3726,8 +3847,8 @@
       {/each}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
-          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
-          <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="translate(-0.39 -0.39) scale(0.0325)" />
+          <circle r={turnRadius} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
+          <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="scale({turnScale}) translate(-0.39 -0.39) scale(0.0325)" />
         </g>
       {/if}
       {#if rotateLabel}
@@ -4208,6 +4329,18 @@
           {:else if !isHabitable(resolved.space.type)}
             <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
+          <label class="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              class="mt-0.5 size-4 accent-primary"
+              checked={resolved.space.open ?? false}
+              onchange={(event) => patchSelectedSpace({ open: event.currentTarget.checked })}
+            />
+            <span>
+              Open to the sky
+              <span class="block text-muted-foreground">A deck or a yard: no roof, ceiling or storey over it.</span>
+            </span>
+          </label>
           <div class="grid gap-1.5 border-t pt-3">
             <Button
               variant="outline"
@@ -4331,6 +4464,24 @@
               {coveringOf(roof).name} usually need at least {coveringOf(roof).minPitchDeg}°. Check the manufacturer's
               minimum.
             </p>
+          {/if}
+          {#if roofRooms.length > 0}
+            <!-- Which of the rooms below this roof are left out from under it. -->
+            <div class="grid gap-1.5 border-t pt-3">
+              <span class="font-medium">Open to the sky</span>
+              <span class="text-muted-foreground">Tick a deck or a yard to leave it out from under the roof.</span>
+              {#each roofRooms as room (room.space.id)}
+                <label class="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    class="size-4 accent-primary"
+                    checked={room.space.open ?? false}
+                    onchange={(event) => applyResult(documentStore.updateSpace(room.floorId, room.space.id, { open: event.currentTarget.checked }))}
+                  />
+                  {room.space.name}
+                </label>
+              {/each}
+            </div>
           {/if}
           <Button variant="destructive" onclick={removeRoof}>Remove roof</Button>
         {:else}
