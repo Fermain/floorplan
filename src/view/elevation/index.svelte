@@ -38,6 +38,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { computeWallElevationFrame, viewFrameFor, viewReversed } from './wallFrame'
   import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
+  import AlignHorizontalJustifyCenter from '@lucide/svelte/icons/align-horizontal-justify-center'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
   import Plus from '@lucide/svelte/icons/plus'
@@ -496,7 +497,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       const target = event.target
       if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.key === 'v' || event.key === 'V') mode = 'select'
+      if ((event.key === 'c' || event.key === 'C') && !event.metaKey && !event.ctrlKey && centring?.exact !== null && centring?.exact !== undefined) centreOpening(centring.exact)
+      else if (event.key === 'v' || event.key === 'V') mode = 'select'
       else if (event.key === 'p' || event.key === 'P') mode = 'place'
       else if (event.key === 'Escape') {
         if (mode === 'place') mode = 'select'
@@ -920,6 +922,31 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       width: snapped,
       ...(u === null ? {} : { u }),
     })
+  }
+
+  // Where the picked opening would sit centred on the wall. Dead centre cuts the bricks each side of it alike;
+  // the nearest place on the brick grid keeps whole and half bricks, a little off centre. Either is offered only
+  // if the opening fits there clear of its neighbours.
+  const centring = $derived.by(() => {
+    if (!editingOpening || !frame || !wall) return null
+    const { width } = editingOpening
+    const others = wall.openings.filter((opening) => opening.id !== editingOpening.id)
+    const centre = (frame.length - width) / 2
+    const placed = placeOpeningU(centre, width, frame.length, others, undefined, gap)
+    const exact = placed !== null && Math.abs(placed - centre) < 1e-6 ? centre : null
+    const brick = snapLegalModuleU(centre, width, frame.length, others, system)
+    return {
+      // How far the opening is from centre now, and how far the brick grid's nearest place is from it.
+      off: Math.abs(editingOpening.u - centre),
+      exact,
+      brick: brick !== null && Math.abs(brick - centre) > 0.0005 ? brick : null,
+      brickOff: brick === null ? 0 : Math.abs(brick - centre),
+    }
+  })
+
+  function centreOpening(u: number | null | undefined) {
+    if (u === null || u === undefined || !editingOpening || !floor || !wall) return
+    documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { u })
   }
 
   function chooseSystem(id: WallSystemId) {
@@ -1498,6 +1525,29 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
                   commitWidth(next)
                 }}
               />
+            </div>
+          {/if}
+          {#if centring}
+            <div class="grid gap-1.5 border-t pt-3">
+              <span class="font-medium">Position</span>
+              <span class="text-muted-foreground tabular-nums">{centring.off < 0.0005 ? 'Centred on the wall.' : `${mm(centring.off)} mm off the centre of the wall.`}</span>
+              <Button variant="outline" disabled={centring.exact === null || centring.off < 0.0005} title="Dead centre: the bricks each side are cut alike (C)" onclick={() => centreOpening(centring.exact)}>
+                <AlignHorizontalJustifyCenter />Centre on the wall
+              </Button>
+              {#if centring.brick !== null}
+                <Button
+                  variant="outline"
+                  disabled={Math.abs(editingOpening.u - centring.brick) < 0.0005}
+                  title="The nearest place to centre that keeps whole and half bricks"
+                  onclick={() => centreOpening(centring.brick)}
+                >
+                  <AlignHorizontalJustifyCenter />Centre to whole bricks
+                </Button>
+                <span class="text-muted-foreground tabular-nums">Whole bricks sit {mm(centring.brickOff)} mm off centre.</span>
+              {/if}
+              {#if centring.exact === null}
+                <span class="text-muted-foreground">Another opening is in the way of the centre of this wall.</span>
+              {/if}
             </div>
           {/if}
           <Button variant="destructive" onclick={removeSelected}>Remove opening</Button>
