@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { roofFacesForFloor } from '../geometry/roof'
+import { outsideFaces } from '../geometry/finishes'
+import { roofFacesForFloor, roofInfills } from '../geometry/roof'
+import { trimRuns } from '../geometry/trims'
 import { fixtureDocument } from '../plot/fixture'
 import { addCorner, addStorey, addWall, addWallRing, nameCell, setRoof, updateSpace } from './mutations'
 import { layAngle } from '../geometry/spaces'
@@ -71,6 +73,41 @@ describe('a room open to the sky', () => {
     const ring = [turn(0, 0), turn(6, 0), turn(6, 3), turn(0, 3)]
     expect(layAngle(ring)).toBeCloseTo(Math.PI / 6, 6)
     expect(layAngle([...ring].reverse())).toBeCloseTo(Math.PI / 6, 6)
+  })
+
+  it('leaves the wall between it and the house an outside wall, built up to the roof', () => {
+    // A gable over the house with its ridge running east to west, so the wall at x = 9 is a gable end.
+    let doc = house()
+    const deck = ground(doc).spaces!.find((space) => space.name === 'Deck')!
+    doc = updateSpace(doc, ground(doc).id, deck.id, { open: true }).document
+    doc = setRoof(doc, top(doc).id, { pitchDeg: 20, eaves: 0.3, form: 'gable', covering: 'concrete-tile' }).document
+    const below = { ...ground(doc) }
+    const across = below.walls.find((wall) => {
+      const [a, b] = [wall.startCornerId, wall.endCornerId].map((id) => below.corners.find((corner) => corner.id === id)!)
+      return a.x === 9 && b.x === 9
+    })!
+    const filled = roofInfills(below, top(doc), top(doc).roof!).map((infill) => infill.wall.id)
+    const turned = roofInfills(below, top(doc), { ...top(doc).roof!, turns: 1 }).map((infill) => infill.wall.id)
+    // One way round or the other the wall beside the deck is a gable end, and it is filled in.
+    expect([...filled, ...turned]).toContain(across.id)
+  })
+
+  it('has no skirting or cornice, and its walls are outside walls', () => {
+    let doc = house()
+    const deck = ground(doc).spaces!.find((space) => space.name === 'Deck')!
+    const inDeck = (runs: ReturnType<typeof trimRuns>) => runs.filter((run) => (run.a.x + run.b.x) / 2 > 9.05).length
+    expect(inDeck(trimRuns(doc, ground(doc)))).toBeGreaterThan(0)
+    const across = ground(doc).walls.find((wall) => {
+      const [a, b] = [wall.startCornerId, wall.endCornerId].map((id) => ground(doc).corners.find((corner) => corner.id === id)!)
+      return a.x === 9 && b.x === 9
+    })!
+    expect(([1, -1] as const).filter((side) => outsideFaces(ground(doc))(across, side))).toHaveLength(0)
+    doc = updateSpace(doc, ground(doc).id, deck.id, { open: true }).document
+    expect(inDeck(trimRuns(doc, ground(doc)))).toBe(0)
+    // The living room still has its own.
+    expect(trimRuns(doc, ground(doc)).length).toBeGreaterThan(0)
+    // The face of the dividing wall that looks onto the deck is now an outside face; the other is not.
+    expect(([1, -1] as const).filter((side) => outsideFaces(ground(doc))(across, side))).toHaveLength(1)
   })
 
   it('is still listed among the rooms under the roof, so it can be closed again from there', () => {
