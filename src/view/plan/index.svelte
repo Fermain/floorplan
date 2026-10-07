@@ -1308,7 +1308,7 @@
     }
     if (!hoverNodeId) return
     const corner = cornerById(floor.corners, hoverNodeId)
-    const keep = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M) + ROTATE_HIT_M + 0.2
+    const keep = Math.hypot(turnOffset, turnOffset) + turnRadius + 0.2 * turnScale
     if (!corner || Math.hypot(plan.x - corner.x, plan.z - corner.z) > keep) hoverNodeId = null
   }
 
@@ -1660,17 +1660,23 @@
     return { ...rect, widthLabel: width, depthLabel: depth }
   })
 
+  // The turn handle is its drawn size until the plan is zoomed in past it, and from there keeps the same size on
+  // the screen, so that close in it does not grow to cover the corner it belongs to.
+  const turnScale = $derived(Math.min(1, s(2.4)))
+  const turnOffset = $derived(ROTATE_OFFSET_M * turnScale)
+  const turnRadius = $derived(ROTATE_HIT_M * turnScale)
+
   const rotateHandle = $derived.by(() => {
     if (tool !== 'select' || !activeFloor || moveDrag) return null
     const id = rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
     if (!id || connectedCornerIds(activeFloor, id).length < 2) return null
     const corner = cornerById(activeFloor.corners, id)
     if (!corner) return null
-    const radius = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M)
-    let x = corner.x + ROTATE_OFFSET_M
-    let z = corner.z - ROTATE_OFFSET_M
+    const radius = Math.hypot(turnOffset, turnOffset)
+    let x = corner.x + turnOffset
+    let z = corner.z - turnOffset
     if (rotateDrag && rotateDrag.pivotId === id) {
-      const a = Math.atan2(-ROTATE_OFFSET_M, ROTATE_OFFSET_M) + rotateDrag.angle
+      const a = Math.atan2(-turnOffset, turnOffset) + rotateDrag.angle
       x = corner.x + Math.cos(a) * radius
       z = corner.z + Math.sin(a) * radius
     }
@@ -1681,7 +1687,7 @@
     if (!rotateDrag || !rotateHandle || !activeFloor) return null
     const pivot = cornerById(activeFloor.corners, rotateDrag.pivotId)
     if (!pivot) return null
-    const radius = Math.hypot(ROTATE_OFFSET_M, ROTATE_OFFSET_M) + 0.85
+    const radius = Math.hypot(turnOffset, turnOffset) + 0.85 * turnScale
     const a = Math.atan2(rotateHandle.z - pivot.z, rotateHandle.x - pivot.x)
     return {
       x: pivot.x + Math.cos(a) * radius,
@@ -3784,8 +3790,8 @@
       {/each}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
-          <circle r={ROTATE_HIT_M} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
-          <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="translate(-0.39 -0.39) scale(0.0325)" />
+          <circle r={turnRadius} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
+          <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="scale({turnScale}) translate(-0.39 -0.39) scale(0.0325)" />
         </g>
       {/if}
       {#if rotateLabel}
