@@ -471,7 +471,9 @@
 
   const MIN_ZOOM = 0.5
   const MAX_ZOOM = 40
-  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number } } | null>(null)
+  // A pan under way. One begun by dragging the plan itself with Select carries what a plain click there would
+  // have picked, which is done on release if the pointer never moved.
+  let panning = $state<{ pointerId: number; x: number; y: number; from: { x: number; y: number }; pick?: () => void; moved?: boolean } | null>(null)
   let spaceHeld = $state(false)
 
   $effect(() => {
@@ -519,7 +521,22 @@
       if (event.code === 'Space') {
         spaceHeld = true
         event.preventDefault()
+        return
       }
+      // With Select in hand, the arrow keys and W, A, S and D move the plan about; Shift moves it further.
+      if (tool !== 'select' || event.metaKey || event.ctrlKey || event.altKey) return
+      if (target instanceof HTMLElement && (target.tagName === 'SELECT' || target.isContentEditable || target.closest('[role="menu"], [role="menubar"], [role="listbox"], [role="dialog"]'))) return
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+      const arrow = key.startsWith('Arrow')
+      // On a toolbar button the arrows already move along the toolbar; the letters still pan.
+      if (arrow && target instanceof HTMLElement && target.closest('button, [role="radio"], [role="tab"], a')) return
+      const dx = key === 'ArrowLeft' || key === 'a' ? -1 : key === 'ArrowRight' || key === 'd' ? 1 : 0
+      const dy = key === 'ArrowUp' || key === 'w' ? -1 : key === 'ArrowDown' || key === 's' ? 1 : 0
+      if (dx === 0 && dy === 0) return
+      event.preventDefault()
+      const step = (event.shiftKey ? 240 : 80) * pixelsToView()
+      const c = view.c
+      centre = { x: c.x + dx * step, y: c.y + dy * step }
     }
     const up = (event: KeyboardEvent) => {
       if (event.code === 'Space') spaceHeld = false
@@ -599,9 +616,20 @@
     return true
   }
 
+  // Dragging the plan itself with Select: a pan, unless the pointer is let go where it went down, when it is the
+  // click it would have been.
+  function armPan(event: PointerEvent, pick: () => void) {
+    svgEl?.setPointerCapture(event.pointerId)
+    panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: view.c, pick, moved: false }
+  }
+
   function movePan(event: PointerEvent): boolean {
     const pan = panning
     if (!pan || pan.pointerId !== event.pointerId) return false
+    if (pan.pick && !pan.moved) {
+      if (Math.hypot(event.clientX - pan.x, event.clientY - pan.y) < 4) return true
+      panning = { ...pan, moved: true }
+    }
     const k = pixelsToView()
     centre = { x: pan.from.x - (event.clientX - pan.x) * k, y: pan.from.y - (event.clientY - pan.y) * k }
     return true
@@ -612,6 +640,7 @@
     if (!pan || pan.pointerId !== event.pointerId) return false
     panning = null
     if (svgEl?.hasPointerCapture(event.pointerId)) svgEl.releasePointerCapture(event.pointerId)
+    if (pan.pick && !pan.moved) pan.pick()
     return true
   }
 
@@ -1040,12 +1069,12 @@
           )
           return
         }
-        chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } })
+        armPan(event, () => chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } }))
         return
       }
       const held = activeStoreyIndex === 0 ? retainingAt(document, plan, s(0.3)) : null
       if (held) {
-        chooseSelection({ retaining: held.id })
+        armPan(event, () => chooseSelection({ retaining: held.id }))
         return
       }
       const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
@@ -1057,11 +1086,11 @@
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
       if (paved) {
-        chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id })
+        armPan(event, () => chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id }))
         return
       }
       const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
-      chooseSelection({ edge: edge ?? null })
+      armPan(event, () => chooseSelection({ edge: edge ?? null }))
       return
     }
 
@@ -2966,7 +2995,7 @@
   <svg
     bind:this={svgEl}
     class="canvas paper"
-    class:panning={spaceHeld || panning !== null}
+    class:panning={spaceHeld || (panning !== null && panning.moved !== false)}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
     onpointerdown={onSvgPointerDown}
