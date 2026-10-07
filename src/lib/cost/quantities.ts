@@ -1,3 +1,4 @@
+import { alterations, demolition, keptShare } from '../geometry/alterations'
 import { deckPolygons, deckThickness, surfaceBedPolygons, type DeckPolygon } from '../geometry/deck'
 import { groundPad, SURFACE_BED_THICKNESS_M } from '../geometry/pad'
 import { masonryReach, roofFacesForFloor, roofInfills, type RoofVertex } from '../geometry/roof'
@@ -40,7 +41,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -59,7 +60,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -740,6 +741,46 @@ export function takeoff(doc: Document): QuantityLine[] {
     const rate = rateOf(doc.costing, draft.rateKey)
     return { ...draft, rate, amount: round(draft.quantity * rate, 2) }
   })
+}
+
+// Groups whose lines are the walls themselves: what is already built of them is counted by the share of the
+// walls that still stand, so that a wall taken down and another put up elsewhere is priced as new bricks.
+const WALL_GROUPS: QuantityGroup[] = ['Masonry', 'Mortar']
+
+// The quantities of an alteration: what the house as drawn needs over and above the house as built, and the
+// breaking out to get there. Null for a project with nothing marked as built.
+export function alterationTakeoff(doc: Document): QuantityLine[] | null {
+  const changes = alterations(doc)
+  if (!changes || !doc.baseline) return null
+  // The house as built is measured with this project's rates and assumptions, so only the drawing differs.
+  const before = takeoff({ ...doc.baseline.document, costing: doc.costing })
+  const lines: QuantityLine[] = []
+  for (const line of takeoff(doc)) {
+    const was = before.find((old) => old.id === line.id)?.quantity ?? 0
+    let already = was
+    if (WALL_GROUPS.includes(line.group)) {
+      // Bricks by their own kind; mortar by all the walls together. Where no wall has gone up, none are needed.
+      const share = line.id.startsWith('unit:') ? keptShare(changes, line.id.slice(5) as UnitKey) : keptShare(changes)
+      if (share === null) continue
+      already = was * share
+    }
+    const more = line.unit === 'each' || line.unit === 'bag' ? Math.ceil(line.quantity - already - 1e-6) : round(line.quantity - already, 2)
+    if (more <= 0) continue
+    lines.push({ ...line, quantity: more, note: was > 0 ? `${line.quantity} in all, ${round(already, 2)} already there` : line.note, amount: round(more * line.rate, 2) })
+  }
+  const down = demolition(changes)
+  const drafts: Draft[] = []
+  if (down.wall > 0.01) drafts.push({ id: 'demolish-wall', group: 'Demolition', label: 'Take down walls', note: `${round(changes.demolishedLength, 1)} m of wall, broken out and carted away`, unit: 'm²', quantity: round(down.wall, 1), rateKey: 'demolish-wall' })
+  if (down.cut > 0) drafts.push({ id: 'cut-opening', group: 'Demolition', label: 'Cut openings into standing walls', note: 'Propped, broken out and made good round a new lintel', unit: 'each', quantity: down.cut, rateKey: 'cut-opening' })
+  if (down.closed > 0.01) drafts.push({ id: 'close-opening', group: 'Demolition', label: 'Brick up openings', note: 'Frame out, toothed in and built up to match', unit: 'm²', quantity: round(down.closed, 1), rateKey: 'close-opening' })
+  if (down.stripped > 0) drafts.push({ id: 'strip-fitting', group: 'Demolition', label: 'Take out fittings', note: 'Disconnected, removed and capped off', unit: 'each', quantity: down.stripped, rateKey: 'strip-fitting' })
+  return [
+    ...drafts.map((draft) => {
+      const rate = rateOf(doc.costing, draft.rateKey)
+      return { ...draft, rate, amount: round(draft.quantity * rate, 2) }
+    }),
+    ...lines,
+  ]
 }
 
 export function totalCost(lines: QuantityLine[]): number {

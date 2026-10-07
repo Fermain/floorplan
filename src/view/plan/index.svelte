@@ -80,6 +80,8 @@
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
   import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
+  import { alterations } from '../../lib/geometry/alterations'
+  import { view as shown, workspace } from '../../lib/state/workspace.svelte'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
@@ -207,6 +209,18 @@
   let selectedRetaining = $state<string | null>(null)
   let retainingType = $state<RetainingType>('blocks')
   let retainingDraft = $state<{ x: number; z: number }[]>([])
+  // A house marked as built: whether what has changed since is picked out on the plan.
+  const changes = $derived.by(() => (shown.showChanges ? alterations(document) : null))
+  const changesHere = $derived(
+    changes
+      ? {
+          built: changes.built.filter((piece) => piece.floorIndex === activeStoreyIndex),
+          demolished: changes.demolished.filter((piece) => piece.floorIndex === activeStoreyIndex),
+          cut: changes.cut.filter((opening) => opening.floorIndex === activeStoreyIndex),
+          closed: changes.closed.filter((opening) => opening.floorIndex === activeStoreyIndex),
+        }
+      : null,
+  )
   // Carports: the one picked, and the size, roof and turn of the next one to be placed.
   let selectedCarport = $state<string | null>(null)
   let carportBays = $state<Carport['bays']>(2)
@@ -1120,6 +1134,8 @@
 
   function onSvgPointerMove(event: PointerEvent) {
     if (movePan(event)) return
+    // Nothing is dragged about in an example being previewed.
+    if (documentStore.readOnly && event.buttons !== 0) return
     const svg = svgEl
     if (!svg) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
@@ -1342,7 +1358,9 @@
     return () => window.removeEventListener('keydown', onShiftKey)
   })
 
-  function setTool(next: Tool) {
+  function setTool(chosen: Tool) {
+    // An example being previewed can be picked over but not drawn on.
+    const next = documentStore.readOnly ? 'select' : chosen
     tool = next
     pavingDraft = []
     pendingDraw = null
@@ -2434,6 +2452,17 @@
     }
   })
 
+  // While the plan is open, the menubar can reach its tools, its zoom and what Delete would remove.
+  $effect(() =>
+    workspace.openPlan({
+      tool: () => (tool === 'draw-rect' ? 'draw-double' : tool),
+      setTool: (next) => setTool(next as Tool),
+      zoomBy,
+      fit: fitView,
+      deletable: () => deletable,
+    }),
+  )
+
   $effect(() => {
     const action = deletable
     if (!action) return
@@ -2596,7 +2625,7 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3">
+  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3" class:hidden={documentStore.readOnly}>
     <ToggleGroup.Root
       type="single"
       variant="outline"
@@ -2807,7 +2836,7 @@
       <Button
         variant="outline"
         size="sm"
-        class="shrink-0"
+        class="shrink-0 {documentStore.readOnly ? 'hidden' : ''}"
         disabled={!storeyTarget || atStoreyLimit}
         title={!storeyTarget
           ? 'Select a closed building first.'
@@ -2819,7 +2848,7 @@
         <Plus />Storey
       </Button>
       {#if storeyUnitId}
-        <Button variant="ghost" size="sm" class="shrink-0 text-muted-foreground" onclick={removeStorey}>
+        <Button variant="ghost" size="sm" class="shrink-0 text-muted-foreground {documentStore.readOnly ? 'hidden' : ''}" onclick={removeStorey}>
           <Minus />Remove
         </Button>
       {/if}
@@ -3376,6 +3405,24 @@
           {/if}
         </g>
       {/if}
+      {#if changesHere}
+        <!-- Against the house as built: new wall in green, wall taken down in dashed red, openings cut and closed. -->
+        <g class="changes" pointer-events="none">
+          {#each changesHere.demolished as piece, i (i)}
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#fecaca" stroke-opacity="0.7" stroke-width={piece.thickness} />
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#dc2626" stroke-width={s(0.035)} stroke-dasharray={dash(0.18, 0.12)} />
+          {/each}
+          {#each changesHere.built as piece, i (i)}
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#16a34a" stroke-opacity="0.75" stroke-width={piece.thickness} />
+          {/each}
+          {#each changesHere.cut as opening, i (i)}
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#16a34a" stroke="#ffffff" stroke-width={s(0.03)} />
+          {/each}
+          {#each changesHere.closed as opening, i (i)}
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#dc2626" stroke="#ffffff" stroke-width={s(0.03)} />
+          {/each}
+        </g>
+      {/if}
       <g class="fixtures" pointer-events="none">
         {#each levelFixtures as item (item.fixture.id)}
           {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
@@ -3871,7 +3918,7 @@
         <FittingSetup floorId={chosenFixture.floorId} fixture={chosenFixture.fixture} onresult={applyResult} />
         <div class="grid gap-2">
           {#if chosenFixture.onWall}
-            <Button variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
+            <Button data-look variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
           {/if}
           <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
         </div>

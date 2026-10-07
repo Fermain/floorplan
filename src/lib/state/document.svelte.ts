@@ -7,12 +7,16 @@ const HISTORY_CAP = 50
 let document = $state<Document>(fixtureDocument())
 let history: Document[] = []
 let redoStack: Document[] = []
+// A document that is only being looked at, such as an example on the site: every change is refused.
+let readOnly = $state(false)
+export const READ_ONLY = 'This is a preview of an example. Open a copy to change it.'
 
 function snapshot(doc: Document): Document {
   return structuredClone($state.snapshot(doc))
 }
 
 function applyMutation(run: (doc: Document) => MutationResult): MutationResult {
+  if (readOnly) return { ok: false, document, reason: READ_ONLY }
   const before = snapshot(document)
   const result = run(structuredClone(before))
   if (result.ok) {
@@ -27,14 +31,15 @@ export function getDocument(): Document {
   return document
 }
 
-export function loadDocument(doc: Document): void {
+export function loadDocument(doc: Document, options: { readOnly?: boolean } = {}): void {
+  readOnly = options.readOnly ?? false
   document = snapshot(doc)
   history = []
   redoStack = []
 }
 
 export function undo(): boolean {
-  if (history.length === 0) return false
+  if (readOnly || history.length === 0) return false
   const prev = history[history.length - 1]
   history = history.slice(0, -1)
   redoStack = [...redoStack, snapshot(document)]
@@ -43,7 +48,7 @@ export function undo(): boolean {
 }
 
 export function redo(): boolean {
-  if (redoStack.length === 0) return false
+  if (readOnly || redoStack.length === 0) return false
   const next = redoStack[redoStack.length - 1]
   redoStack = redoStack.slice(0, -1)
   history = [...history, snapshot(document)]
@@ -60,6 +65,9 @@ function bind<Args extends unknown[]>(
 export const documentStore = {
   get document() {
     return document
+  },
+  get readOnly() {
+    return readOnly
   },
   loadDocument,
   undo,
@@ -109,6 +117,9 @@ export const documentStore = {
   addCounter: bind(mutations.addCounter),
   updateCounter: bind(mutations.updateCounter),
   removeCounter: bind(mutations.removeCounter),
+  markAsBuilt: bind(mutations.markAsBuilt),
+  clearBaseline: bind(mutations.clearBaseline),
+  revertToBuilt: bind(mutations.revertToBuilt),
   addRetainingWall: bind(mutations.addRetainingWall),
   updateRetainingWall: bind(mutations.updateRetainingWall),
   removeRetainingWall: bind(mutations.removeRetainingWall),

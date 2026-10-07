@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import XIcon from '@lucide/svelte/icons/x'
   import { Button } from '$lib/components/ui/button'
+  import { documentStore } from '$lib/state/document.svelte'
 
   // The panel for whatever is selected, in Plan and Focus alike: down the right on a wide screen, across the bottom
   // on a narrow one. It sits beside the drawing rather than over it, so the drawing stays live while it is open.
@@ -29,10 +30,20 @@
       {/if}
     </header>
   {/if}
-  {@render children()}
+  <!-- Looking at an example, the panel says what is there but its controls are off. -->
+  <div class="contents" class:looking={documentStore.readOnly}>
+    {@render children()}
+  </div>
 </aside>
 
 <style>
+  /* Looking at an example: everything that would change it is off. A control marked data-look only shows
+     something, such as a wall in Focus, and stays live. */
+  .looking :global(:is(button, input, select, textarea, label, [role='combobox'], [role='radio'], [role='switch']):not([data-look])) {
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
   .context-panel {
     position: absolute;
     z-index: 10;

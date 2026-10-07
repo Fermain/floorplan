@@ -1160,7 +1160,7 @@
         : `${chosenWall.wall.openings.length} ${chosenWall.wall.openings.length === 1 ? 'opening' : 'openings'}`}, on {storeyName(chosenWall.floor.index)}."
       onclose={() => (selected = null)}
     >
-      <Button onclick={() => chosenWall && onSelectWall?.(chosenWall.wall.id)}>Open in Focus</Button>
+      <Button data-look onclick={() => chosenWall && onSelectWall?.(chosenWall.wall.id)}>Open in Focus</Button>
       <p class="text-muted-foreground">Double-click a wall to go straight to it in Focus.</p>
     </ContextPanel>
   {:else if chosenFixture}
