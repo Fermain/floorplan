@@ -99,6 +99,7 @@
     MAX_STOREYS,
     topStoreyIndex,
     supportingFloor,
+    roomsUnder,
   } from '../../lib/model/stories'
   import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
   import { GUTTERS, gutterLayout, gutterOf, linkTanks } from '../../lib/geometry/gutters'
@@ -392,7 +393,7 @@
     applyResult(documentStore.nameCell(chosen.floorId, pick.x, pick.z, name, newRoomType))
   }
 
-  function patchSelectedSpace(patch: Partial<Pick<Space, 'name' | 'type' | 'finish'>>) {
+  function patchSelectedSpace(patch: Partial<Pick<Space, 'name' | 'type' | 'finish' | 'open'>>) {
     const chosen = selectedRoom
     if (!chosen?.resolved) return
     applyResult(documentStore.updateSpace(chosen.floorId, chosen.resolved.space.id, patch))
@@ -1417,6 +1418,7 @@
   )
 
   const roofFloor = $derived(roofableFloor(floors, selectedPlateFloorId))
+  const roofRooms = $derived(roofFloor ? roomsUnder(document, roofFloor) : [])
 
   function addRoof() {
     const floor = roofFloor
@@ -4272,6 +4274,18 @@
           {:else if !isHabitable(resolved.space.type)}
             <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
           {/if}
+          <label class="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              class="mt-0.5 size-4 accent-primary"
+              checked={resolved.space.open ?? false}
+              onchange={(event) => patchSelectedSpace({ open: event.currentTarget.checked })}
+            />
+            <span>
+              Open to the sky
+              <span class="block text-muted-foreground">A deck or a yard: no roof, ceiling or storey over it.</span>
+            </span>
+          </label>
           <div class="grid gap-1.5 border-t pt-3">
             <Button
               variant="outline"
@@ -4395,6 +4409,24 @@
               {coveringOf(roof).name} usually need at least {coveringOf(roof).minPitchDeg}°. Check the manufacturer's
               minimum.
             </p>
+          {/if}
+          {#if roofRooms.length > 0}
+            <!-- Which of the rooms below this roof are left out from under it. -->
+            <div class="grid gap-1.5 border-t pt-3">
+              <span class="font-medium">Open to the sky</span>
+              <span class="text-muted-foreground">Tick a deck or a yard to leave it out from under the roof.</span>
+              {#each roofRooms as room (room.space.id)}
+                <label class="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    class="size-4 accent-primary"
+                    checked={room.space.open ?? false}
+                    onchange={(event) => applyResult(documentStore.updateSpace(room.floorId, room.space.id, { open: event.currentTarget.checked }))}
+                  />
+                  {room.space.name}
+                </label>
+              {/each}
+            </div>
           {/if}
           <Button variant="destructive" onclick={removeRoof}>Remove roof</Button>
         {:else}
