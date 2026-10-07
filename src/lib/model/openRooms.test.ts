@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { outsideFaces } from '../geometry/finishes'
+import { gutterLayout } from '../geometry/gutters'
 import { roofFacesForFloor, roofInfills } from '../geometry/roof'
 import { trimRuns } from '../geometry/trims'
 import { fixtureDocument } from '../plot/fixture'
@@ -108,6 +109,34 @@ describe('a room open to the sky', () => {
     expect(trimRuns(doc, ground(doc)).length).toBeGreaterThan(0)
     // The face of the dividing wall that looks onto the deck is now an outside face; the other is not.
     expect(([1, -1] as const).filter((side) => outsideFaces(ground(doc))(across, side))).toHaveLength(1)
+  })
+
+  it('gets a gutter along the roof that is cut back round it, where the water would fall on it', () => {
+    // A house from (4, 4) to (12, 10) with a deck let into its south-west corner, x 4 to 7 and z 4 to 6, under a
+    // gable whose slopes fall north and south.
+    let d = fixtureDocument()
+    const fid = ground(d).id
+    d = addWallRing(d, fid, [{ x: 4, z: 4 }, { x: 12, z: 4 }, { x: 12, z: 10 }, { x: 4, z: 10 }], 'double').document
+    const ids: string[] = []
+    for (const [x, z] of [[7, 4], [7, 6], [4, 6]]) {
+      d = addCorner(d, fid, x, z).document
+      ids.push(ground(d).corners.at(-1)!.id)
+    }
+    d = addWall(d, fid, ids[0], ids[1], 'double').document
+    d = addWall(d, fid, ids[1], ids[2], 'double').document
+    d = nameCell(d, fid, 9, 8, 'Living', 'living').document
+    d = nameCell(d, fid, 5.5, 5, 'Deck', 'deck').document
+    d = addStorey(d, fid, ground(d).corners[0].id).document
+    d = setRoof(d, top(d).id, { pitchDeg: 20, eaves: 0.5, form: 'gable', covering: 'concrete-tile' }).document
+    const layout = gutterLayout(d)
+    // The eave over the deck's inner edge runs east to west a little south of the wall at z = 6, above the low eaves.
+    const over = layout.pieces.filter((piece) => piece.on && Math.abs(piece.a.z - piece.b.z) < 1e-6 && piece.a.z > 5 && piece.a.z < 6)
+    expect(over.length).toBeGreaterThan(0)
+    const lowest = Math.min(...layout.pieces.map((piece) => piece.a.y))
+    expect(over[0].a.y).toBeGreaterThan(lowest + 0.1)
+    expect(over[0].out.z).toBeLessThan(-0.9)
+    // And it has a downpipe of its own.
+    expect(layout.downpipes.some((pipe) => pipe.z > 5 && pipe.z < 6)).toBe(true)
   })
 
   it('is still listed among the rooms under the roof, so it can be closed again from there', () => {
