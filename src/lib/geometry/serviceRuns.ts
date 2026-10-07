@@ -6,7 +6,7 @@ import { WALL_HEAD } from '../plot/fixture'
 import { electricalLayout } from './electrical'
 import { finishedFloor, siteField } from './fixtures'
 import { GAS_RUN_Y, gasLayout } from './gas'
-import { groundPad, pointInRing } from './pad'
+import { groundPad, pointInRing, ringDistance } from './pad'
 import { COLD, GEYSERS, HOT, plumbingLayout, servicePath } from './plumbing'
 import { bilinearHeight } from './terrain'
 
@@ -30,6 +30,11 @@ type P3 = [number, number, number]
 
 const WATER_DEPTH_M = 0.45
 const TAP_M = 0.5
+// Between buildings a run goes in a trench this deep, not through the air; and how near a wall a fitting outside
+// it has to be to count as part of that building.
+const TRENCH_DEPTH_M = 0.5
+const TRENCH_STEP_M = 2
+const BUILDING_REACH_M = 1.5
 // Runs that share a ceiling are stepped apart a little so each can be told from the others.
 const LIFT: Record<ServiceKind, number> = { drain: 0, cold: 0, hot: 0.07, lights: 0.14, plugs: 0.2, heavy: 0.26, gas: 0 }
 
@@ -61,6 +66,43 @@ export function serviceRuns(doc: Document): ServiceRun[] {
     if (spec.mount === 'wall') return floorOf(item) + item.fixture.y + fixtureSize(item.fixture).height / 2
     return floorOf(item) + item.fixture.y + TAP_M
   }
+  // Which building a point belongs to: the one it is in, or failing that one it stands close against.
+  const structures = pad?.structures ?? []
+  const buildingOf = (p: { x: number; z: number }): number => {
+    const inside = structures.findIndex((structure) => structure.rings.some((ring) => pointInRing(ring, p.x, p.z)))
+    if (inside >= 0) return inside
+    let best = -1
+    let near = BUILDING_REACH_M
+    structures.forEach((structure, i) => {
+      for (const ring of structure.rings) {
+        const d = ringDistance(ring, p.x, p.z)
+        if (d < near) {
+          near = d
+          best = i
+        }
+      }
+    })
+    return best
+  }
+  // A run from one point to another. In one building it goes over the ceiling; from one building to another, or
+  // out across the plot, it goes down and along a trench that follows the ground, each kind at its own depth.
+  const across = (from: { x: number; z: number }, to: { x: number; z: number }, over: number, kind: ServiceKind): P3[] => {
+    const [a, b] = [buildingOf(from), buildingOf(to)]
+    if (a >= 0 && a === b) return square(from, to, over)
+    const depth = TRENCH_DEPTH_M + LIFT[kind] * 0.5
+    const corners = [from, { x: to.x, z: from.z }, to]
+    const points: P3[] = []
+    for (let i = 0; i < corners.length - 1; i++) {
+      const [p, q] = [corners[i], corners[i + 1]]
+      const steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.z - p.z) / TRENCH_STEP_M))
+      for (let k = i === 0 ? 0 : 1; k <= steps; k++) {
+        const x = p.x + ((q.x - p.x) * k) / steps
+        const z = p.z + ((q.z - p.z) * k) / steps
+        points.push([x, ground(x, z) - depth, z])
+      }
+    }
+    return points
+  }
   const placed: Placed[] = doc.building.floors.flatMap((floor) => (floor.fixtures ?? []).map((fixture) => ({ floor, fixture })))
 
   const plumbing = plumbingLayout(doc)
@@ -71,7 +113,11 @@ export function serviceRuns(doc: Document): ServiceRun[] {
     for (const drain of plumbing.drains) {
       const from = floorOf(drain.item) - 0.2
       const radius = drain.dia / 2000
-      if (drain.item.floor.index === 0) {
+      if (drain.item.floor.index === 0 && buildingOf(drain.item.fixture) !== buildingOf(exit)) {
+        // From another building: down under its floor and across the plot in a trench to where the drain leaves.
+        const trench = across(drain.item.fixture, exit, from, 'drain')
+        runs.push({ kind: 'drain', radius, points: [[drain.item.fixture.x, floorOf(drain.item) + 0.3, drain.item.fixture.z], ...trench.slice(0, -1), [exit.x, Math.min(out, trench.at(-1)![1]), exit.z]] })
+      } else if (drain.item.floor.index === 0) {
         const [a, b, c] = square(drain.item.fixture, exit, from)
         runs.push({ kind: 'drain', radius, points: [[a[0], floorOf(drain.item) + 0.3, a[2]], a, [b[0], (from + out) / 2, b[2]], [c[0], out, c[2]]] })
       } else {
@@ -88,7 +134,7 @@ export function serviceRuns(doc: Document): ServiceRun[] {
     const taps = placed.filter((item) => COLD.includes(item.fixture.kind) || GEYSERS.includes(item.fixture.kind))
     for (const item of taps) {
       const over = ceilingOf(item, 'cold')
-      runs.push({ kind: 'cold', radius: 0.014, points: [[exit.x, ground(exit.x, exit.z) - WATER_DEPTH_M, exit.z], ...square(exit, item.fixture, over), [item.fixture.x, meets(item), item.fixture.z]] })
+      runs.push({ kind: 'cold', radius: 0.014, points: [[exit.x, ground(exit.x, exit.z) - WATER_DEPTH_M, exit.z], ...across(exit, item.fixture, over, 'cold'), [item.fixture.x, meets(item), item.fixture.z]] })
     }
     const geysers = placed.filter((item) => GEYSERS.includes(item.fixture.kind))
     for (const item of placed.filter((entry) => HOT.includes(entry.fixture.kind))) {
@@ -102,7 +148,7 @@ export function serviceRuns(doc: Document): ServiceRun[] {
       runs.push({
         kind: 'hot',
         radius: 0.014,
-        points: [[from.fixture.x, floorOf(from) + from.fixture.y, from.fixture.z], ...square(from.fixture, { x: item.fixture.x + 0.06, z: item.fixture.z }, over), [item.fixture.x + 0.06, meets(item), item.fixture.z]],
+        points: [[from.fixture.x, floorOf(from) + from.fixture.y, from.fixture.z], ...across(from.fixture, { x: item.fixture.x + 0.06, z: item.fixture.z }, over, 'hot'), [item.fixture.x + 0.06, meets(item), item.fixture.z]],
       })
     }
   }
@@ -116,7 +162,8 @@ export function serviceRuns(doc: Document): ServiceRun[] {
       const points: P3[] = [[at.fixture.x, meets(at), at.fixture.z]]
       for (const next of circuit.points) {
         const over = ceilingOf(next, kind)
-        points.push([at.fixture.x, over, at.fixture.z], ...square(at.fixture, next.fixture, over).slice(1), [next.fixture.x, meets(next), next.fixture.z])
+        // Up into the roof space and over, or down and across in a trench to another building.
+        points.push(...across(at.fixture, next.fixture, over, kind), [next.fixture.x, meets(next), next.fixture.z])
         at = next
       }
       runs.push({ kind, radius: circuit.cable >= 4 ? 0.016 : 0.01, points })
