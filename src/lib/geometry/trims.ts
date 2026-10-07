@@ -7,6 +7,7 @@ import type { CorniceType, Document, Floor, SkirtingType, Wall } from '../model/
 import { WALL_HEAD } from '../plot/fixture'
 import { finishedFloor } from './fixtures'
 import { wallReach } from './outline'
+import { pointInRing } from './pad'
 import { floorCells, type WallSide } from './spaces'
 
 type Point = { x: number; z: number }
@@ -31,7 +32,10 @@ function dot(a: Point, b: Point): number {
 // The face of each room's walls: every edge of the room's inside outline that lies on a solid wall.
 export function trimRuns(doc: Document, floor: Floor): TrimRun[] {
   const runs: TrimRun[] = []
+  // A room open to the sky has no ceiling to take a cornice and no need of a skirting.
+  const open = (floor.spaces ?? []).filter((space) => space.open).flatMap((space) => space.seeds)
   for (const cell of floorCells(floor)) {
+    if (open.some((seed) => pointInRing(cell.ring, seed.x, seed.z))) continue
     const ring = cell.net
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i]

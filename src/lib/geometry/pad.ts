@@ -192,6 +192,26 @@ export function groundPad(doc: Document): GroundPad | null {
   return { structures }
 }
 
+// The level of the pad a point stands on: the building it is in, or failing that one it is close against, such as
+// a light on an outside wall. Null out in the open.
+export function padDatumAt(pad: GroundPad | null, x: number, z: number, reach = 1): number | null {
+  if (!pad) return null
+  const inside = structureAt(pad, x, z)
+  if (inside) return inside.datum
+  let best: number | null = null
+  let near = reach
+  for (const structure of pad.structures) {
+    for (const ring of structure.rings) {
+      const d = ringDistance(ring, x, z)
+      if (d < near) {
+        near = d
+        best = structure.datum
+      }
+    }
+  }
+  return best
+}
+
 function structureAt(pad: GroundPad, x: number, z: number): StructurePad | undefined {
   for (const structure of pad.structures) {
     if (structure.rings.some((ring) => ringDistance(ring, x, z) === 0)) return structure
