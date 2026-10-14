@@ -916,7 +916,20 @@
 
   function onPlanContextMenu(event: MouseEvent) {
     event.preventDefault()
-    cancelDraw()
+    backToSelect()
+  }
+
+  // A right click, or a Ctrl-click, drops whatever is being drawn and goes back to Select.
+  function backToSelect() {
+    if (tool === 'select') {
+      cancelDraw()
+      return
+    }
+    retainingDraft = []
+    counterStart = null
+    pointerPlan = null
+    errorMessage = null
+    setTool('select')
   }
 
   function chooseSelection(next: {
@@ -955,8 +968,10 @@
 
   function onSvgPointerDown(event: PointerEvent) {
     if (startPan(event)) return
-    if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
-      cancelDraw()
+    // A right click is left to the context menu that follows it.
+    if (event.button === 2) return
+    if (event.ctrlKey && !event.metaKey) {
+      backToSelect()
       return
     }
     if (event.button !== 0) return
