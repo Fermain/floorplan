@@ -288,6 +288,11 @@
       note: 'Insulated copper pair with interconnecting control cable',
     },
     {
+      label: 'Condensate drain',
+      value: aircon.totalCondensateLength > 0 ? `${number.format(aircon.totalCondensateLength)} m` : '–',
+      note: '20 mm uPVC pipe falling to exterior discharge or gully',
+    },
+    {
       label: 'Electrical circuits',
       value: aircon.outdoors.length > 0 ? `${aircon.outdoors.length} × 20 A` : '–',
       note: 'Dedicated circuits from the distribution board with outdoor isolator switches',

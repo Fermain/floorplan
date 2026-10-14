@@ -4,8 +4,8 @@ import { WALL_HEAD } from '../plot/fixture'
 import { finishedFloor } from './fixtures'
 import { cellAt, floorCells, layoutSpaces } from './spaces'
 
-// Standard residential split air conditioning installation parameters (SANS 10142-1 / HVAC standards).
-export const MAX_PRECHARGED_PIPE_M = 15
+// Typical manufacturer split air conditioning installation parameters.
+export const PRECHARGED_PIPE_LIMIT_M = 7.5
 export const MAX_PIPE_M = 25
 export const BTU_PER_KW = 3412.142
 
@@ -22,6 +22,7 @@ export type AirconPair = {
   pipeLength: number
   horizontal: number
   vertical: number
+  condensateLength: number
   path: PlanPoint[]
 }
 
@@ -39,6 +40,7 @@ export type AirconLayout = {
   unpairedIndoors: PlacedAircon[]
   unpairedOutdoors: PlacedAircon[]
   totalPipeLength: number
+  totalCondensateLength: number
   totalCoolingBtu: number
   totalCoolingKw: number
   issues: AirconIssue[]
@@ -69,89 +71,92 @@ export function airconLayout(doc: Document): AirconLayout {
     }
   }
 
-  const remainingOutdoors = [...outdoors]
-  const pairs: AirconPair[] = []
-  const unpairedIndoors: PlacedAircon[] = []
+  type Candidate = {
+    indoorIdx: number
+    outdoorIdx: number
+    direct: boolean
+    dist: number
+    dy: number
+    score: number
+  }
 
-  for (const indoor of indoors) {
-    if (remainingOutdoors.length === 0) {
-      unpairedIndoors.push(indoor)
-      continue
-    }
-
-    // Find best matching outdoor unit: direct back-to-back first, then nearest 3D distance.
-    let bestIdx = -1
-    let bestDirect = false
-    let bestDist = Infinity
-
-    for (let i = 0; i < remainingOutdoors.length; i++) {
-      const outdoor = remainingOutdoors[i]
+  const candidates: Candidate[] = []
+  for (let i = 0; i < indoors.length; i++) {
+    const indoor = indoors[i]
+    for (let j = 0; j < outdoors.length; j++) {
+      const outdoor = outdoors[j]
       const dx = indoor.fixture.x - outdoor.fixture.x
       const dz = indoor.fixture.z - outdoor.fixture.z
       const planDist = Math.hypot(dx, dz)
       const dotFacing = indoor.fixture.dx * outdoor.fixture.dx + indoor.fixture.dz * outdoor.fixture.dz
       const direct = planDist <= 0.65 && dotFacing < -0.7
-
       const dy = Math.abs(worldY(indoor.floor, indoor.fixture) - worldY(outdoor.floor, outdoor.fixture))
       const dist = direct ? dy + 0.4 : planDist + dy
-
-      if (direct && !bestDirect) {
-        bestDirect = true
-        bestDist = dist
-        bestIdx = i
-      } else if (direct === bestDirect && dist < bestDist) {
-        bestDist = dist
-        bestIdx = i
-      }
-    }
-
-    if (bestIdx >= 0) {
-      const outdoor = remainingOutdoors.splice(bestIdx, 1)[0]
-      const inY = worldY(indoor.floor, indoor.fixture)
-      const outY = worldY(outdoor.floor, outdoor.fixture)
-      const dy = Math.abs(inY - outY)
-
-      if (bestDirect) {
-        // Back-to-back: straight penetration through the exterior wall
-        const pipeLength = Math.round((dy + 0.4) * 10) / 10
-        pairs.push({
-          indoor,
-          outdoor,
-          direct: true,
-          pipeLength,
-          horizontal: Math.round(Math.hypot(indoor.fixture.x - outdoor.fixture.x, indoor.fixture.z - outdoor.fixture.z) * 10) / 10,
-          vertical: Math.round(dy * 10) / 10,
-          path: [
-            { x: indoor.fixture.x, z: indoor.fixture.z },
-            { x: outdoor.fixture.x, z: outdoor.fixture.z },
-          ],
-        })
-      } else {
-        // Run up wall to ceiling, across, and down exterior wall to outdoor condenser
-        const up = Math.max(0, WALL_HEAD - indoor.fixture.y)
-        const across = Math.abs(indoor.fixture.x - outdoor.fixture.x) + Math.abs(indoor.fixture.z - outdoor.fixture.z)
-        const down = Math.abs((indoor.floor.datumHeight + WALL_HEAD) - outY)
-        const pipeLength = Math.round((up + across + down + 0.4) * 10) / 10
-        pairs.push({
-          indoor,
-          outdoor,
-          direct: false,
-          pipeLength,
-          horizontal: Math.round(across * 10) / 10,
-          vertical: Math.round((up + down) * 10) / 10,
-          path: [
-            { x: indoor.fixture.x, z: indoor.fixture.z },
-            { x: outdoor.fixture.x, z: indoor.fixture.z },
-            { x: outdoor.fixture.x, z: outdoor.fixture.z },
-          ],
-        })
-      }
-    } else {
-      unpairedIndoors.push(indoor)
+      const btuMatch = indoor.btu === outdoor.btu
+      const btuPenalty = btuMatch ? 0 : 1000 + Math.abs(indoor.btu - outdoor.btu)
+      const directBonus = direct ? -50 : 0
+      const score = btuPenalty + directBonus + dist
+      candidates.push({ indoorIdx: i, outdoorIdx: j, direct, dist, dy, score })
     }
   }
 
-  const unpairedOutdoors = remainingOutdoors
+  candidates.sort((a, b) => a.score - b.score)
+
+  const usedIndoors = new Set<number>()
+  const usedOutdoors = new Set<number>()
+  const pairs: AirconPair[] = []
+
+  for (const cand of candidates) {
+    if (usedIndoors.has(cand.indoorIdx) || usedOutdoors.has(cand.outdoorIdx)) continue
+    usedIndoors.add(cand.indoorIdx)
+    usedOutdoors.add(cand.outdoorIdx)
+
+    const indoor = indoors[cand.indoorIdx]
+    const outdoor = outdoors[cand.outdoorIdx]
+    const outY = worldY(outdoor.floor, outdoor.fixture)
+    const dy = cand.dy
+
+    if (cand.direct) {
+      const pipeLength = Math.round((dy + 0.4) * 10) / 10
+      const condensateLength = Math.round((indoor.fixture.y + 0.5) * 10) / 10
+      pairs.push({
+        indoor,
+        outdoor,
+        direct: true,
+        pipeLength,
+        horizontal: Math.round(Math.hypot(indoor.fixture.x - outdoor.fixture.x, indoor.fixture.z - outdoor.fixture.z) * 10) / 10,
+        vertical: Math.round(dy * 10) / 10,
+        condensateLength,
+        path: [
+          { x: indoor.fixture.x, z: indoor.fixture.z },
+          { x: outdoor.fixture.x, z: outdoor.fixture.z },
+        ],
+      })
+    } else {
+      const up = Math.max(0, WALL_HEAD - indoor.fixture.y)
+      const across = Math.abs(indoor.fixture.x - outdoor.fixture.x) + Math.abs(indoor.fixture.z - outdoor.fixture.z)
+      const down = Math.abs(indoor.floor.datumHeight + WALL_HEAD - outY)
+      const pipeLength = Math.round((up + across + down + 0.4) * 10) / 10
+      const condensateLength = Math.round((up + across + down + 0.4) * 10) / 10
+      pairs.push({
+        indoor,
+        outdoor,
+        direct: false,
+        pipeLength,
+        horizontal: Math.round(across * 10) / 10,
+        vertical: Math.round((up + down) * 10) / 10,
+        condensateLength,
+        path: [
+          { x: indoor.fixture.x, z: indoor.fixture.z },
+          { x: outdoor.fixture.x, z: indoor.fixture.z },
+          { x: outdoor.fixture.x, z: outdoor.fixture.z },
+        ],
+      })
+    }
+  }
+
+  const unpairedIndoors = indoors.filter((_, idx) => !usedIndoors.has(idx))
+  const unpairedOutdoors = outdoors.filter((_, idx) => !usedOutdoors.has(idx))
   const issues: AirconIssue[] = []
 
   // Check unpaired units
@@ -178,12 +183,31 @@ export function airconLayout(doc: Document): AirconLayout {
     })
   }
 
+  // Check size mismatch between paired units
+  for (const pair of pairs) {
+    if (pair.indoor.btu !== pair.outdoor.btu) {
+      issues.push({
+        id: `aircon-size-mismatch-${pair.indoor.fixture.id}`,
+        text: `Indoor unit (${pair.indoor.btu.toLocaleString('en-US')} BTU) is paired with a mismatched outdoor compressor (${pair.outdoor.btu.toLocaleString('en-US')} BTU). Split units should have matched ratings.`,
+        floorId: pair.indoor.floor.id,
+        fixtureId: pair.indoor.fixture.id,
+      })
+    }
+  }
+
   // Check pipe run length
   for (const pair of pairs) {
-    if (pair.pipeLength > MAX_PRECHARGED_PIPE_M) {
+    if (pair.pipeLength > MAX_PIPE_M) {
+      issues.push({
+        id: `aircon-pipe-max-${pair.indoor.fixture.id}`,
+        text: `Refrigerant pipe run of ${pair.pipeLength} m exceeds maximum allowable ${MAX_PIPE_M} m limit. Move the outdoor unit closer.`,
+        floorId: pair.indoor.floor.id,
+        fixtureId: pair.indoor.fixture.id,
+      })
+    } else if (pair.pipeLength > PRECHARGED_PIPE_LIMIT_M) {
       issues.push({
         id: `aircon-pipe-long-${pair.indoor.fixture.id}`,
-        text: `Refrigerant pipe run of ${pair.pipeLength} m exceeds standard ${MAX_PRECHARGED_PIPE_M} m limit; requires additional refrigerant charge and oil trap.`,
+        text: `Refrigerant pipe run of ${pair.pipeLength} m exceeds standard pre-charged ${PRECHARGED_PIPE_LIMIT_M} m limit; requires additional refrigerant charge and oil trap.`,
         floorId: pair.indoor.floor.id,
         fixtureId: pair.indoor.fixture.id,
       })
@@ -213,6 +237,7 @@ export function airconLayout(doc: Document): AirconLayout {
   }
 
   const totalPipeLength = pairs.reduce((sum, p) => sum + p.pipeLength, 0)
+  const totalCondensateLength = pairs.reduce((sum, p) => sum + p.condensateLength, 0)
   const totalCoolingBtu = indoors.reduce((sum, item) => sum + item.btu, 0)
   const totalCoolingKw = Math.round((totalCoolingBtu / BTU_PER_KW) * 10) / 10
 
@@ -223,6 +248,7 @@ export function airconLayout(doc: Document): AirconLayout {
     unpairedIndoors,
     unpairedOutdoors,
     totalPipeLength,
+    totalCondensateLength,
     totalCoolingBtu,
     totalCoolingKw,
     issues,

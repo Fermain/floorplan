@@ -218,5 +218,96 @@ describe('air conditioning layout and pairing', () => {
     expect(acLines.some((d) => d.id === 'aircon-outdoor:12000')).toBe(true)
     expect(acLines.some((d) => d.id === 'aircon-isolator')).toBe(true)
     expect(acLines.some((d) => d.id === 'aircon-pipe')).toBe(true)
+
+    // Quantifies condensate drain pipe under Plumbing
+    const plumbingLines = lines.filter((d) => d.group === 'Plumbing')
+    expect(plumbingLines.some((d) => d.id === 'aircon-condensate-pipe')).toBe(true)
+  })
+
+  it('prefers matching BTU sizes during pairing regardless of creation order', () => {
+    let doc = createHouse()
+    const floor = doc.building.floors[0]
+
+    // Indoor A: 9,000 BTU at x=4; Indoor B: 24,000 BTU at x=8
+    const in9 = placeFixture(floor, { x: 4, z: 2.3 }, 'aircon-indoor', { x: 0, z: 1 }, { setup: { btu: 9000 } })
+    const in24 = placeFixture(floor, { x: 8, z: 2.3 }, 'aircon-indoor', { x: 0, z: 1 }, { setup: { btu: 24000 } })
+    doc = addFixture(addFixture(doc, floor.id, in9.fixture).document, floor.id, in24.fixture).document
+
+    // Outdoor compressors placed in reverse order: 24k first at x=8, 9k second at x=4
+    const out24 = placeFixture(doc.building.floors[0], { x: 8, z: 1.8 }, 'aircon-outdoor', { x: 0, z: -1 }, { setup: { btu: 24000 } })
+    const out9 = placeFixture(doc.building.floors[0], { x: 4, z: 1.8 }, 'aircon-outdoor', { x: 0, z: -1 }, { setup: { btu: 9000 } })
+    doc = addFixture(addFixture(doc, floor.id, out24.fixture).document, floor.id, out9.fixture).document
+
+    const layout = airconLayout(doc)
+    expect(layout.pairs).toHaveLength(2)
+
+    const pair9 = layout.pairs.find((p) => p.indoor.btu === 9000)!
+    const pair24 = layout.pairs.find((p) => p.indoor.btu === 24000)!
+    expect(pair9.outdoor.btu).toBe(9000)
+    expect(pair24.outdoor.btu).toBe(24000)
+    expect(layout.issues.some((i) => i.id.startsWith('aircon-size-mismatch-'))).toBe(false)
+  })
+
+  it('flags size mismatch when units have different ratings', () => {
+    let doc = createHouse()
+    const floor = doc.building.floors[0]
+
+    // Indoor 24k paired with outdoor 9k
+    const inPlacement = placeFixture(floor, { x: 5, z: 2.3 }, 'aircon-indoor', { x: 0, z: 1 }, { setup: { btu: 24000 } })
+    doc = addFixture(doc, floor.id, inPlacement.fixture).document
+    const outPlacement = placeFixture(doc.building.floors[0], { x: 5, z: 1.8 }, 'aircon-outdoor', { x: 0, z: -1 }, { setup: { btu: 9000 } })
+    doc = addFixture(doc, floor.id, outPlacement.fixture).document
+
+    const layout = airconLayout(doc)
+    expect(layout.pairs).toHaveLength(1)
+    const mismatch = layout.issues.find((i) => i.id.startsWith('aircon-size-mismatch-'))
+    expect(mismatch).toBeDefined()
+    expect(mismatch?.text).toContain('mismatched outdoor compressor')
+  })
+
+  it('scales electrical load according to BTU rating', async () => {
+    const { powerLayout } = await import('./power')
+    let doc = createHouse()
+    const floor = doc.building.floors[0]
+
+    // Place DB board
+    const dbPlacement = placeFixture(floor, { x: 3, z: 2.3 }, 'db-board', { x: 0, z: 1 })
+    doc = addFixture(doc, floor.id, dbPlacement.fixture).document
+
+    // Place 9,000 BTU outdoor unit
+    const out9 = placeFixture(doc.building.floors[0], { x: 5, z: 1.8 }, 'aircon-outdoor', { x: 0, z: -1 }, { setup: { btu: 9000 } })
+    const doc9 = addFixture(doc, floor.id, out9.fixture).document
+    const wiring9 = electricalLayout(doc9)
+    const ac9 = wiring9.circuits.find((c) => c.kind === 'aircon')!
+    doc9.services = { essential: [ac9.id] }
+    const p9 = powerLayout(doc9)
+
+    // Place 24,000 BTU outdoor unit
+    const out24 = placeFixture(doc.building.floors[0], { x: 5, z: 1.8 }, 'aircon-outdoor', { x: 0, z: -1 }, { setup: { btu: 24000 } })
+    const doc24 = addFixture(doc, floor.id, out24.fixture).document
+    const wiring24 = electricalLayout(doc24)
+    const ac24 = wiring24.circuits.find((c) => c.kind === 'aircon')!
+    doc24.services = { essential: [ac24.id] }
+    const p24 = powerLayout(doc24)
+
+    // 9,000 BTU unit (0.8 kW peak) draws significantly less than 24,000 BTU unit (2.2 kW peak)
+    expect(p9.peak).toBe(800)
+    expect(p24.peak).toBe(2200)
+    expect(p24.peak - p9.peak).toBe(1400) // 2200 - 800
+  })
+
+  it('warns when pipe run exceeds pre-charged (7.5 m) or maximum limit (25 m)', () => {
+    let doc = createHouse()
+    const floor = doc.building.floors[0]
+
+    // Indirect pair over ceiling with ~10m pipe
+    const inPlacement = placeFixture(floor, { x: 3, z: 2.3 }, 'aircon-indoor', { x: 0, z: 1 })
+    doc = addFixture(doc, floor.id, inPlacement.fixture).document
+    const outPlacement = placeFixture(doc.building.floors[0], { x: 9, z: 8.2 }, 'aircon-outdoor', { x: 0, z: 1 })
+    doc = addFixture(doc, floor.id, outPlacement.fixture).document
+
+    const layout = airconLayout(doc)
+    expect(layout.pairs[0].pipeLength).toBeGreaterThan(7.5)
+    expect(layout.issues.some((i) => i.id.startsWith('aircon-pipe-long-'))).toBe(true)
   })
 })

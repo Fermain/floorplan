@@ -144,6 +144,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'aircon-outdoor:18000': 9200,
   'aircon-outdoor:24000': 12500,
   'aircon-pipe': 350,
+  'aircon-condensate-pipe': 45,
   'aircon-isolator': 450,
   'gas-regulator': 1200,
   'gas-bottle:9': 650,

@@ -10,7 +10,13 @@ export const EXTRACTOR_W = 30
 export const PLUG_RUNNING_W = 150
 export const SOCKET_RUNNING_W = 25
 export const PLUG_PEAK_W = 1500
-export const HEAVY_PEAK_W: Record<'stove' | 'geyser' | 'aircon', number> = { stove: 6000, geyser: 3000, aircon: 2500 }
+export const HEAVY_PEAK_W: Record<'stove' | 'geyser' | 'aircon', number> = { stove: 6000, geyser: 3000, aircon: 1100 }
+export const AIRCON_ELECTRICAL_PEAK_W: Record<number, number> = {
+  9000: 800,
+  12000: 1100,
+  18000: 1700,
+  24000: 2200,
+}
 export const DEFAULT_BACKUP_HOURS = 4
 export const BATTERY_MODULE_KWH = 5.12
 export const BATTERY_DEPTH = 0.9
@@ -53,6 +59,11 @@ function circuitLoad(circuit: Circuit): { running: number; peak: number } {
   }
   if (circuit.kind === 'plugs') {
     return { running: PLUG_RUNNING_W + SOCKET_RUNNING_W * circuit.points.length, peak: PLUG_PEAK_W + SOCKET_RUNNING_W * circuit.points.length }
+  }
+  if (circuit.kind === 'aircon') {
+    const btu = circuit.points[0]?.fixture.btu ?? 12000
+    const peak = AIRCON_ELECTRICAL_PEAK_W[btu] ?? 1100
+    return { running: peak * 0.3, peak }
   }
   return { running: HEAVY_PEAK_W[circuit.kind] * 0.3, peak: HEAVY_PEAK_W[circuit.kind] }
 }

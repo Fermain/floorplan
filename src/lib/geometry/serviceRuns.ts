@@ -182,7 +182,7 @@ export function serviceRuns(doc: Document): ServiceRun[] {
     if (points.length > 1) runs.push({ kind: 'gas', radius: 0.012, points })
   }
 
-  // Air conditioning refrigerant pipe runs between indoor and outdoor units.
+  // Air conditioning refrigerant pipe and condensate drain runs between indoor and outdoor units.
   for (const pair of airconLayout(doc).pairs) {
     const inItem = pair.indoor
     const outItem = pair.outdoor
@@ -195,6 +195,10 @@ export function serviceRuns(doc: Document): ServiceRun[] {
       const points: P3[] = [inMeets, ...across(inItem.fixture, outItem.fixture, over, 'aircon'), outMeets]
       runs.push({ kind: 'aircon', radius: 0.016, points })
     }
+    // Condensate drain pipe falling through exterior wall to ground
+    const drainExit: P3 = [outItem.fixture.x, inMeets[1], outItem.fixture.z]
+    const drainBottom: P3 = [outItem.fixture.x, ground(outItem.fixture.x, outItem.fixture.z) + 0.15, outItem.fixture.z]
+    runs.push({ kind: 'drain', radius: 0.012, points: [inMeets, drainExit, drainBottom] })
   }
 
   return runs

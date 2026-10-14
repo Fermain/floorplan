@@ -703,6 +703,18 @@ export function takeoff(doc: Document): QuantityLine[] {
     })
   }
 
+  if (aircon.totalCondensateLength > 0) {
+    drafts.push({
+      id: 'aircon-condensate-pipe',
+      group: 'Plumbing',
+      label: '20 mm uPVC condensate drain pipe',
+      note: 'Gravity condensate drain from indoor aircon units, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(aircon.totalCondensateLength * 1.1),
+      rateKey: 'aircon-condensate-pipe',
+    })
+  }
+
   // Paving and the apron: the surface laid, by area; the layers under it, by volume; the edging, by length.
   const pieces = pavingPieces(doc)
   const layers = new Map<string, { name: string; volume: number }>()
