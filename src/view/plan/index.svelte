@@ -2908,6 +2908,12 @@
               <Select.Item value={option.id} label={option.name} />
             {/each}
           </Select.Group>
+          <Select.Group>
+            <Select.Label>Building</Select.Label>
+            {#each FIXTURES.filter((item) => item.trade === 'building') as option (option.id)}
+              <Select.Item value={option.id} label={option.name} />
+            {/each}
+          </Select.Group>
         </Select.Content>
       </Select.Root>
       {#if placeSize}

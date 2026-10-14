@@ -111,6 +111,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'fixture:outdoor-light': 350,
   'fixture:stove-isolator': 450,
   'fixture:extractor': 900,
+  'fixture:air-brick': 45,
   'fixture:db-board': 3500,
   'fixture:wc': 2500,
   'fixture:basin': 1200,
