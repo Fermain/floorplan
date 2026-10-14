@@ -21,7 +21,8 @@ import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, PAVING_SURFACES, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
 import { supportProblem } from './supports'
-import { fixtureProblem, reseat, swapsFor } from './fixtures'
+import { fixtureProblem, fixtureSpec, reseat, swapsFor } from './fixtures'
+import { fixtureWall } from '../geometry/fixtures'
 import { faceKey, trimProblem } from './trims'
 import { finishProblem } from './finishes'
 import { pointInRing } from '../geometry/pad'
@@ -989,6 +990,18 @@ export function setWallGutter(document: Document, roofFloorId: string, wallId: s
   return ok(replaceFloor(document, { ...floor, roof }))
 }
 
+// The fixtures left when walls are taken down: whatever hung on one of them, a socket, a switch or a basin, goes
+// with it. Fixtures standing on the floor against it, such as a toilet or a bath, stay where they are.
+function fixturesWithout(floor: Floor, removed: Set<string>): Pick<Floor, 'fixtures'> {
+  if (!floor.fixtures) return {}
+  const fixtures = floor.fixtures.filter((fixture) => {
+    if (fixtureSpec(fixture.kind).mount !== 'wall') return true
+    const on = fixtureWall(floor, fixture)
+    return !on || !removed.has(on.wall.id)
+  })
+  return { fixtures }
+}
+
 export function removeWall(document: Document, floorId: string, wallId: string): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
@@ -996,7 +1009,7 @@ export function removeWall(document: Document, floorId: string, wallId: string):
   const walls = floor.walls.filter((w) => w.id !== wallId)
   const used = new Set(walls.flatMap((w) => [w.startCornerId, w.endCornerId]))
   const corners = floor.corners.filter((corner) => used.has(corner.id))
-  let next = replaceFloor(document, { ...floor, walls, corners })
+  let next = replaceFloor(document, { ...floor, walls, corners, ...fixturesWithout(floor, new Set([wallId])) })
   if (floor.index === 0) next = syncGroundUnits(next)
   return ok(next)
 }
@@ -1061,7 +1074,9 @@ export function removeCorner(document: Document, floorId: string, cornerId: stri
   }
   const used = new Set(walls.flatMap((wall) => [wall.startCornerId, wall.endCornerId]))
   const corners = floor.corners.filter((corner) => used.has(corner.id))
-  let next = replaceFloor(document, { ...floor, walls, corners })
+  // Two walls joined into one keep what hangs on them; walls taken away take it with them.
+  const fixtures = removal.kind === 'join' ? {} : fixturesWithout(floor, new Set(removal.wallIds))
+  let next = replaceFloor(document, { ...floor, walls, corners, ...fixtures })
   if (floor.index === 0) next = syncGroundUnits(next)
   return ok(next)
 }
