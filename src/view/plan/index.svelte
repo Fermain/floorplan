@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { fencePosts, fenceSpec } from '../../lib/model/fences'
+  import { fenceSpec } from '../../lib/model/fences'
+  import { fencePlan } from '../../lib/geometry/gates'
   import { floorSupports, pierSide, supportSpec } from '../../lib/model/supports'
   import { untrack } from 'svelte'
   import BrickWall from '@lucide/svelte/icons/brick-wall'
@@ -666,6 +667,12 @@
   }
 
   const displayFloor = $derived(activeFloor ? previewFloor(activeFloor, rotateDrag, moveDrag) : undefined)
+  // The middle of the plot, which gates open toward unless set otherwise.
+  const plotMiddle = $derived.by(() => {
+    const ring = document.plot.ring
+    const sum = ring.reduce((total, [x, z]) => ({ x: total.x + x, z: total.z + z }), { x: 0, z: 0 })
+    return ring.length > 0 ? { x: sum.x / ring.length, z: sum.z / ring.length } : { x: 0, z: 0 }
+  })
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
   const swings = $derived(displayFloor ? doorSwings(displayFloor) : [])
   const rooms = $derived(displayFloor ? deriveRooms(displayFloor) : [])
@@ -3765,17 +3772,20 @@
         {#if a && b}
           {#if wall.fence}
             {@const spec = fenceSpec(wall.fence.type)}
-            {@const length = Math.hypot(b.x - a.x, b.z - a.z)}
-            <line x1={a.x} y1={a.z} x2={b.x} y2={b.z} stroke={spec.colour} stroke-width={Math.max(s(0.025), 0.03)} />
-            {#each fencePosts(length, spec) as u (u)}
-              {@const t = length > 0 ? u / length : 0}
-              <rect
-                x={a.x + (b.x - a.x) * t - spec.postSize / 2}
-                y={a.z + (b.z - a.z) * t - spec.postSize / 2}
-                width={spec.postSize}
-                height={spec.postSize}
-                fill={spec.colour}
-              />
+            {@const drawn = fencePlan(displayFloor, wall, plotMiddle)}
+            {#each drawn?.runs ?? [] as run, i (i)}
+              <line x1={run.from.x} y1={run.from.z} x2={run.to.x} y2={run.to.z} stroke={spec.colour} stroke-width={Math.max(s(0.025), 0.03)} />
+              {#each run.posts as post, k (k)}
+                <rect x={post.x - spec.postSize / 2} y={post.z - spec.postSize / 2} width={spec.postSize} height={spec.postSize} fill={spec.colour} />
+              {/each}
+            {/each}
+            <!-- Gates: a swinging one open with the arc it sweeps, a sliding one run back beside the fence. -->
+            {#each drawn?.swings ?? [] as swing, i (i)}
+              <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="#44403c" stroke-width={s(0.03)} />
+              <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#44403c" stroke-width={s(0.015)} stroke-dasharray={dash(0.08, 0.06)} />
+            {/each}
+            {#each drawn?.slides ?? [] as slide, i (i)}
+              <polygon points={pointsAttr(slide.ring.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#44403c" stroke-width={s(0.02)} stroke-dasharray={dash(0.08, 0.06)} />
             {/each}
           {:else}
             <line

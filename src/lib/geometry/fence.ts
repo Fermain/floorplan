@@ -1,7 +1,8 @@
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { fencePosts, fenceSpec } from '../model/fences'
-import type { Fence, Floor, Wall } from '../model/types'
+import { fenceRuns, gateLeaves } from '../model/gates'
+import type { Fence, Floor, Gate, Wall } from '../model/types'
 
 export type FencePart = {
   geometry: BufferGeometry
@@ -68,7 +69,53 @@ function repeat(u0: number, u1: number, pitch: number, width: number): number[] 
   return out
 }
 
+// A fence along its line: built in lengths between its gates, each length ending in a post the gates hang from,
+// and each gate drawn closed in its gap.
 export function buildFenceParts(frame: Frame, fence: Fence, baseAt: (u: number) => number): FencePart[] {
+  const { runs, gates } = fenceRuns(fence.gates, frame.length)
+  const parts: FencePart[] = []
+  for (const [a, b] of runs) {
+    if (b - a < 1e-3) continue
+    const run = { ...frame, start: { x: frame.start.x + frame.dir.x * a, z: frame.start.z + frame.dir.z * a }, length: b - a }
+    parts.push(...buildRun(run, fence, (u) => baseAt(u + a)))
+  }
+  for (const gate of gates) parts.push(...buildGate(frame, fence, gate, baseAt))
+  return parts
+}
+
+// Steel gates in a steel, concrete or masonry fence; timber ones in a timber fence.
+const GATE_STEEL = { frame: '#2f3337', infill: '#3b4045' }
+
+// A gate closed in its gap: each leaf a frame of stiles and rails with upright bars, or slats in timber.
+function buildGate(frame: Frame, fence: Fence, gate: Gate, baseAt: (u: number) => number): FencePart[] {
+  const timber = fence.type === 'timber'
+  const colours = timber ? { frame: fenceSpec('timber').colour, infill: fenceSpec('timber').infill } : GATE_STEEL
+  const leaves = gateLeaves(gate)
+  const members: Box[] = []
+  const bars: Box[] = []
+  const gap = 0.02
+  for (let i = 0; i < leaves; i++) {
+    const u0 = gate.u + (gate.width * i) / leaves + gap
+    const u1 = gate.u + (gate.width * (i + 1)) / leaves - gap
+    const base = baseAt((u0 + u1) / 2) + 0.05
+    const top = base + Math.max(0.6, fence.height - 0.05)
+    const bar = 0.05
+    members.push({ u0, u1: u0 + bar, y0: base, y1: top, depth: bar })
+    members.push({ u0: u1 - bar, u1, y0: base, y1: top, depth: bar })
+    members.push({ u0, u1, y0: base, y1: base + bar, depth: bar })
+    members.push({ u0, u1, y0: top - bar, y1: top, depth: bar })
+    const [pitch, width] = timber ? [0.1, 0.09] : [0.12, 0.02]
+    for (const u of repeat(u0 + bar, u1 - bar, pitch, width)) bars.push({ u0: u, u1: u + width, y0: base + bar, y1: top - bar, depth: timber ? 0.02 : width })
+  }
+  const out: FencePart[] = []
+  const memberGeometry = place(frame, members)
+  if (memberGeometry) out.push({ geometry: memberGeometry, colour: colours.frame, opacity: 1 })
+  const barGeometry = place(frame, bars)
+  if (barGeometry) out.push({ geometry: barGeometry, colour: colours.infill, opacity: 1 })
+  return out
+}
+
+function buildRun(frame: Frame, fence: Fence, baseAt: (u: number) => number): FencePart[] {
   const spec = fenceSpec(fence.type)
   const posts = fencePosts(frame.length, spec)
   const h = fence.height
