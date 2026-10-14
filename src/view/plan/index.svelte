@@ -2255,6 +2255,35 @@
     return { counter, problem: counterProblem(counter) }
   })
 
+  // Against a wall, the free run of the face is shown before and while drawing, with how far the start is from each
+  // end of it, and then how long the counter is and what is left beyond it, in millimetres.
+  const counterGuide = $derived.by(() => {
+    if (tool !== 'draw-counter' || counterKind !== 'base') return null
+    const face = counterStart?.face ?? counterHover?.face
+    if (!face) return null
+    const depth = counterKindSpec(counterKind).depth
+    const { dir } = face
+    const from = { x: face.point.x - dir.x * face.before, z: face.point.z - dir.z * face.before }
+    const run = counterRing({ x: from.x, z: from.z, dx: dir.x, dz: dir.z, length: face.before + face.after, depth })
+    // Stretches along the face, as distances from the start of the run, each labelled with its length.
+    const total = face.before + face.after
+    let marks: [number, number][]
+    const draft = counterStart ? counterDraft?.counter : null
+    if (draft && draft.length > 0) {
+      const a = (draft.x - from.x) * dir.x + (draft.z - from.z) * dir.z
+      marks = [[0, a], [a, a + draft.length], [a + draft.length, total]]
+    } else marks = [[0, face.before], [face.before, total]]
+    const angle = (Math.atan2(dir.z, dir.x) * 180) / Math.PI
+    const into = { x: -dir.z, z: dir.x }
+    const labels = marks
+      .filter(([a, b]) => b - a > 0.05)
+      .map(([a, b]) => {
+        const mid = (a + b) / 2
+        return { x: from.x + dir.x * mid + into.x * depth * 0.5, z: from.z + dir.z * mid + into.z * depth * 0.5, angle, text: `${Math.round((b - a) * 1000)}` }
+      })
+    return { run, labels }
+  })
+
   function counterClick(plan: { x: number; z: number }) {
     if (!activeFloor) return
     if (!counterStart) {
@@ -2296,7 +2325,12 @@
     return null
   })
 
+  // The turn the plan had before a room was laid out, to go back to after it.
+  let turnBeforeRoom: number | null = null
+
   function focusRoom(spaceId: string, rings: { x: number; z: number }[][]) {
+    if (focusedRoom === null) turnBeforeRoom = turn
+    squareToRings(rings)
     const points = rings.flat().map((p) => toScreen(p.x, p.z))
     if (points.length === 0) return
     const xs = points.map((p) => p.x)
@@ -2316,8 +2350,29 @@
     if (space.type === 'kitchen') setTool('draw-counter')
   }
 
+  // Turns the plan, by as little as it can, so that the longest run of the room's walls lies square to the screen.
+  // Each edge pulls toward its own direction folded into a quarter turn, weighted by its length.
+  function squareToRings(rings: { x: number; z: number }[][]) {
+    let [c, sn] = [0, 0]
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const [a, b] = [ring[i], ring[(i + 1) % ring.length]]
+        const length = Math.hypot(b.x - a.x, b.z - a.z)
+        const angle = Math.atan2(b.z - a.z, b.x - a.x)
+        c += length * Math.cos(4 * angle)
+        sn += length * Math.sin(4 * angle)
+      }
+    }
+    if (Math.hypot(c, sn) < 1e-9) return
+    const along = (Math.atan2(sn, c) / 4) * (180 / Math.PI)
+    const options = [-2, -1, 0, 1, 2, 3, 4, 5].map((k) => along + k * 90)
+    setTurn(options.reduce((best, item) => (Math.abs(item - turn) < Math.abs(best - turn) ? item : best)))
+  }
+
   function leaveRoom() {
     focusedRoom = null
+    if (turnBeforeRoom !== null) setTurn(turnBeforeRoom)
+    turnBeforeRoom = null
     fitView()
   }
 
@@ -3625,9 +3680,24 @@
       {#each activeFloor?.counters ?? [] as counter (counter.id)}
         {@render counterShape(counterMove?.id === counter.id && counterMove.preview ? counterMove.preview : counter, selectedCounter === counter.id ? 'picked' : 'set')}
       {/each}
+      {#if counterGuide}
+        <polygon
+          points={pointsAttr(counterGuide.run.map((p) => [p.x, p.z] as SvgPoint))}
+          fill="#2563eb"
+          fill-opacity="0.06"
+          stroke="#2563eb"
+          stroke-width={s(0.02)}
+          stroke-dasharray={dash(0.1, 0.07)}
+        />
+      {/if}
       {#if counterDraft && counterDraft.counter.length > 0}
         {@render counterShape(counterDraft.counter, counterDraft.problem ? 'refused' : 'draft')}
       {/if}
+      {#each counterGuide?.labels ?? [] as label, i (i)}
+        <text transform={upright(label.x, label.z, label.angle)} fill="#1d4ed8" font-size={s(0.3)} text-anchor="middle" dominant-baseline="middle">
+          {label.text}
+        </text>
+      {/each}
       {#if tool === 'draw-counter'}
         {@const mark = counterStart ?? counterHover}
         {#if mark && (mark.face || counterKind !== 'base')}
