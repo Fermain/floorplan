@@ -37,6 +37,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { placeSnappedOpeningU, snapLegalModuleU, snapOpeningVertical, snapOpeningWidth } from './moduleSnap'
   import { computeWallElevationFrame, viewFrameFor, viewReversed } from './wallFrame'
   import { defaultWallSide, wallFaces, type WallSide } from '../../lib/geometry/spaces'
+  import { resolvedSwing } from '../../lib/geometry/doors'
+  import { swingsOpen } from '../../lib/model/openings'
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import AlignHorizontalJustifyCenter from '@lucide/svelte/icons/align-horizontal-justify-center'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
@@ -944,6 +947,24 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     }
   })
 
+  // How the picked door hangs, as seen from this side: the end its hinges are on, and the side it opens to.
+  const doorHang = $derived.by(() => {
+    if (!editingOpening || !swingsOpen(editingOpening.kind) || !faces) return null
+    const hang = resolvedSwing(editingOpening, (which) => faces.find((face) => face.side === which)?.outside ?? false)
+    const into = faces.find((face) => face.side === hang.swing)
+    return {
+      ...hang,
+      left: (hang.hinge === 'start') !== reversed,
+      toward: hang.swing === side,
+      into: into?.outside ? 'outside' : (into?.label ?? 'the room'),
+    }
+  })
+
+  function hangDoor(patch: { hinge?: 'start' | 'end'; swing?: WallSide }) {
+    if (!editingOpening || !floor || !wall) return
+    documentStore.setDoorSwing(floor.id, wall.id, editingOpening.id, patch)
+  }
+
   function centreOpening(u: number | null | undefined) {
     if (u === null || u === undefined || !editingOpening || !floor || !wall) return
     documentStore.updateOpening(floor.id, wall.id, editingOpening.id, { u })
@@ -1525,6 +1546,20 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
                   commitWidth(next)
                 }}
               />
+            </div>
+          {/if}
+          {#if doorHang}
+            <div class="grid gap-1.5 border-t pt-3">
+              <span class="font-medium">Swing</span>
+              <span class="text-muted-foreground">
+                Hinged on the {doorHang.left ? 'left' : 'right'} as seen from here, opening {doorHang.toward ? 'toward you' : 'away from you'}, into {doorHang.into}.
+              </span>
+              <Button variant="outline" onclick={() => hangDoor({ hinge: doorHang.hinge === 'start' ? 'end' : 'start' })}>
+                <ArrowLeftRight />Hinge on the {doorHang.left ? 'right' : 'left'}
+              </Button>
+              <Button variant="outline" onclick={() => hangDoor({ swing: doorHang.swing === 1 ? -1 : 1 })}>
+                <ArrowUpDown />Open {doorHang.toward ? 'away from you' : 'toward you'}
+              </Button>
             </div>
           {/if}
           {#if centring}

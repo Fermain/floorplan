@@ -90,7 +90,7 @@ Openings snap to whole courses and to the half-unit, so cut units are counted ra
 
 ### Focus: one wall, face-on
 
-Double-click a wall to open it as a flat elevation. Place and size windows and doors on the courses, read the dimension chain, and see the count of whole and cut units, openings and lintels change as you work. You can change a wall's system here too.
+Double-click a wall to open it as a flat elevation. Place and size windows and doors on the courses, read the dimension chain, and see the count of whole and cut units, openings and lintels change as you work. A door's panel sets which side it is hinged on and which way it opens, and the plan draws each hinged door open with the arc it sweeps. You can change a wall's system here too.
 
 Each face of a wall is left exposed, bagged or plastered, and plastered and bagged faces take a paint colour. The project sets the finish outside and inside, and any face can differ. Skirting, cornice, fittings and gutters are set here as well.
 

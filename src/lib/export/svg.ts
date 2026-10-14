@@ -2,6 +2,7 @@ import { leafSigns, wallMeshURange } from '../geometry/walls'
 import { cornerById, wallLength } from '../model/geom'
 import { leafOffset, systemOf } from '../model/systems'
 import type { Document, Floor, Opening, Wall } from '../model/types'
+import { doorSwings } from '../geometry/doors'
 
 const PLOT_MARGIN_M = 1
 const NORTH_ARROW_LENGTH_M = 1.2
@@ -202,6 +203,13 @@ export function exportFloorSvg(document: Document, floorId: string): string {
     if (wall.skin === 'logical') {
       parts.push(logicalWallElement(wall, floor))
     }
+  }
+
+  // Each hinged door open square to its wall, with the quarter circle its edge sweeps.
+  for (const swing of doorSwings(floor)) {
+    const [[x1, y1], [x2, y2]] = swing.leaf.map((p) => planToSvg(p.x, p.z))
+    parts.push(`<line x1="${formatNum(x1)}" y1="${formatNum(y1)}" x2="${formatNum(x2)}" y2="${formatNum(y2)}" stroke="#333" stroke-width="0.025"/>`)
+    parts.push(`<polyline points="${pointsAttr(swing.arc.map((p) => planToSvg(p.x, p.z)))}" fill="none" stroke="#333" stroke-width="0.012"/>`)
   }
 
   parts.push(northArrowElement(minX, maxZ, document.plot.northBearingDeg))

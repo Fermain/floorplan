@@ -81,6 +81,7 @@ export const documentStore = {
   addOpening: bind(mutations.addOpening),
   updateOpening: bind(mutations.updateOpening),
   setOpeningAligned: bind(mutations.setOpeningAligned),
+  setDoorSwing: bind(mutations.setDoorSwing),
   addStorey: bind(mutations.addStorey),
   removeTopStorey: bind(mutations.removeTopStorey),
   removeWall: bind(mutations.removeWall),

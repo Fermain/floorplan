@@ -22,6 +22,11 @@ import {
 import { snapToCourse, snapToHalfModule, type WallSystem } from './systems'
 import type { Opening, OpeningKind, ProjectDefaults } from './types'
 
+// Doors hung on hinges, which swing open; a sliding door, a garage door and an open portal do not.
+export function swingsOpen(kind: OpeningKind): boolean {
+  return kind === 'internal-door' || kind === 'external-door'
+}
+
 export function isFloorOpening(kind: OpeningKind): boolean {
   return kind !== 'window'
 }
