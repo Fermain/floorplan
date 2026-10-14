@@ -61,6 +61,7 @@
   import { isUnlandedWall } from '../../lib/geometry/support'
   import { connectedCornerIds } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
+  import { doorSwings } from '../../lib/geometry/doors'
   import { cornerById } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
   import {
@@ -666,6 +667,7 @@
 
   const displayFloor = $derived(activeFloor ? previewFloor(activeFloor, rotateDrag, moveDrag) : undefined)
   const wallPolygons = $derived(displayFloor ? solidWallPolygonsForFloor(displayFloor) : [])
+  const swings = $derived(displayFloor ? doorSwings(displayFloor) : [])
   const rooms = $derived(displayFloor ? deriveRooms(displayFloor) : [])
   const logicalWalls = $derived(displayFloor?.walls.filter((w) => w.skin === 'logical') ?? [])
   const unlandedWallIds = $derived.by(() => {
@@ -3473,6 +3475,13 @@
       {#each wallPolygons as poly, i (i)}
         <polygon points={pointsAttr(poly)} fill="#333" stroke="none" />
       {/each}
+      <!-- Each hinged door open square to its wall, with the quarter circle its edge sweeps. -->
+      <g class="door-swings" pointer-events="none">
+        {#each swings as swing, i (i)}
+          <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="#333" stroke-width={s(0.025)} />
+          <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#333" stroke-width={s(0.012)} />
+        {/each}
+      </g>
       <g class="stairs" pointer-events="none">
         {#each levelVoids as ring, i (i)}
           <polygon points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))} class="stair-void" />

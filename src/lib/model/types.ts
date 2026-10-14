@@ -33,6 +33,11 @@ export type Opening = {
   height: number
   kind: OpeningKind
   aligned: boolean
+  // Doors that swing: the end of the opening the leaf is hung from, the wall's start or its end, and the side of the
+  // wall it opens to (1 or -1, as for the wall's faces). Left out, a door is hung from the start and opens inward,
+  // or to side 1 between two rooms.
+  hinge?: 'start' | 'end'
+  swing?: 1 | -1
 }
 
 export type WallSkin = 'single' | 'double' | 'logical'
