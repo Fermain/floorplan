@@ -283,7 +283,7 @@ export type Counter = {
 
 // A carport: a roof on posts with no walls, standing free on the ground. It is placed by its middle and the way
 // its cars drive in, and sized by how many cars it takes side by side.
-export type CarportRoof = 'sheet' | 'shade-cloth'
+export type CarportRoof = 'sheet' | 'shade-cloth' | 'shade-cloth-dark'
 export type Carport = {
   id: string
   x: number

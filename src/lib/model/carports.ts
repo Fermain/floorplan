@@ -6,6 +6,7 @@ export type CarportRoofSpec = { id: CarportRoof; name: string; text: string; col
 export const CARPORT_ROOFS: readonly CarportRoofSpec[] = [
   { id: 'sheet', name: 'Steel sheeting', text: 'IBR sheeting on a steel frame, falling to one side. Keeps the rain and the hail off.', colour: '#8f979e', pitchDeg: 5 },
   { id: 'shade-cloth', name: 'Shade cloth', text: 'Knitted shade cloth stretched over a steel frame. Cheaper; keeps the sun and the hail off, not the rain.', colour: '#b9ab8d', pitchDeg: 12 },
+  { id: 'shade-cloth-dark', name: 'Dark shade cloth', text: 'Charcoal shade cloth, knitted closer: more shade and less glare than the light cloth, and it hides dust. Keeps the sun and the hail off, not the rain.', colour: '#3f4442', pitchDeg: 12 },
 ]
 
 // One car's width under the roof, how far a car runs in, and the clear height at the low side.

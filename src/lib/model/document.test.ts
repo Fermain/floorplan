@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BLOCK_LENGTH, fixtureDocument } from '../plot/fixture'
 import {
   addCorner,
+  addFixtures,
   addOpening,
   addStorey,
   addWall,
@@ -17,6 +18,7 @@ import {
   updateOpening,
 } from './mutations'
 import { deriveRooms } from './rooms'
+import { fixtureOnFace } from '../geometry/fixtures'
 import { DEFAULT_DOOR_HEIGHT, DEFAULT_SILL, DEFAULT_WINDOW_HEAD, DEFAULT_WINDOW_HEIGHT, FLOOR_TO_FLOOR, MAX_STOREYS } from '../plot/fixture'
 import { loadDocument, undo, documentStore, getDocument } from '../state/document.svelte'
 
@@ -358,6 +360,32 @@ describe('delete', () => {
     const used = new Set(floor.walls.flatMap((w) => [w.startCornerId, w.endCornerId]))
     expect(floor.corners.every((corner) => used.has(corner.id))).toBe(true)
     expect(floor.corners.length).toBeLessThan(4)
+  })
+
+  it('takes what hangs on a wall down with it, and leaves the rest', () => {
+    let d = rectInsidePlot(fixtureDocument())
+    const fid = floorId(d)
+    const floor = d.building.floors[0]
+    const [gone, kept] = floor.walls
+    // Each wall's inside face: the side the rest of the square is on.
+    const inside = (wall: typeof gone): 1 | -1 => {
+      const a = floor.corners.find((c) => c.id === wall.startCornerId)!
+      const b = floor.corners.find((c) => c.id === wall.endCornerId)!
+      const [tx, tz] = [b.x - a.x, b.z - a.z]
+      return -tz * (7 - a.x) + tx * (7 - a.z) >= 0 ? 1 : -1
+    }
+    const drafts = [
+      fixtureOnFace(floor, gone, inside(gone), 'socket', 2, 0.3),
+      fixtureOnFace(floor, gone, inside(gone), 'wc', 4, 0),
+      fixtureOnFace(floor, kept, inside(kept), 'switch', 3, 1.2),
+    ].map((draft) => draft!)
+    const added = addFixtures(d, fid, drafts)
+    expect(added.ok).toBe(true)
+    d = added.document
+    const removed = removeWall(d, fid, gone.id)
+    expect(removed.ok).toBe(true)
+    const kinds = (removed.document.building.floors[0].fixtures ?? []).map((fixture) => fixture.kind).sort()
+    expect(kinds).toEqual(['switch', 'wc'])
   })
 
   it('leaves the document unchanged when the wall is missing', () => {

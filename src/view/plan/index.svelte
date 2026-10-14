@@ -908,15 +908,37 @@
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     if (!plan) return
     const id = pickWall(activeFloor, plan.x, plan.z)
-    if (!id) return
-    chooseSelection({ wallId: id })
-    onFocus?.(id)
+    if (id) {
+      chooseSelection({ wallId: id })
+      onFocus?.(id)
+      return
+    }
+    // A double-click on a room's floor lays that room out on its own, seen from above.
+    const room = roomAtPoint(activeFloor, plan.x, plan.z)
+    if (!room) return
+    const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
+    const entry = levelLayouts.find((item) => item.floorId === floorId)
+    const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
+    if (resolved) layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))
   }
 
 
   function onPlanContextMenu(event: MouseEvent) {
     event.preventDefault()
-    cancelDraw()
+    backToSelect()
+  }
+
+  // A right click, or a Ctrl-click, drops whatever is being drawn and goes back to Select.
+  function backToSelect() {
+    if (tool === 'select') {
+      cancelDraw()
+      return
+    }
+    retainingDraft = []
+    counterStart = null
+    pointerPlan = null
+    errorMessage = null
+    setTool('select')
   }
 
   function chooseSelection(next: {
@@ -955,8 +977,10 @@
 
   function onSvgPointerDown(event: PointerEvent) {
     if (startPan(event)) return
-    if (event.button === 2 || (event.ctrlKey && !event.metaKey)) {
-      cancelDraw()
+    // A right click is left to the context menu that follows it.
+    if (event.button === 2) return
+    if (event.ctrlKey && !event.metaKey) {
+      backToSelect()
       return
     }
     if (event.button !== 0) return
@@ -1624,34 +1648,53 @@
     return rings.length > 0 ? rings : null
   })
 
-  function highlightedDirection(floor: Floor): { dx: number; dz: number } | null {
+  type GridSegment = { ax: number; az: number; bx: number; bz: number }
+
+  // Where the grid last lay along a wall, an outline or a plot edge. It outlasts the selection, so picking another
+  // tool or placing paving keeps drawing square to the same wall, until another reference is picked, the reference
+  // is cleared on the compass, or the plan is turned by hand.
+  let gridReference = $state<GridSegment | null>(null)
+
+  $effect(() => {
+    const floor = activeFloor
+    const chosen = floor ? selectedSegment(floor) : null
+    if (chosen) untrack(() => (gridReference = chosen))
+  })
+
+  function clearGridReference() {
+    gridReference = null
+    chooseSelection({})
+  }
+
+  function turnByHand(next: number) {
+    gridReference = null
+    setTurn(next)
+  }
+
+  // The wall, outline edge or plot edge that is picked, if any.
+  function selectedSegment(floor: Floor): GridSegment | null {
+    let segment: GridSegment | null = null
     if (selectedWallId) {
       const wall = floor.walls.find((item) => item.id === selectedWallId)
-      if (!wall) return null
-      const a = cornerById(floor.corners, wall.startCornerId)
-      const b = cornerById(floor.corners, wall.endCornerId)
-      if (!a || !b) return null
-      const dx = b.x - a.x
-      const dz = b.z - a.z
-      if (Math.hypot(dx, dz) < 1e-9) return null
-      return { dx, dz }
+      const a = wall ? cornerById(floor.corners, wall.startCornerId) : undefined
+      const b = wall ? cornerById(floor.corners, wall.endCornerId) : undefined
+      if (a && b) segment = { ax: a.x, az: a.z, bx: b.x, bz: b.z }
+    } else if (outlineReference) {
+      segment = outlineReference
+    } else if (selectedEdge !== null) {
+      const ring = plotRing
+      const a = ring[selectedEdge]
+      const b = ring[(selectedEdge + 1) % ring.length]
+      if (a && b) segment = { ax: a[0], az: a[1], bx: b[0], bz: b[1] }
     }
-    const outline = outlineReference
-    if (outline) {
-      const dx = outline.bx - outline.ax
-      const dz = outline.bz - outline.az
-      if (Math.hypot(dx, dz) < 1e-9) return null
-      return { dx, dz }
-    }
-    if (selectedEdge === null) return turn === 0 ? null : screenAxis
-    const ring = plotRing
-    const a = ring[selectedEdge]
-    const b = ring[(selectedEdge + 1) % ring.length]
-    if (!a || !b) return null
-    const dx = b[0] - a[0]
-    const dz = b[1] - a[1]
-    if (Math.hypot(dx, dz) < 1e-9) return null
-    return { dx, dz }
+    if (!segment || Math.hypot(segment.bx - segment.ax, segment.bz - segment.az) < 1e-9) return null
+    return segment
+  }
+
+  function highlightedDirection(floor: Floor): { dx: number; dz: number } | null {
+    const segment = selectedSegment(floor) ?? gridReference
+    if (segment) return { dx: segment.bx - segment.ax, dz: segment.bz - segment.az }
+    return turn === 0 ? null : screenAxis
   }
 
   const previewLine = $derived.by(() => {
@@ -1788,27 +1831,14 @@
   })
 
   const localGrid = $derived.by(() => {
-    if (displayFloor && selectedWallId) {
-      const wall = displayFloor.walls.find((item) => item.id === selectedWallId)
-      if (!wall) return []
-      const a = cornerById(displayFloor.corners, wall.startCornerId)
-      const b = cornerById(displayFloor.corners, wall.endCornerId)
-      if (!a || !b) return []
-      return gridFromSegment(a.x, a.z, b.x, b.z, bounds)
-    }
-    const outline = outlineReference
-    if (outline) return gridFromSegment(outline.ax, outline.az, outline.bx, outline.bz, bounds)
-    if (selectedEdge !== null) {
-      const ring = plotRing
-      const a = ring[selectedEdge]
-      const b = ring[(selectedEdge + 1) % ring.length]
-      if (a && b) return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
-    }
+    if (displayFloor && selectedWallId && !displayFloor.walls.some((item) => item.id === selectedWallId)) return []
+    const segment = (displayFloor ? selectedSegment(displayFloor) : null) ?? gridReference
+    if (segment) return gridFromSegment(segment.ax, segment.az, segment.bx, segment.bz, bounds)
     return gridFromSegment(0, 0, screenAxis.dx, screenAxis.dz, bounds)
   })
 
   const compassAligned = $derived(
-    selectedWallId === null && selectedOutline === null && selectedEdge === null,
+    selectedWallId === null && selectedOutline === null && selectedEdge === null && gridReference === null,
   )
 
   function squareToSelectedWall() {
@@ -2270,6 +2300,13 @@
     focusedRoom = spaceId
     centre = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 }
     zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
+  }
+
+  // A kitchen is laid out with the counter tool in hand.
+  function layOutRoom(space: Space, rings: { x: number; z: number }[][]) {
+    focusRoom(space.id, rings)
+    chooseSelection({})
+    if (space.type === 'kitchen') setTool('draw-counter')
   }
 
   function leaveRoom() {
@@ -2990,12 +3027,12 @@
       {zoom}
       aligned={compassAligned}
       canSquare={selectedWallId !== null}
-      onTurn={setTurn}
+      onTurn={turnByHand}
       onSquare={squareToSelectedWall}
       onZoomIn={() => zoomBy(1.4)}
       onZoomOut={() => zoomBy(1 / 1.4)}
       onFit={fitView}
-      onClearReference={() => chooseSelection({})}
+      onClearReference={clearGridReference}
     />
   </div>
   <svg
@@ -4350,12 +4387,7 @@
           <div class="grid gap-1.5 border-t pt-3">
             <Button
               variant="outline"
-              onclick={() => {
-                const kitchen = resolved.space.type === 'kitchen'
-                focusRoom(resolved.space.id, resolved.cells.map((cell) => cell.ring))
-                chooseSelection({})
-                if (kitchen) setTool('draw-counter')
-              }}
+              onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
             >
               <Maximize2 />Lay out this room
             </Button>
