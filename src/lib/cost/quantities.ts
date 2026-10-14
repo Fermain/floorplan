@@ -681,7 +681,11 @@ export function takeoff(doc: Document): QuantityLine[] {
   const joinery = counterTotals(doc)
   for (const spec of COUNTER_KINDS) {
     const length = joinery.units[spec.id]
-    if (length > 0) drafts.push({ id: `counter:${spec.id}`, group: 'Joinery', label: spec.id === 'base' ? 'Base cupboards' : `${spec.name} cupboards`, note: `${spec.depth * 1000} mm deep, ${spec.height * 1000} mm high`, unit: 'm', quantity: round(length, 2), rateKey: `counter:${spec.id}` })
+    if (length > 0) {
+      const label = spec.id === 'base' ? 'Base cupboards' : spec.id === 'cupboard' ? 'Built-in cupboards' : `${spec.name} cupboards`
+      const note = spec.id === 'cupboard' ? `Full height (${Math.round(spec.height * 1000)} mm), ${Math.round(spec.depth * 1000)} mm deep` : `${spec.depth * 1000} mm deep, ${spec.height * 1000} mm high`
+      drafts.push({ id: `counter:${spec.id}`, group: 'Joinery', label, note, unit: 'm', quantity: round(length, 2), rateKey: `counter:${spec.id}` })
+    }
   }
   for (const spec of COUNTER_TOPS) {
     const area = joinery.tops[spec.id]

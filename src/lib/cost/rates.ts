@@ -67,6 +67,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'counter:base': 2800,
   'counter:island': 4200,
   'counter:bar': 2400,
+  'counter:cupboard': 3800,
   'worktop:laminate': 950,
   'worktop:granite': 3200,
   'worktop:timber': 2100,

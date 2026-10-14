@@ -285,7 +285,7 @@ export type SiteServices = {
 // A run of kitchen counter: cupboards under a worktop. It is placed by the start of its back edge, the way it
 // runs, and its length; its depth comes out to the left of the way it runs, so a counter drawn along a wall runs
 // with the room on its left.
-export type CounterKind = 'base' | 'island' | 'bar'
+export type CounterKind = 'base' | 'island' | 'bar' | 'cupboard'
 export type CounterTop = 'laminate' | 'granite' | 'timber'
 export type Counter = {
   id: string

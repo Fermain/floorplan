@@ -560,13 +560,14 @@
         {@render heading('kitchens', 'Counters against the fittings that stand between them. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
         {#if !folded.includes('kitchens')}
           {@render attend(kitchenList)}
-          {#if counterLength > 0}
+          {#if counterLength > 0 || joinery.units.cupboard > 0}
             {@render facts([
-              { label: 'Counters', value: `${number.format(counterLength)} m`, note: [joinery.units.island > 0 ? 'with an island' : '', joinery.units.bar > 0 ? 'with a bar' : ''].filter(Boolean).join(', ') },
-              { label: 'Wall cupboards', value: joinery.wallUnits > 0 ? `${number.format(joinery.wallUnits)} m` : 'None' },
+              ...(counterLength > 0 ? [{ label: 'Counters', value: `${number.format(counterLength)} m`, note: [joinery.units.island > 0 ? 'with an island' : '', joinery.units.bar > 0 ? 'with a bar' : ''].filter(Boolean).join(', ') }] : []),
+              ...(joinery.wallUnits > 0 ? [{ label: 'Wall cupboards', value: `${number.format(joinery.wallUnits)} m` }] : []),
+              ...(joinery.units.cupboard > 0 ? [{ label: 'Built-in cupboards', value: `${number.format(joinery.units.cupboard)} m` }] : []),
             ])}
           {:else}
-            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters with the Counters tool on the plan and they are checked here.</p>
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters and cupboards with the Counters tool on the plan and they are checked here.</p>
           {/if}
         {/if}
       </section>

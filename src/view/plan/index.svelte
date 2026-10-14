@@ -91,7 +91,7 @@
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
   import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
-  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder } from '../../lib/model/counters'
+  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder, cupboardBays } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
@@ -2237,7 +2237,7 @@
   // A counter against a wall is drawn along the wall's face: click where it starts, then where it ends. One standing
   // free (an island or a bar) is drawn corner to corner, square to the drawing grid.
   function counterStartAt(plan: { x: number; z: number }) {
-    const face = counterKind === 'base' && activeFloor ? counterFace(activeFloor, plan, Math.max(0.35, s(0.45))) : null
+    const face = (counterKind === 'base' || counterKind === 'cupboard') && activeFloor ? counterFace(activeFloor, plan, Math.max(0.35, s(0.45)), { kind: counterKind }) : null
     return { face, point: face?.point ?? { x: Math.round(plan.x * 20) / 20, z: Math.round(plan.z * 20) / 20 } }
   }
   const counterHover = $derived(tool === 'draw-counter' && pointerPlan && !counterStart ? counterStartAt(pointerPlan) : null)
@@ -2260,7 +2260,7 @@
   // Against a wall, the free run of the face is shown before and while drawing, with how far the start is from each
   // end of it, and then how long the counter is and what is left beyond it, in millimetres.
   const counterGuide = $derived.by(() => {
-    if (tool !== 'draw-counter' || counterKind !== 'base') return null
+    if (tool !== 'draw-counter' || (counterKind !== 'base' && counterKind !== 'cupboard')) return null
     const face = counterStart?.face ?? counterHover?.face
     if (!face) return null
     const depth = counterKindSpec(counterKind).depth
@@ -2290,8 +2290,10 @@
     if (!activeFloor) return
     if (!counterStart) {
       const start = counterStartAt(plan)
-      if (counterKind === 'base' && !start.face) {
-        errorMessage = 'A counter stands against a wall. Click on the inside face of one, or choose Island or Bar.'
+      if ((counterKind === 'base' || counterKind === 'cupboard') && !start.face) {
+        errorMessage = counterKind === 'cupboard'
+          ? 'A cupboard stands against a wall. Click on the inside face of one.'
+          : 'A counter stands against a wall. Click on the inside face of one, or choose Island or Bar.'
         return
       }
       errorMessage = null
@@ -2345,11 +2347,17 @@
     zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
   }
 
-  // A kitchen is laid out with the counter tool in hand.
+  // A kitchen is laid out with the counter tool in hand, and a bedroom or store with cupboards.
   function layOutRoom(space: Space, rings: { x: number; z: number }[][]) {
     focusRoom(space.id, rings)
     chooseSelection({})
-    if (space.type === 'kitchen') setTool('draw-counter')
+    if (space.type === 'kitchen') {
+      counterKind = 'base'
+      setTool('draw-counter')
+    } else if (space.type === 'bedroom' || space.type === 'store') {
+      counterKind = 'cupboard'
+      setTool('draw-counter')
+    }
   }
 
   // Turns the plan, by as little as it can, so that the longest run of the room's walls lies square to the screen.
@@ -2688,7 +2696,7 @@
     if (tool === 'draw-counter') {
       const spec = counterKindSpec(counterKind)
       if (!counterStart) {
-        return counterKind === 'base'
+        return counterKind === 'base' || counterKind === 'cupboard'
           ? `${spec.name}, ${spec.depth * 1000} mm deep. Click on the inside face of a wall where it starts.`
           : `${spec.name}. Click one corner, then the opposite one.`
       }
@@ -2861,7 +2869,7 @@
       <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
         <Mountain /><span class="hidden sm:inline">Retaining</span>
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-counter" aria-label="Counters" title="Counters: kitchen cupboards and worktops" class="max-sm:px-2">
+      <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
         <ChefHat /><span class="hidden sm:inline">Counters</span>
       </ToggleGroup.Item>
     </ToggleGroup.Root>
@@ -2903,22 +2911,24 @@
           <ToggleGroup.Item value={spec.id} title={spec.text}>{spec.name}</ToggleGroup.Item>
         {/each}
       </ToggleGroup.Root>
-      <Select.Root type="single" value={counterTop} onValueChange={(next) => next && (counterTop = next as CounterTop)}>
-        <Select.Trigger size="sm" class="w-36" aria-label="Worktop">
-          <span class="flex items-center gap-2">
-            <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={counterTopSpec(counterTop).colour}></span>
-            {counterTopSpec(counterTop).name}
-          </span>
-        </Select.Trigger>
-        <Select.Content>
-          {#each COUNTER_TOPS as spec (spec.id)}
-            <Select.Item value={spec.id} label={spec.name}>
-              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-              {spec.name}
-            </Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
+      {#if counterKind !== 'cupboard'}
+        <Select.Root type="single" value={counterTop} onValueChange={(next) => next && (counterTop = next as CounterTop)}>
+          <Select.Trigger size="sm" class="w-36" aria-label="Worktop">
+            <span class="flex items-center gap-2">
+              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={counterTopSpec(counterTop).colour}></span>
+              {counterTopSpec(counterTop).name}
+            </span>
+          </Select.Trigger>
+          <Select.Content>
+            {#each COUNTER_TOPS as spec (spec.id)}
+              <Select.Item value={spec.id} label={spec.name}>
+                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+                {spec.name}
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {/if}
     {/if}
     {#if tool === 'draw-carport'}
       <ToggleGroup.Root
@@ -3672,17 +3682,34 @@
     {#snippet counterShape(counter: Omit<Counter, 'id'>, state: 'set' | 'picked' | 'draft' | 'refused')}
       {@const ring = counterRing(counter)}
       {@const colour = state === 'refused' ? '#dc2626' : state === 'set' ? '#44403c' : '#2563eb'}
-      <polygon
-        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
-        fill={counterTopSpec(counter.top).colour}
-        fill-opacity={state === 'draft' || state === 'refused' ? 0.55 : 0.92}
-        stroke={colour}
-        stroke-width={s(state === 'set' ? 0.02 : 0.045)}
-      />
-      {#if counter.wallUnits}
-        <!-- Cupboards on the wall above: a dashed line 350 mm out from the wall. -->
-        {@const back = counterRing({ ...counter, depth: 0.35 })}
-        <line x1={back[3].x} y1={back[3].z} x2={back[2].x} y2={back[2].z} stroke={colour} stroke-width={s(0.015)} stroke-dasharray={dash(0.1, 0.07)} />
+      {#if counter.kind === 'cupboard'}
+        <polygon
+          points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+          fill="#ede9e1"
+          fill-opacity={state === 'draft' || state === 'refused' ? 0.55 : 0.92}
+          stroke={colour}
+          stroke-width={s(state === 'set' ? 0.02 : 0.045)}
+        />
+        {#each cupboardBays(counter) as bay, i (i)}
+          <line x1={bay.p1.x} y1={bay.p1.z} x2={bay.p3.x} y2={bay.p3.z} stroke={colour} stroke-opacity="0.35" stroke-width={s(0.015)} stroke-dasharray={dash(0.08, 0.05)} />
+          <line x1={bay.p2.x} y1={bay.p2.z} x2={bay.p4.x} y2={bay.p4.z} stroke={colour} stroke-opacity="0.35" stroke-width={s(0.015)} stroke-dasharray={dash(0.08, 0.05)} />
+          {#if i > 0}
+            <line x1={bay.p1.x} y1={bay.p1.z} x2={bay.p4.x} y2={bay.p4.z} stroke={colour} stroke-opacity="0.4" stroke-width={s(0.015)} />
+          {/if}
+        {/each}
+      {:else}
+        <polygon
+          points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+          fill={counterTopSpec(counter.top).colour}
+          fill-opacity={state === 'draft' || state === 'refused' ? 0.55 : 0.92}
+          stroke={colour}
+          stroke-width={s(state === 'set' ? 0.02 : 0.045)}
+        />
+        {#if counter.wallUnits}
+          <!-- Cupboards on the wall above: a dashed line 350 mm out from the wall. -->
+          {@const back = counterRing({ ...counter, depth: 0.35 })}
+          <line x1={back[3].x} y1={back[3].z} x2={back[2].x} y2={back[2].z} stroke={colour} stroke-width={s(0.015)} stroke-dasharray={dash(0.1, 0.07)} />
+        {/if}
       {/if}
     {/snippet}
     <g class="counters" pointer-events="none">
@@ -4250,20 +4277,22 @@
     {/if}
     {#if chosenCounter && !roofFloor}
       <ContextPanel
-        label="Counter"
+        label={chosenCounter.kind === 'cupboard' ? 'Cupboard' : 'Counter'}
         title={counterKindSpec(chosenCounter.kind).name}
         description="{Math.round(chosenCounter.length * 1000)} × {Math.round(chosenCounter.depth * 1000)} mm, {counterKindSpec(chosenCounter.kind).height * 1000} mm high."
         onclose={() => chooseSelection({})}
       >
-        <div class="grid gap-1.5">
-          <Label>Worktop</Label>
-          <SwatchPicker
-            label="Worktop"
-            options={COUNTER_TOPS.map((spec) => ({ id: spec.id, name: spec.name, swatch: spec.colour }))}
-            value={chosenCounter.top}
-            onchange={(next) => patchChosenCounter({ top: next })}
-          />
-        </div>
+        {#if chosenCounter.kind !== 'cupboard'}
+          <div class="grid gap-1.5">
+            <Label>Worktop</Label>
+            <SwatchPicker
+              label="Worktop"
+              options={COUNTER_TOPS.map((spec) => ({ id: spec.id, name: spec.name, swatch: spec.colour }))}
+              value={chosenCounter.top}
+              onchange={(next) => patchChosenCounter({ top: next })}
+            />
+          </div>
+        {/if}
         <div class="grid grid-cols-2 gap-2">
           <div class="grid gap-1.5">
             <Label for="counter-length">Length (mm)</Label>
