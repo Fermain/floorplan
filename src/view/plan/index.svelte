@@ -1639,34 +1639,53 @@
     return rings.length > 0 ? rings : null
   })
 
-  function highlightedDirection(floor: Floor): { dx: number; dz: number } | null {
+  type GridSegment = { ax: number; az: number; bx: number; bz: number }
+
+  // Where the grid last lay along a wall, an outline or a plot edge. It outlasts the selection, so picking another
+  // tool or placing paving keeps drawing square to the same wall, until another reference is picked, the reference
+  // is cleared on the compass, or the plan is turned by hand.
+  let gridReference = $state<GridSegment | null>(null)
+
+  $effect(() => {
+    const floor = activeFloor
+    const chosen = floor ? selectedSegment(floor) : null
+    if (chosen) untrack(() => (gridReference = chosen))
+  })
+
+  function clearGridReference() {
+    gridReference = null
+    chooseSelection({})
+  }
+
+  function turnByHand(next: number) {
+    gridReference = null
+    setTurn(next)
+  }
+
+  // The wall, outline edge or plot edge that is picked, if any.
+  function selectedSegment(floor: Floor): GridSegment | null {
+    let segment: GridSegment | null = null
     if (selectedWallId) {
       const wall = floor.walls.find((item) => item.id === selectedWallId)
-      if (!wall) return null
-      const a = cornerById(floor.corners, wall.startCornerId)
-      const b = cornerById(floor.corners, wall.endCornerId)
-      if (!a || !b) return null
-      const dx = b.x - a.x
-      const dz = b.z - a.z
-      if (Math.hypot(dx, dz) < 1e-9) return null
-      return { dx, dz }
+      const a = wall ? cornerById(floor.corners, wall.startCornerId) : undefined
+      const b = wall ? cornerById(floor.corners, wall.endCornerId) : undefined
+      if (a && b) segment = { ax: a.x, az: a.z, bx: b.x, bz: b.z }
+    } else if (outlineReference) {
+      segment = outlineReference
+    } else if (selectedEdge !== null) {
+      const ring = plotRing
+      const a = ring[selectedEdge]
+      const b = ring[(selectedEdge + 1) % ring.length]
+      if (a && b) segment = { ax: a[0], az: a[1], bx: b[0], bz: b[1] }
     }
-    const outline = outlineReference
-    if (outline) {
-      const dx = outline.bx - outline.ax
-      const dz = outline.bz - outline.az
-      if (Math.hypot(dx, dz) < 1e-9) return null
-      return { dx, dz }
-    }
-    if (selectedEdge === null) return turn === 0 ? null : screenAxis
-    const ring = plotRing
-    const a = ring[selectedEdge]
-    const b = ring[(selectedEdge + 1) % ring.length]
-    if (!a || !b) return null
-    const dx = b[0] - a[0]
-    const dz = b[1] - a[1]
-    if (Math.hypot(dx, dz) < 1e-9) return null
-    return { dx, dz }
+    if (!segment || Math.hypot(segment.bx - segment.ax, segment.bz - segment.az) < 1e-9) return null
+    return segment
+  }
+
+  function highlightedDirection(floor: Floor): { dx: number; dz: number } | null {
+    const segment = selectedSegment(floor) ?? gridReference
+    if (segment) return { dx: segment.bx - segment.ax, dz: segment.bz - segment.az }
+    return turn === 0 ? null : screenAxis
   }
 
   const previewLine = $derived.by(() => {
@@ -1803,27 +1822,14 @@
   })
 
   const localGrid = $derived.by(() => {
-    if (displayFloor && selectedWallId) {
-      const wall = displayFloor.walls.find((item) => item.id === selectedWallId)
-      if (!wall) return []
-      const a = cornerById(displayFloor.corners, wall.startCornerId)
-      const b = cornerById(displayFloor.corners, wall.endCornerId)
-      if (!a || !b) return []
-      return gridFromSegment(a.x, a.z, b.x, b.z, bounds)
-    }
-    const outline = outlineReference
-    if (outline) return gridFromSegment(outline.ax, outline.az, outline.bx, outline.bz, bounds)
-    if (selectedEdge !== null) {
-      const ring = plotRing
-      const a = ring[selectedEdge]
-      const b = ring[(selectedEdge + 1) % ring.length]
-      if (a && b) return gridFromSegment(a[0], a[1], b[0], b[1], bounds)
-    }
+    if (displayFloor && selectedWallId && !displayFloor.walls.some((item) => item.id === selectedWallId)) return []
+    const segment = (displayFloor ? selectedSegment(displayFloor) : null) ?? gridReference
+    if (segment) return gridFromSegment(segment.ax, segment.az, segment.bx, segment.bz, bounds)
     return gridFromSegment(0, 0, screenAxis.dx, screenAxis.dz, bounds)
   })
 
   const compassAligned = $derived(
-    selectedWallId === null && selectedOutline === null && selectedEdge === null,
+    selectedWallId === null && selectedOutline === null && selectedEdge === null && gridReference === null,
   )
 
   function squareToSelectedWall() {
@@ -2999,12 +3005,12 @@
       {zoom}
       aligned={compassAligned}
       canSquare={selectedWallId !== null}
-      onTurn={setTurn}
+      onTurn={turnByHand}
       onSquare={squareToSelectedWall}
       onZoomIn={() => zoomBy(1.4)}
       onZoomOut={() => zoomBy(1 / 1.4)}
       onFit={fitView}
-      onClearReference={() => chooseSelection({})}
+      onClearReference={clearGridReference}
     />
   </div>
   <svg
