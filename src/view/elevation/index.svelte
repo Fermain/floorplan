@@ -44,6 +44,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import Plus from '@lucide/svelte/icons/plus'
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
+  import { resolvedGate, sideToward } from '../../lib/geometry/gates'
+  import { fenceRuns, GATE_MAX_WIDTH_M, GATE_MIN_WIDTH_M, GATE_PRESETS, gateLeaves, gateName } from '../../lib/model/gates'
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import {
     DEFAULT_FENCE_HEIGHT_M,
     FENCE_MAX_HEIGHT_M,
@@ -52,7 +55,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     fencePosts,
     fenceSpec,
   } from '../../lib/model/fences'
-  import type { CorniceType, FaceTrim, FenceType, Fixture, FixtureKind, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
+  import type { CorniceType, FaceTrim, FenceType, Fixture, FixtureKind, Gate, GateOpening, GutterType, SkirtingType, SupportType } from '../../lib/model/types'
   import { buildTrimParts, trimRuns } from '../../lib/geometry/trims'
   import { PORTS, type PortKind } from '../../lib/model/ports'
   import { GAS_RUN_Y, gasLayout, regulatorY } from '../../lib/geometry/gas'
@@ -679,9 +682,56 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       return
     }
     documentStore.setFence(floor.id, wall.id, {
+      ...fence,
       type: next as FenceType,
       height: fence?.height ?? DEFAULT_FENCE_HEIGHT_M,
     })
+  }
+
+  // Gates in the fence. The middle of the plot is the side a gate opens to unless it is set otherwise.
+  const plotMiddle = $derived.by(() => {
+    const ring = doc.plot.ring
+    const sum = ring.reduce((total, [x, z]) => ({ x: total.x + x, z: total.z + z }), { x: 0, z: 0 })
+    return ring.length > 0 ? { x: sum.x / ring.length, z: sum.z / ring.length } : { x: 0, z: 0 }
+  })
+  const gateInward = $derived(floor && wall ? sideToward(floor, wall, plotMiddle) : 1)
+  const fenceGates = $derived(
+    (fence?.gates ?? [])
+      .map((gate) => {
+        const hang = resolvedGate(gate, gateInward)
+        const length = frame?.length ?? 0
+        return {
+          gate,
+          ...hang,
+          // Distances and sides as seen from this side of the line.
+          fromLeft: reversed ? length - gate.u - gate.width : gate.u,
+          left: (hang.hinge === 'start') !== reversed,
+          toward: hang.swing === side,
+        }
+      })
+      .sort((a, b) => a.fromLeft - b.fromLeft),
+  )
+  let gateMessage = $state<string | null>(null)
+
+  // A new gate goes in the middle of the line, or as near it as there is room.
+  function addGateFrom(presetId: string) {
+    const preset = GATE_PRESETS.find((item) => item.id === presetId)
+    if (!preset || !floor || !wall || !frame) return
+    const middle = (frame.length - preset.width) / 2
+    const tries = Array.from({ length: Math.ceil(frame.length / 0.1) + 1 }, (_, i) => (i % 2 === 0 ? 1 : -1) * Math.ceil(i / 2) * 0.1).map((shift) => Math.round((middle + shift) * 1000) / 1000)
+    for (const u of tries) {
+      if (documentStore.addGate(floor.id, wall.id, { u, width: preset.width, opening: preset.opening }).ok) {
+        gateMessage = null
+        return
+      }
+    }
+    gateMessage = `There is no room on this line for ${preset.name.toLowerCase()} ${mm(preset.width)} mm wide.`
+  }
+
+  function changeGate(gateId: string, patch: Partial<Omit<Gate, 'id'>>) {
+    if (!floor || !wall) return
+    const result = documentStore.updateGate(floor.id, wall.id, gateId, patch)
+    gateMessage = result.ok ? null : 'That would leave no room for a post beside the gate, or run it into another gate.'
   }
 
   function setFenceHeightMm(value: number) {
@@ -1004,8 +1054,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       }
       if (fence) {
         const spec = fenceSpec(fence.type)
-        const posts = fencePosts(frame.length, spec).length
-        parts.push(`${spec.name}, ${mm(fence.height)} mm high: ${posts} posts.`)
+        const { runs, gates } = fenceRuns(fence.gates, frame.length)
+        const posts = runs.reduce((total, [a, b]) => total + fencePosts(b - a, spec).length, 0)
+        const hung = gates.length === 0 ? '' : gates.length === 1 ? ', and a gate' : `, and ${gates.length} gates`
+        parts.push(`${spec.name}, ${mm(fence.height)} mm high: ${posts} posts${hung}.`)
       }
       return { text: parts.join(' '), error: false }
     }
@@ -1196,6 +1248,19 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
             />
             <span class="text-muted-foreground">mm</span>
           </label>
+          <Select.Root type="single" value="" onValueChange={(next) => next && addGateFrom(next)}>
+            <Select.Trigger size="sm" class="w-32" aria-label="Add a gate">Add a gate</Select.Trigger>
+            <Select.Content>
+              {#each GATE_PRESETS as preset (preset.id)}
+                <Select.Item value={preset.id} label={preset.name}>
+                  <div class="grid max-w-64 gap-0.5 whitespace-normal">
+                    <span>{preset.name}</span>
+                    <span class="text-xs text-muted-foreground">{preset.text}</span>
+                  </div>
+                </Select.Item>
+              {/each}
+            </Select.Content>
+          </Select.Root>
         {/if}
         <Separator orientation="vertical" class="hidden h-5 sm:block" />
         <div class="flex min-w-0 items-center gap-2">
@@ -1551,6 +1616,81 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
             </div>
           {/if}
           <Button variant="destructive" onclick={removeSelected}>Remove opening</Button>
+        </ContextPanel>
+      {:else if logical && fence && (fenceGates.length > 0 || gateMessage)}
+        <ContextPanel label="Gates" title="Gates" description="Distances are from the left end of the fence as seen from here.">
+          {#if gateMessage}<p class="text-destructive">{gateMessage}</p>{/if}
+          {#each fenceGates as item (item.gate.id)}
+            <div class="grid gap-1.5 border-t pt-3">
+              <span class="font-medium">{gateName(item.gate)}</span>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="grid gap-1">
+                  <span class="text-muted-foreground">From the left (mm)</span>
+                  <Input
+                    type="number"
+                    step="50"
+                    value={mm(item.fromLeft)}
+                    onchange={(event) => {
+                      const left = Number(event.currentTarget.value) / 1000
+                      if (!Number.isFinite(left) || !frame) return
+                      changeGate(item.gate.id, { u: reversed ? frame.length - left - item.gate.width : left })
+                    }}
+                  />
+                </label>
+                <label class="grid gap-1">
+                  <span class="text-muted-foreground">Width (mm)</span>
+                  <Input
+                    type="number"
+                    min={mm(GATE_MIN_WIDTH_M)}
+                    max={mm(GATE_MAX_WIDTH_M)}
+                    step="50"
+                    value={mm(item.gate.width)}
+                    onchange={(event) => {
+                      const width = Number(event.currentTarget.value) / 1000
+                      if (Number.isFinite(width)) changeGate(item.gate.id, { width })
+                    }}
+                  />
+                </label>
+              </div>
+              <Select.Root type="single" value={item.gate.opening} onValueChange={(next) => changeGate(item.gate.id, { opening: next as GateOpening })}>
+                <Select.Trigger size="sm" aria-label="How it opens">{item.gate.opening === 'sliding' ? 'Slides' : 'Swings'}</Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="swing" label="Swings" />
+                  <Select.Item value="sliding" label="Slides" />
+                </Select.Content>
+              </Select.Root>
+              {#if item.gate.opening === 'sliding'}
+                <span class="text-muted-foreground">Runs back to the {item.left ? 'left' : 'right'}, on the {item.toward ? 'near' : 'far'} side of the fence.</span>
+                <Button variant="outline" onclick={() => changeGate(item.gate.id, { hinge: item.hinge === 'start' ? 'end' : 'start' })}>
+                  <ArrowLeftRight />Run back to the {item.left ? 'right' : 'left'}
+                </Button>
+                <Button variant="outline" onclick={() => changeGate(item.gate.id, { swing: item.swing === 1 ? -1 : 1 })}>
+                  <ArrowUpDown />Run on the {item.toward ? 'far' : 'near'} side
+                </Button>
+              {:else}
+                <span class="text-muted-foreground">
+                  {gateLeaves(item.gate) === 2 ? 'A pair, opening' : `Hinged on the ${item.left ? 'left' : 'right'}, opening`} {item.toward ? 'toward you' : 'away from you'}.
+                </span>
+                {#if gateLeaves(item.gate) === 1}
+                  <Button variant="outline" onclick={() => changeGate(item.gate.id, { hinge: item.hinge === 'start' ? 'end' : 'start' })}>
+                    <ArrowLeftRight />Hinge on the {item.left ? 'right' : 'left'}
+                  </Button>
+                {/if}
+                <Button variant="outline" onclick={() => changeGate(item.gate.id, { swing: item.swing === 1 ? -1 : 1 })}>
+                  <ArrowUpDown />Open {item.toward ? 'away from you' : 'toward you'}
+                </Button>
+              {/if}
+              <Button
+                variant="destructive"
+                onclick={() => {
+                  if (floor && wall) documentStore.removeGate(floor.id, wall.id, item.gate.id)
+                  gateMessage = null
+                }}
+              >
+                Remove gate
+              </Button>
+            </div>
+          {/each}
         </ContextPanel>
       {/if}
     </div>

@@ -24,6 +24,7 @@ import { retainingTotals } from '../geometry/retaining'
 import { RETAINING_TYPES } from '../model/retaining'
 import { COUNTER_KINDS, COUNTER_TOPS } from '../model/counters'
 import { CARPORT_ROOFS, carportName } from '../model/carports'
+import { fenceRuns, gateLeaves, gateName } from '../model/gates'
 import { plumbingLayout, wallChases, waterTrench } from '../geometry/plumbing'
 import { BATTERY_MODULE_KWH, PANEL_W, powerLayout } from '../geometry/power'
 import { GUTTERS, gutterLayout, gutterLengths } from '../geometry/gutters'
@@ -712,15 +713,26 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
 
   const fences = new Map<string, { length: number; area: number; posts: number }>()
+  const gates = new Map<string, { count: number; name: string; widths: number[] }>()
   for (const floor of doc.building.floors) {
     for (const wall of floor.walls) {
       if (wall.skin !== 'logical' || !wall.fence) continue
-      const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+      // The fence runs between its gates; each gate is counted on its own.
+      const { runs, gates: hung } = fenceRuns(wall.fence.gates, wallLength(floor.corners, wall.startCornerId, wall.endCornerId))
       const tally = fences.get(wall.fence.type) ?? { length: 0, area: 0, posts: 0 }
-      tally.length += length
-      tally.area += length * wall.fence.height
-      tally.posts += fencePosts(length, fenceSpec(wall.fence.type)).length
+      for (const [a, b] of runs) {
+        tally.length += b - a
+        tally.area += (b - a) * wall.fence.height
+        tally.posts += fencePosts(b - a, fenceSpec(wall.fence.type)).length
+      }
       fences.set(wall.fence.type, tally)
+      for (const gate of hung) {
+        const key = gate.opening === 'sliding' ? 'sliding' : gateLeaves(gate) === 2 ? 'swing-pair' : 'pedestrian'
+        const kind = gates.get(key) ?? { count: 0, name: gateName(gate), widths: [] as number[] }
+        kind.count += 1
+        kind.widths.push(gate.width)
+        gates.set(key, kind)
+      }
     }
   }
   for (const spec of FENCES) {
@@ -734,6 +746,17 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm²',
       quantity: round(tally.area * waste, 1),
       rateKey: `fence:${spec.id}`,
+    })
+  }
+  for (const [key, kind] of gates) {
+    drafts.push({
+      id: `gate:${key}`,
+      group: 'Fencing',
+      label: kind.name,
+      note: `${kind.widths.map((width) => `${Math.round(width * 1000)} mm`).join(', ')} wide; hung and fitted, no motor`,
+      unit: 'each',
+      quantity: kind.count,
+      rateKey: `gate:${key}`,
     })
   }
 

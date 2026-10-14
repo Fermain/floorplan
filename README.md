@@ -96,6 +96,7 @@ Each face of a wall is left exposed, bagged or plastered, and plastered and bagg
 
 On a logical wall, Focus is where you choose what gets built along it:
 - **Fences:** steel palisade, welded mesh, precast concrete, timber slats or a low plastered half wall, at any height from 300 to 3000 mm.
+- **Gates:** a single gate, a pair of driveway gates or a sliding gate set into a fence, placed along it and hung to swing or slide either way. The plan draws them open, Review builds them closed, and Quantities prices them apart from the fence.
 - **Supports:** a classical precast column, a pier in the project's own block, a steel post or a treated timber pole, at a spacing you set.
 
 <p>

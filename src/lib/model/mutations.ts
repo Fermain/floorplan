@@ -20,6 +20,7 @@ import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry
 import { COVERINGS } from '../geometry/coverings'
 import { defaultsProblem, PAVING_SURFACES, projectDefaults } from './defaults'
 import { fenceProblem } from './fences'
+import { gatesProblem } from './gates'
 import { supportProblem } from './supports'
 import { fixtureProblem, fixtureSpec, reseat, swapsFor } from './fixtures'
 import { fixtureWall } from '../geometry/fixtures'
@@ -45,6 +46,7 @@ import type {
   Fence,
   Fixture,
   FixtureKind,
+  Gate,
   PavingArea,
   PavingSurface,
   PlanPoint,
@@ -372,6 +374,43 @@ export function removeStair(document: Document, floorId: string, stairId: string
   if (!floor) return fail(document, 'floor not found')
   if (!floor.stairs?.some((stair) => stair.id === stairId)) return fail(document, 'stair not found')
   return ok(replaceFloor(document, { ...floor, stairs: floor.stairs.filter((stair) => stair.id !== stairId) }))
+}
+
+function withFence(document: Document, floorId: string, wallId: string, change: (fence: Fence, length: number) => Fence | string): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((item) => item.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  if (!wall.fence) return fail(document, 'a gate hangs in a fence')
+  const length = wallLength(floor.corners, wall.startCornerId, wall.endCornerId)
+  const next = change(wall.fence, length)
+  if (typeof next === 'string') return fail(document, next)
+  const problem = gatesProblem(next.gates ?? [], length)
+  if (problem) return fail(document, problem)
+  const walls = floor.walls.map((item) => (item.id === wallId ? { ...item, fence: next } : item))
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
+// A gate set into a fence, at a place along it; one that would overlap another or leave no room for a post fails.
+export function addGate(document: Document, floorId: string, wallId: string, gate: Omit<Gate, 'id'>): MutationResult {
+  return withFence(document, floorId, wallId, (fence) => ({ ...fence, gates: [...(fence.gates ?? []), { ...gate, id: newId('gate') }] }))
+}
+
+export function updateGate(document: Document, floorId: string, wallId: string, gateId: string, patch: Partial<Omit<Gate, 'id'>>): MutationResult {
+  return withFence(document, floorId, wallId, (fence) => {
+    if (!fence.gates?.some((gate) => gate.id === gateId)) return 'gate not found'
+    return { ...fence, gates: fence.gates.map((gate) => (gate.id === gateId ? { ...gate, ...patch } : gate)) }
+  })
+}
+
+export function removeGate(document: Document, floorId: string, wallId: string, gateId: string): MutationResult {
+  return withFence(document, floorId, wallId, (fence) => {
+    if (!fence.gates?.some((gate) => gate.id === gateId)) return 'gate not found'
+    const gates = fence.gates.filter((gate) => gate.id !== gateId)
+    if (gates.length > 0) return { ...fence, gates }
+    const { gates: _gone, ...rest } = fence
+    return rest
+  })
 }
 
 export function setFence(

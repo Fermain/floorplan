@@ -41,9 +41,24 @@ export type WallSystemId = 'clay-cavity' | 'clay-solid' | 'clay-single' | 'maxi-
 
 export type FenceType = 'palisade' | 'mesh' | 'precast' | 'timber' | 'half-wall'
 
+// A gate in a fence: where it starts along the fence line from the line's start, how wide it is, and whether it
+// swings on hinges or slides along the fence. A swinging gate is hung like a door (hinge and swing as for an
+// opening); a wide one is a pair of leaves. A sliding gate runs back toward the end its hinge names, on the side
+// its swing names.
+export type GateOpening = 'swing' | 'sliding'
+export type Gate = {
+  id: string
+  u: number
+  width: number
+  opening: GateOpening
+  hinge?: 'start' | 'end'
+  swing?: 1 | -1
+}
+
 export type Fence = {
   type: FenceType
   height: number
+  gates?: Gate[]
 }
 
 export type SupportType = 'column' | 'pier' | 'steel' | 'pole'
