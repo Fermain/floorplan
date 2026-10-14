@@ -908,9 +908,18 @@
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     if (!plan) return
     const id = pickWall(activeFloor, plan.x, plan.z)
-    if (!id) return
-    chooseSelection({ wallId: id })
-    onFocus?.(id)
+    if (id) {
+      chooseSelection({ wallId: id })
+      onFocus?.(id)
+      return
+    }
+    // A double-click on a room's floor lays that room out on its own, seen from above.
+    const room = roomAtPoint(activeFloor, plan.x, plan.z)
+    if (!room) return
+    const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
+    const entry = levelLayouts.find((item) => item.floorId === floorId)
+    const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
+    if (resolved) layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))
   }
 
 
@@ -2291,6 +2300,13 @@
     focusedRoom = spaceId
     centre = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 }
     zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
+  }
+
+  // A kitchen is laid out with the counter tool in hand.
+  function layOutRoom(space: Space, rings: { x: number; z: number }[][]) {
+    focusRoom(space.id, rings)
+    chooseSelection({})
+    if (space.type === 'kitchen') setTool('draw-counter')
   }
 
   function leaveRoom() {
@@ -4365,12 +4381,7 @@
           <div class="grid gap-1.5 border-t pt-3">
             <Button
               variant="outline"
-              onclick={() => {
-                const kitchen = resolved.space.type === 'kitchen'
-                focusRoom(resolved.space.id, resolved.cells.map((cell) => cell.ring))
-                chooseSelection({})
-                if (kitchen) setTool('draw-counter')
-              }}
+              onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
             >
               <Maximize2 />Lay out this room
             </Button>
