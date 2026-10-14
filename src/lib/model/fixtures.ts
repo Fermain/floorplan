@@ -1,7 +1,8 @@
 import { WALL_HEAD } from '../plot/fixture'
 import type { BottleSize, Fixture, FixtureKind, TankLitres } from './types'
 
-export type Trade = 'electrical' | 'plumbing' | 'gas'
+// Building: part of the shell rather than a service, such as an air brick.
+export type Trade = 'electrical' | 'plumbing' | 'gas' | 'building'
 
 // wall: hung on a wall face at a height. floor: stands on the floor with its back to a wall. ceiling: overhead, in a room.
 export type FixtureMount = 'wall' | 'floor' | 'ceiling'
@@ -42,6 +43,7 @@ export const FIXTURES: readonly FixtureSpec[] = [
   { id: 'gas-stove', trade: 'gas', name: 'Gas stove', text: 'A 600 mm freestanding gas stove, fed by copper pipe from the gas bottles outside. Needs no stove circuit.', mount: 'floor', outside: false, width: 0.6, depth: 0.6, height: 0.9, y: 0 },
   { id: 'gas-geyser', trade: 'gas', name: 'Gas geyser', text: 'A 16 litre a minute instantaneous gas water heater on an outside wall. Hydrostatic: the water pressure lights it, so it needs no electrical point.', mount: 'wall', outside: true, width: 0.35, depth: 0.2, height: 0.6, y: 1.2 },
   { id: 'gas-cylinder', trade: 'gas', name: 'Gas bottles', text: 'One to four LP gas bottles on a regulator and manifold, on a level slab against an outside wall, locked in a steel cage.', mount: 'floor', outside: true, width: 0.9, depth: 0.475, height: 1.4, y: 0 },
+  { id: 'air-brick', trade: 'building', name: 'Air brick', text: 'A clay vent built into an outside wall, a brick long and two courses high, that airs a room or the roof space and never closes. Put one high in a kitchen, bathroom or room with a gas appliance.', mount: 'wall', outside: true, width: 0.222, depth: 0.012, height: 0.146, y: 2.0 },
   { id: 'outside-tap', trade: 'plumbing', name: 'Garden tap', text: 'A tap on an outside wall.', mount: 'wall', outside: true, width: 0.08, depth: 0.1, height: 0.08, y: 0.5 },
 ]
 

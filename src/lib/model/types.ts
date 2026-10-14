@@ -137,6 +137,7 @@ export type FixtureKind =
   | 'gas-stove'
   | 'gas-geyser'
   | 'gas-cylinder'
+  | 'air-brick'
 
 export type BottleSize = 9 | 19 | 48
 export type TankLitres = 1000 | 2500 | 5000 | 10000
