@@ -162,6 +162,11 @@ export const DEFAULT_RATES: Record<string, number> = {
   'fence:precast': 420,
   'fence:half-wall': 650,
   'fence:timber': 560,
+  topsoil: 550,
+  'bed-edge:timber': 320,
+  'bed-edge:brick': 420,
+  'bed-edge:stone': 480,
+  'bed-edge:steel': 520,
 }
 
 export function assumptionsOf(costing: Costing | undefined): CostAssumptions {

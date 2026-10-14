@@ -329,6 +329,16 @@ export type RetainingWall = {
   type: RetainingType
 }
 
+// A flower bed or raised vegetable bed: an area drawn on the ground, either level with the earth or built up
+// within retaining walls of timber, brick, stone or steel.
+export type BedMaterial = 'timber' | 'brick' | 'stone' | 'steel'
+export type GardenBed = {
+  id: string
+  ring: [number, number][]
+  height: number
+  material?: BedMaterial
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
@@ -338,6 +348,7 @@ export type Document = {
   paving?: PavingArea[]
   carports?: Carport[]
   retaining?: RetainingWall[]
+  beds?: GardenBed[]
   // The house as it stood when it was marked as built. With one, the project is an alteration to that house:
   // what is drawn is compared with it, and only the difference is priced.
   baseline?: Baseline

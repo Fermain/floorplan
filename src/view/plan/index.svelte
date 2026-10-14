@@ -20,6 +20,9 @@
   import Maximize2 from '@lucide/svelte/icons/maximize-2'
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
+  import Sprout from '@lucide/svelte/icons/sprout'
+  import { BED_MATERIALS, DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedArea, bedMaterialSpec, bedPerimeter, bedSoilVolume } from '../../lib/model/beds'
+  import { BED_SOIL_COLOUR, bedAt } from '../../lib/geometry/beds'
   import FixtureSymbol from './FixtureSymbol.svelte'
   import ContextPanel from '../shared/ContextPanel.svelte'
   import FittingSetup from '../shared/FittingSetup.svelte'
@@ -81,7 +84,7 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { BedMaterial, Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
   import { cornerRemoval } from '../../lib/model/mutations'
@@ -146,7 +149,7 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-carport' | 'draw-counter' | 'draw-retaining' | 'select'
+  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-bed' | 'draw-carport' | 'draw-counter' | 'draw-retaining' | 'select'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -235,6 +238,12 @@
   let pavingDraft = $state<{ x: number; z: number }[]>([])
   let pavingShape = $state<'rect' | 'outline'>('rect')
   let pavingSurface = $state<PavingSurface>('concrete')
+  // Flower beds & raised beds: the one picked, the shape/height/material of the next, and draft corners.
+  let selectedBed = $state<string | null>(null)
+  let bedDraft = $state<{ x: number; z: number }[]>([])
+  let bedShape = $state<'rect' | 'outline'>('rect')
+  let bedHeight = $state<number>(DEFAULT_RAISED_HEIGHT)
+  let bedMaterial = $state<BedMaterial>(DEFAULT_BED_MATERIAL)
   let selectedOutline = $state<{ floorId: string | null; ring: number; edge: number } | null>(null)
   let selectedCornerId = $state<string | null>(null)
   let selectedPlateFloorId = $state<string | null>(null)
@@ -890,6 +899,12 @@
       errorMessage = null
       return
     }
+    if (tool === 'draw-bed') {
+      if (bedDraft.length > 0) bedDraft = []
+      else setTool('select')
+      errorMessage = null
+      return
+    }
     if (tool === 'draw-stair' || tool === 'draw-fixture') {
       setTool('select')
       errorMessage = null
@@ -905,6 +920,10 @@
   function onSvgDoubleClick(event: MouseEvent) {
     if (tool === 'draw-paving' && event.button === 0) {
       finishPavingOutline()
+      return
+    }
+    if (tool === 'draw-bed' && event.button === 0) {
+      finishBedOutline()
       return
     }
     if (tool === 'draw-retaining' && event.button === 0) {
@@ -944,6 +963,8 @@
       return
     }
     retainingDraft = []
+    bedDraft = []
+    pavingDraft = []
     counterStart = null
     pointerPlan = null
     errorMessage = null
@@ -963,6 +984,7 @@
     service?: ServiceKind | null
     bend?: number | null
     paving?: string | null
+    bed?: string | null
     carport?: string | null
     counter?: string | null
     retaining?: string | null
@@ -970,6 +992,7 @@
     selectedRetaining = next.retaining ?? null
     selectedCounter = next.counter ?? null
     selectedPaving = next.paving ?? null
+    selectedBed = next.bed ?? null
     selectedCarport = next.carport ?? null
     selectedCell = next.cell ?? null
     selectedStair = next.stair ?? null
@@ -1029,6 +1052,11 @@
 
     if (tool === 'draw-paving') {
       pavingClick(plan)
+      return
+    }
+
+    if (tool === 'draw-bed') {
+      bedClick(plan)
       return
     }
 
@@ -1115,6 +1143,11 @@
         chooseSelection({ carport: parked.id })
         carportMove = { id: parked.id, grabX: plan.x - parked.x, grabZ: plan.z - parked.z, preview: null, problem: null }
         svgEl?.setPointerCapture(event.pointerId)
+        return
+      }
+      const bed = activeStoreyIndex === 0 ? bedAt(document, plan) : null
+      if (bed) {
+        armPan(event, () => chooseSelection({ bed: bed.id }))
         return
       }
       const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
@@ -1462,6 +1495,7 @@
     const next = documentStore.readOnly ? 'select' : chosen
     tool = next
     pavingDraft = []
+    bedDraft = []
     pendingDraw = null
     chainOriginId = null
     moveDrag = null
@@ -2234,6 +2268,79 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // Flower beds & raised beds: snapping, rectangle and outline drawing
+  function bedSnap(plan: { x: number; z: number }) {
+    return guidePavingPoint(plan, pavingTargets, s(0.5), { axis: pavingAxis, nodes: bedDraft, align: s(0.3) })
+  }
+  const bedGuide = $derived(pointerPlan && tool === 'draw-bed' ? bedSnap(pointerPlan) : null)
+  const bedPoint = $derived(bedGuide?.point ?? null)
+  const bedCloses = $derived.by(() => {
+    const first = bedDraft[0]
+    const at = pointerPlan
+    return bedShape === 'outline' && bedDraft.length >= 3 && !!first && !!at && Math.hypot(first.x - at.x, first.z - at.z) <= s(0.5)
+  })
+  const bedPreview = $derived.by((): [number, number][] => {
+    const at = bedPoint
+    if (!at || bedDraft.length === 0) return []
+    if (bedShape === 'rect') return pavingRectangle(bedDraft[0], at, pavingAxis)
+    return (bedCloses ? bedDraft : [...bedDraft, at]).map((p) => [p.x, p.z] as [number, number])
+  })
+
+  function layBed(ring: [number, number][]) {
+    const height = bedHeight
+    const material = height > 0.05 ? bedMaterial : undefined
+    if (applyResult(documentStore.addBed(ring, height, material))) {
+      const added = documentStore.document.beds?.at(-1)
+      bedDraft = []
+      if (added) chooseSelection({ bed: added.id })
+    }
+  }
+
+  function bedClick(plan: { x: number; z: number }) {
+    if (activeStoreyIndex !== 0) {
+      errorMessage = 'Garden beds go on the ground. Switch to the ground floor to draw them.'
+      return
+    }
+    const at = bedSnap(plan).point
+    if (bedShape === 'rect') {
+      if (bedDraft.length === 0) bedDraft = [at]
+      else layBed(pavingRectangle(bedDraft[0], at, pavingAxis))
+      return
+    }
+    const first = bedDraft[0]
+    if (first && bedDraft.length >= 3 && Math.hypot(first.x - plan.x, first.z - plan.z) <= s(0.5)) {
+      layBed(bedDraft.map((p) => [p.x, p.z]))
+      return
+    }
+    const last = bedDraft.at(-1)
+    if (last && Math.hypot(last.x - at.x, last.z - at.z) < 0.02) return
+    bedDraft = [...bedDraft, at]
+  }
+
+  function finishBedOutline() {
+    if (tool === 'draw-bed' && bedShape === 'outline' && bedDraft.length >= 3) layBed(bedDraft.map((p) => [p.x, p.z]))
+  }
+
+  function undoBedCorner() {
+    bedDraft = bedDraft.slice(0, -1)
+  }
+
+  $effect(() => {
+    if (tool !== 'draw-bed') return
+    const onKey = (event: KeyboardEvent) => {
+      if (typingTarget(event)) return
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        finishBedOutline()
+      } else if (event.key === 'Backspace' && bedDraft.length > 0) {
+        event.preventDefault()
+        undoBedCorner()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   // A counter against a wall is drawn along the wall's face: click where it starts, then where it ends. One standing
   // free (an island or a bar) is drawn corner to corner, square to the drawing grid.
   function counterStartAt(plan: { x: number; z: number }) {
@@ -2398,7 +2505,7 @@
     return guidePavingPoint(plan, pavingTargets, s(0.5), { axis: pavingAxis, nodes: retainingDraft, align: s(0.3) })
   }
   const retainingGuide = $derived(pointerPlan && tool === 'draw-retaining' ? retainingSnap(pointerPlan) : null)
-  const guideTraces = $derived(snapTraces.length > 0 ? snapTraces : (pavingGuide?.traces ?? retainingGuide?.traces ?? []))
+  const guideTraces = $derived(snapTraces.length > 0 ? snapTraces : (pavingGuide?.traces ?? bedGuide?.traces ?? retainingGuide?.traces ?? []))
   const retainingPreview = $derived.by((): [number, number][] => {
     if (tool !== 'draw-retaining' || retainingDraft.length === 0) return []
     const at = retainingGuide?.point
@@ -2528,6 +2635,20 @@
     chooseSelection({})
   }
 
+  // The garden bed picked, if any.
+  const chosenBed = $derived.by(() => {
+    const id = selectedBed
+    if (!id) return null
+    return document.beds?.find((entry) => entry.id === id) ?? null
+  })
+
+  function removeChosenBed() {
+    const chosen = chosenBed
+    if (!chosen) return
+    applyResult(documentStore.removeBed(chosen.id))
+    chooseSelection({})
+  }
+
   function placeFixtureAt(plan: { x: number; z: number }) {
     pointerPlan = plan
     const ghost = fixtureGhost
@@ -2634,6 +2755,7 @@
     if (selectedService && selectedBend !== null) return { label: 'Delete bend', run: removeSelectedBend }
     if (chosenFixture) return { label: `Delete ${chosenFixture.spec.name.toLowerCase()}`, run: removeChosenFixture }
     if (chosenPaving) return { label: chosenPaving.apron ? 'Remove the apron' : 'Delete paving', run: removeChosenPaving }
+    if (chosenBed) return { label: 'Delete garden bed', run: removeChosenBed }
     if (chosenCarport) return { label: 'Delete carport', run: removeChosenCarport }
     if (chosenCounter) return { label: 'Delete counter', run: removeChosenCounter }
     if (chosenRetaining) return { label: 'Delete retaining wall', run: removeChosenRetaining }
@@ -2722,6 +2844,19 @@
       if (pavingDraft.length === 0) return `${spec.name} paving. Click each corner of the area in turn; corners snap to the plot, the house and other paving.`
       if (pavingDraft.length < 3) return `${pavingDraft.length} of at least 3 corners. Backspace takes the last one back; Esc starts again.`
       return pavingCloses ? 'Click to close the outline and lay the paving.' : 'Click Finish, double-click, press Enter or click the first corner to lay the paving.'
+    }
+    if (tool === 'draw-bed') {
+      const isRaised = bedHeight > 0.05
+      const spec = bedMaterialSpec(bedMaterial)
+      const name = isRaised ? `${spec.name} raised bed` : 'Flower bed'
+      if (bedShape === 'rect') {
+        return bedDraft.length === 0
+          ? `${name}. Click one corner, then the opposite one; corners snap to the plot, walls, paving and beds.`
+          : 'Click the opposite corner. Esc to start again.'
+      }
+      if (bedDraft.length === 0) return `${name}. Click each corner of the bed in turn; corners snap to the plot, walls, paving and beds.`
+      if (bedDraft.length < 3) return `${bedDraft.length} of at least 3 corners. Backspace takes the last one back; Esc starts again.`
+      return bedCloses ? 'Click to close the outline and create the bed.' : 'Click Finish, double-click, press Enter or click the first corner to create the bed.'
     }
     if (tool === 'draw-fixture') {
       const ghost = fixtureGhost
@@ -2863,6 +2998,9 @@
       <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
         <Grid2x2 /><span class="hidden sm:inline">Paving</span>
       </ToggleGroup.Item>
+      <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
+        <Sprout /><span class="hidden sm:inline">Beds</span>
+      </ToggleGroup.Item>
       <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
         <CarFront /><span class="hidden sm:inline">Carport</span>
       </ToggleGroup.Item>
@@ -2993,6 +3131,64 @@
           <Check />Finish
         </Button>
         <Button size="sm" variant="outline" title="Take back the last corner (Backspace)" onclick={undoPavingCorner}>
+          <Undo2 /><span class="hidden sm:inline">Corner</span>
+        </Button>
+      {/if}
+    {/if}
+    {#if tool === 'draw-bed'}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={bedShape}
+        onValueChange={(next) => {
+          if (next) {
+            bedShape = next as 'rect' | 'outline'
+            bedDraft = []
+          }
+        }}
+        aria-label="Bed shape"
+      >
+        <ToggleGroup.Item value="rect" title="Two opposite corners">Rectangle</ToggleGroup.Item>
+        <ToggleGroup.Item value="outline" title="Each corner in turn">Outline</ToggleGroup.Item>
+      </ToggleGroup.Root>
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={bedHeight <= 0.05 ? 'ground' : 'raised'}
+        onValueChange={(val) => {
+          if (val === 'ground') bedHeight = 0
+          else if (val === 'raised') bedHeight = DEFAULT_RAISED_HEIGHT
+        }}
+        aria-label="Bed height"
+      >
+        <ToggleGroup.Item value="ground" title="In-ground flower bed">Flat</ToggleGroup.Item>
+        <ToggleGroup.Item value="raised" title="Raised planter bed">Raised</ToggleGroup.Item>
+      </ToggleGroup.Root>
+      {#if bedHeight > 0.05}
+        <Select.Root type="single" value={bedMaterial} onValueChange={(next) => next && (bedMaterial = next as BedMaterial)}>
+          <Select.Trigger size="sm" class="w-40" aria-label="Edging material">
+            <span class="flex items-center gap-2">
+              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={bedMaterialSpec(bedMaterial).colour}></span>
+              {bedMaterialSpec(bedMaterial).name}
+            </span>
+          </Select.Trigger>
+          <Select.Content>
+            {#each BED_MATERIALS as spec (spec.id)}
+              <Select.Item value={spec.id} label={spec.name}>
+                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+                {spec.name}
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {/if}
+      {#if bedShape === 'outline' && bedDraft.length > 0}
+        <Button size="sm" disabled={bedDraft.length < 3} title="Build the bed (Enter)" onclick={finishBedOutline}>
+          <Check />Finish
+        </Button>
+        <Button size="sm" variant="outline" title="Take back the last corner (Backspace)" onclick={undoBedCorner}>
           <Undo2 /><span class="hidden sm:inline">Corner</span>
         </Button>
       {/if}
@@ -3334,6 +3530,46 @@
           {/each}
           {#if pavingPoint && !pavingCloses}
             <circle cx={pavingPoint.x} cy={pavingPoint.z} r={s(0.12)} fill="#2563eb" />
+          {/if}
+        {/if}
+      </g>
+      <g class="beds" pointer-events="none">
+        {#each document.beds ?? [] as bed (bed.id)}
+          {@const isRaised = bed.height > 0.05}
+          {@const mat = bedMaterialSpec(bed.material)}
+          {@const isSelected = selectedBed === bed.id}
+          <polygon
+            points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
+            fill={BED_SOIL_COLOUR}
+            fill-opacity={isRaised ? '0.7' : '0.45'}
+            stroke={isSelected ? '#2563eb' : (isRaised ? mat.colour : '#57534e')}
+            stroke-width={s(isSelected ? 0.06 : (isRaised ? Math.max(0.04, mat.thickness) : 0.02))}
+            stroke-dasharray={!isRaised && !isSelected ? `${s(0.12)} ${s(0.08)}` : undefined}
+          />
+        {/each}
+        {#if tool === 'draw-bed' && bedPreview.length >= 2}
+          <polygon
+            points={pointsAttr(bedPreview.map(([x, z]) => [x, z] as SvgPoint))}
+            fill={BED_SOIL_COLOUR}
+            fill-opacity="0.45"
+            stroke="#2563eb"
+            stroke-width={s(0.04)}
+            stroke-dasharray="{s(0.2)} {s(0.12)}"
+          />
+        {/if}
+        {#if tool === 'draw-bed'}
+          {#each bedDraft as corner, i (i)}
+            <circle
+              cx={corner.x}
+              cy={corner.z}
+              r={s(i === 0 && bedShape === 'outline' && bedDraft.length >= 3 ? (bedCloses ? 0.28 : 0.2) : 0.1)}
+              fill={i === 0 && bedCloses ? '#2563eb' : '#ffffff'}
+              stroke="#2563eb"
+              stroke-width={s(0.04)}
+            />
+          {/each}
+          {#if bedPoint && !bedCloses}
+            <circle cx={bedPoint.x} cy={bedPoint.z} r={s(0.12)} fill="#2563eb" />
           {/if}
         {/if}
       </g>
@@ -4419,6 +4655,77 @@
           <p class="text-muted-foreground">Laid along every outside wall to carry rain clear of the foundations. It is set for the whole project.</p>
         {/if}
         <Button variant="destructive" onclick={removeChosenPaving}>{chosenPaving.apron ? 'No apron' : 'Remove'}</Button>
+      </ContextPanel>
+    {/if}
+    {#if chosenBed && !roofFloor}
+      {@const area = bedArea(chosenBed.ring)}
+      {@const perim = bedPerimeter(chosenBed.ring)}
+      {@const volume = bedSoilVolume(chosenBed)}
+      {@const isRaised = chosenBed.height > 0.05}
+      {@const mat = bedMaterialSpec(chosenBed.material)}
+      <ContextPanel
+        label="Garden bed"
+        title={isRaised ? `${mat.name} raised bed` : 'Flower bed'}
+        description="{checkFormat.format(area)} m² · {checkFormat.format(perim)} m perimeter · {checkFormat.format(volume)} m³ topsoil"
+        onclose={() => chooseSelection({})}
+      >
+        <div class="grid gap-1.5">
+          <Label for="bed-height">Height (mm)</Label>
+          <div class="flex items-center gap-2">
+            <Input
+              id="bed-height"
+              type="number"
+              min="0"
+              max="1200"
+              step="50"
+              value={Math.round(chosenBed.height * 1000)}
+              onchange={(event) => {
+                const h = Math.max(0, Math.min(1.2, Number(event.currentTarget.value) / 1000))
+                applyResult(documentStore.updateBed(chosenBed.id, { height: h, ...(h > 0.05 && !chosenBed.material ? { material: DEFAULT_BED_MATERIAL } : {}) }))
+              }}
+            />
+            <ToggleGroup.Root
+              type="single"
+              variant="outline"
+              size="sm"
+              value={chosenBed.height <= 0.05 ? 'ground' : 'raised'}
+              onValueChange={(val) => {
+                if (val === 'ground') applyResult(documentStore.updateBed(chosenBed.id, { height: 0 }))
+                else if (val === 'raised') applyResult(documentStore.updateBed(chosenBed.id, { height: DEFAULT_RAISED_HEIGHT, material: chosenBed.material ?? DEFAULT_BED_MATERIAL }))
+              }}
+            >
+              <ToggleGroup.Item value="ground" title="In-ground flower bed">Flat</ToggleGroup.Item>
+              <ToggleGroup.Item value="raised" title="Raised planter bed">Raised</ToggleGroup.Item>
+            </ToggleGroup.Root>
+          </div>
+        </div>
+        {#if chosenBed.height > 0.05}
+          <div class="grid gap-1.5">
+            <Label>Edging material</Label>
+            <Select.Root
+              type="single"
+              value={chosenBed.material ?? DEFAULT_BED_MATERIAL}
+              onValueChange={(next) => next && applyResult(documentStore.updateBed(chosenBed.id, { material: next as BedMaterial }))}
+            >
+              <Select.Trigger size="sm" class="w-full" aria-label="Edging material">
+                <span class="flex items-center gap-2">
+                  <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={mat.colour}></span>
+                  {mat.name}
+                </span>
+              </Select.Trigger>
+              <Select.Content>
+                {#each BED_MATERIALS as spec (spec.id)}
+                  <Select.Item value={spec.id} label={spec.name}>
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+                    {spec.name}
+                  </Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+            <p class="text-xs text-muted-foreground">{mat.text}</p>
+          </div>
+        {/if}
+        <Button variant="destructive" onclick={removeChosenBed}>Delete bed</Button>
       </ContextPanel>
     {/if}
     {#if selectedRoom && !roofFloor}

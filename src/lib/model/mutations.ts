@@ -15,6 +15,7 @@ import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-che
 import { carportProblem } from './carports'
 import { counterProblem } from './counters'
 import { retainingProblem } from './retaining'
+import { bedProblem } from './beds'
 import { skinFor, snapToCourse, systemOf, wallSystem } from './systems'
 import { cellAt, floorCells, type Cell } from '../geometry/spaces'
 import { DEFAULT_STAIR_WIDTH_M, stairFitProblem, stairLayout } from '../geometry/stairs'
@@ -42,6 +43,8 @@ import type {
   Counter,
   Document,
   RetainingWall,
+  BedMaterial,
+  GardenBed,
   FaceFinish,
   FaceTrim,
   Fence,
@@ -1218,6 +1221,44 @@ export function removePaving(document: Document, id: string): MutationResult {
   const paving = document.paving.filter((item) => item.id !== id)
   if (paving.length > 0) return ok({ ...document, paving })
   const { paving: _gone, ...rest } = document
+  return ok(rest)
+}
+
+export function addBed(
+  document: Document,
+  ring: [number, number][],
+  height = 0,
+  material?: BedMaterial,
+): MutationResult {
+  const bed: Omit<GardenBed, 'id'> = {
+    ring: ring.map(([x, z]) => [x, z]),
+    height,
+    ...(material ? { material } : {}),
+  }
+  const problem = bedProblem(document, bed)
+  if (problem) return fail(document, problem)
+  const full: GardenBed = { id: newId('bed'), ...bed }
+  return ok({ ...document, beds: [...(document.beds ?? []), full] })
+}
+
+export function updateBed(
+  document: Document,
+  id: string,
+  patch: Partial<Pick<GardenBed, 'ring' | 'height' | 'material'>>,
+): MutationResult {
+  const current = document.beds?.find((item) => item.id === id)
+  if (!current) return fail(document, 'bed not found')
+  const next = { ...current, ...patch }
+  const problem = bedProblem(document, next)
+  if (problem) return fail(document, problem)
+  return ok({ ...document, beds: (document.beds ?? []).map((item) => (item.id === id ? next : item)) })
+}
+
+export function removeBed(document: Document, id: string): MutationResult {
+  if (!document.beds?.some((item) => item.id === id)) return fail(document, 'bed not found')
+  const beds = document.beds.filter((item) => item.id !== id)
+  if (beds.length > 0) return ok({ ...document, beds })
+  const { beds: _gone, ...rest } = document
   return ok(rest)
 }
 

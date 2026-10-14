@@ -21,6 +21,7 @@ import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
 import { carportQuantities } from '../geometry/carports'
 import { counterTotals } from '../geometry/counters'
+import { BED_MATERIALS, DEFAULT_BED_MATERIAL, bedPerimeter, bedSoilVolume } from '../model/beds'
 import { retainingTotals } from '../geometry/retaining'
 import { RETAINING_TYPES } from '../model/retaining'
 import { COUNTER_KINDS, COUNTER_TOPS } from '../model/counters'
@@ -43,7 +44,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Joinery' | 'Paving' | 'Landscaping' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -62,7 +63,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Joinery', 'Paving', 'Landscaping', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -745,6 +746,38 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   if (edging > 0) {
     drafts.push({ id: 'paving-edge', group: 'Paving', label: 'Paving kerb and edge restraint', note: 'Round pavers, blocks and gravel', unit: 'm', quantity: Math.ceil(edging), rateKey: 'paving-edge' })
+  }
+
+  // Landscaping: flower beds and raised garden beds. Topsoil mix by volume, retaining edging by length.
+  const beds = doc.beds ?? []
+  if (beds.length > 0) {
+    const totalSoil = beds.reduce((sum, bed) => sum + bedSoilVolume(bed), 0)
+    if (totalSoil > 0) {
+      drafts.push({
+        id: 'landscaping:topsoil',
+        group: 'Landscaping',
+        label: 'Garden topsoil and compost',
+        note: 'Topsoil and compost mix for planting beds, plus 10%',
+        unit: 'm³',
+        quantity: round(totalSoil * 1.1, 2),
+        rateKey: 'topsoil',
+      })
+    }
+    for (const spec of BED_MATERIALS) {
+      const raised = beds.filter((b) => b.height > 0.05 && (b.material ?? DEFAULT_BED_MATERIAL) === spec.id)
+      const length = raised.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+      if (length > 0) {
+        drafts.push({
+          id: `bed-edge:${spec.id}`,
+          group: 'Landscaping',
+          label: `${spec.name} raised bed edging`,
+          note: 'Edging and retaining walls for raised garden beds',
+          unit: 'm',
+          quantity: Math.ceil(length),
+          rateKey: `bed-edge:${spec.id}`,
+        })
+      }
+    }
   }
 
   // Kitchen counters: cupboards by the metre, worktops by area, wall cupboards by the metre.

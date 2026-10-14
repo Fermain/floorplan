@@ -51,6 +51,7 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
+  import { buildBedParts, type BedPart } from '../../lib/geometry/beds'
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
   import { buildRetainingParts, pinchedGround, retainingDistance, RETAINING_GROUND_REACH_M, type RetainingPart } from '../../lib/geometry/retaining'
   import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
@@ -148,6 +149,7 @@
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
+  let bedMeshes = $state<BedPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
   let retainingMeshes = $state<RetainingPart[]>([])
   let counterMeshes = $state<{ key: string; floorId: string; datum: number; parts: CounterPart[] }[]>([])
@@ -457,6 +459,7 @@
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, groundAt)
     const pavingParts = buildPavingParts(doc, groundAt)
+    const bedParts = buildBedParts(doc, groundAt)
     const carportParts = buildCarportParts(doc, groundAt)
     const retainingParts = buildRetainingParts(doc, lies)
     // A contour is left out where the ground under it has been drawn in to a wall.
@@ -575,6 +578,7 @@
     groundGeometry = ground
     roadMeshes = roadParts
     pavingMeshes = pavingParts
+    bedMeshes = bedParts
     carportMeshes = carportParts
     retainingMeshes = retainingParts
     contourMinor = minor
@@ -602,6 +606,7 @@
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
       for (const part of pavingParts) part.geometry.dispose()
+      for (const part of bedParts) part.geometry.dispose()
       for (const part of carportParts) part.geometry.dispose()
       for (const part of retainingParts) part.geometry.dispose()
       minor?.dispose()
@@ -972,6 +977,11 @@
     {/each}
     {#each pavingMeshes as part (part.geometry.uuid)}
       <T.Mesh geometry={part.geometry} receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
+    {#each bedMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
         <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
       </T.Mesh>
     {/each}

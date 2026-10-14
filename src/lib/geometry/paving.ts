@@ -202,6 +202,7 @@ export function pavingSnapTargets(doc: Document): { points: Point[]; edges: [Poi
   for (const polygon of apronPolygons(doc)) rings.push(polygon.outer)
   for (const item of doc.paving ?? []) rings.push(item.ring.map(([x, z]) => ({ x, z })))
   for (const carport of doc.carports ?? []) rings.push(carportRing(carport))
+  for (const bed of doc.beds ?? []) rings.push(bed.ring.map(([x, z]) => ({ x, z })))
   const points = rings.flat()
   const edges = rings.flatMap((ring) => ring.map((p, i) => [p, ring[(i + 1) % ring.length]] as [Point, Point]))
   return { points, edges }
