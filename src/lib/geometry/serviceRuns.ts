@@ -196,9 +196,13 @@ export function serviceRuns(doc: Document): ServiceRun[] {
       runs.push({ kind: 'aircon', radius: 0.016, points })
     }
     // Condensate drain pipe falling through exterior wall to ground
-    const drainExit: P3 = [outItem.fixture.x, inMeets[1], outItem.fixture.z]
-    const drainBottom: P3 = [outItem.fixture.x, ground(outItem.fixture.x, outItem.fixture.z) + 0.15, outItem.fixture.z]
-    runs.push({ kind: 'drain', radius: 0.012, points: [inMeets, drainExit, drainBottom] })
+    const drainPlan = pair.condensatePath.at(-1) ?? { x: inItem.fixture.x, z: inItem.fixture.z }
+    const inDrainStart: P3 = [inItem.fixture.x, floorOf(inItem) + inItem.fixture.y + 0.08, inItem.fixture.z]
+    const horizDist = Math.hypot(drainPlan.x - inItem.fixture.x, drainPlan.z - inItem.fixture.z)
+    const drainExitY = Math.max(floorOf(inItem) + 0.1, inDrainStart[1] - horizDist * 0.02)
+    const drainExit: P3 = [drainPlan.x, drainExitY, drainPlan.z]
+    const drainBottom: P3 = [drainPlan.x, ground(drainPlan.x, drainPlan.z) + 0.15, drainPlan.z]
+    runs.push({ kind: 'drain', radius: 0.012, points: [inDrainStart, drainExit, drainBottom] })
   }
 
   return runs

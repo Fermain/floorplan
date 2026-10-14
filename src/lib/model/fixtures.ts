@@ -164,7 +164,7 @@ export type SizeSetup = Partial<Pick<Fixture, 'bottleKg' | 'litres' | 'btu'>>
 export function sizeName(kind: FixtureKind, setup: SizeSetup = {}): string | null {
   if (kind === 'gas-cylinder') return BOTTLES[setup.bottleKg ?? DEFAULT_BOTTLE_KG].name
   if (kind === 'water-tank') return TANKS[setup.litres ?? DEFAULT_TANK_LITRES].name
-  if (kind === 'aircon-indoor' || kind === 'aircon-outdoor') return `${(setup.btu ?? DEFAULT_AIRCON_BTU).toLocaleString('en-US')} BTU`
+  if (kind === 'aircon-indoor' || kind === 'aircon-outdoor') return `${(setup.btu ?? DEFAULT_AIRCON_BTU).toLocaleString('en-ZA')} BTU`
   return null
 }
 

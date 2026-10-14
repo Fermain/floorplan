@@ -3,7 +3,7 @@ import { fixtureDocument } from '../plot/fixture'
 import { addFixture, addWallRing } from '../model/mutations'
 import { AIRCON_BTUS, AIRCON_SIZES, DEFAULT_AIRCON_BTU, fixtureSize, reseat, sizeName, stepSize } from '../model/fixtures'
 import type { Document } from '../model/types'
-import { airconIssues, airconLayout, recommendedAirconBtu } from './aircon'
+import { airconIssues, airconLayout, formatBtu, recommendedAirconBtu } from './aircon'
 import { buildFixtureParts, placeFixture } from './fixtures'
 import { electricalLayout } from './electrical'
 import { serviceRuns } from './serviceRuns'
@@ -41,8 +41,8 @@ describe('air conditioning model and sizing', () => {
   })
 
   it('steps through BTU sizes with stepSize and formats with sizeName', () => {
-    expect(sizeName('aircon-indoor', { btu: 9000 })).toBe('9,000 BTU')
-    expect(sizeName('aircon-outdoor', { btu: 24000 })).toBe('24,000 BTU')
+    expect(sizeName('aircon-indoor', { btu: 9000 })).toBe(formatBtu(9000))
+    expect(sizeName('aircon-outdoor', { btu: 24000 })).toBe(formatBtu(24000))
 
     const stepUp = stepSize('aircon-indoor', { btu: 9000 }, 1)
     expect(stepUp.btu).toBe(12000)
@@ -98,6 +98,7 @@ describe('air conditioning layout and pairing', () => {
     expect(pair.direct).toBe(true)
     // Direct wall penetration has short pipe length
     expect(pair.pipeLength).toBeLessThan(3)
+    expect(pair.condensateLength).toBeLessThan(3)
     expect(layout.issues).toHaveLength(0)
   })
 
@@ -114,8 +115,8 @@ describe('air conditioning layout and pairing', () => {
     const layout = airconLayout(doc)
     const undersized = layout.issues.find((i) => i.id.startsWith('aircon-undersized-'))
     expect(undersized).toBeDefined()
-    expect(undersized?.text).toContain('9,000 BTU unit cools up to 18 m²')
-    expect(undersized?.text).toContain('recommended: 24,000 BTU')
+    expect(undersized?.text).toContain(`${formatBtu(9000)} unit cools up to 18 m²`)
+    expect(undersized?.text).toContain(`recommended: ${formatBtu(24000)}`)
   })
 
   it('pairs indirect indoor and outdoor units and routes across ceiling', () => {
@@ -137,6 +138,9 @@ describe('air conditioning layout and pairing', () => {
     const pair = layout.pairs[0]
     expect(pair.direct).toBe(false)
     expect(pair.pipeLength).toBeGreaterThan(6)
+    // Condensate drain drops straight to the outside wall behind the indoor unit rather than copying refrigerant route
+    expect(pair.condensateLength).toBeLessThan(3.5)
+    expect(pair.condensatePath[pair.condensatePath.length - 1].z).toBeLessThan(2.3)
   })
 
   it('flags unpaired indoor units and unpaired outdoor compressors', () => {
