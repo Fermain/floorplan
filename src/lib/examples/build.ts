@@ -199,9 +199,9 @@ export class Builder {
     const at = (q: Point) => (q.x - point.x) * dir.x + (q.z - point.z) * dir.z
     const middle = at(sink)
     const reach = options.reach ?? 1.8
-    const CORNER_M = 0.14
-    let from = Math.max(-face.before + CORNER_M, middle - reach)
-    let to = Math.min(face.after - CORNER_M, middle + reach)
+    // The face already ends at the faces of the walls at its corners, so a counter can run right up to them.
+    let from = Math.max(-face.before, middle - reach)
+    let to = Math.min(face.after, middle + reach)
     for (const span of face.spans) {
       if (!span.stop) continue
       if (span.from >= middle) to = Math.min(to, span.from)

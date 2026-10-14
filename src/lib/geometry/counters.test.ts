@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
 import { counterRing } from '../model/counters'
-import { addCounter, addFixture, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
+import { addCorner, addCounter, addFixture, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
 import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, countersOnWall, counterTotals } from './counters'
@@ -13,6 +13,8 @@ function room(): Document {
   return addWallRing(d, d.building.floors[0].id, [{ x: 4, z: 4 }, { x: 10, z: 4 }, { x: 10, z: 9 }, { x: 4, z: 9 }], 'double').document
 }
 const floorOf = (doc: Document) => doc.building.floors[0]
+// Half the cavity wall: from a wall's centre line to its face.
+const HALF = 0.131
 const base: Omit<Counter, 'id'> = { x: 4.2, z: 4.2, dx: 1, dz: 0, length: 3, depth: 0.6, kind: 'base', top: 'laminate' }
 
 describe('counters', () => {
@@ -49,6 +51,59 @@ describe('counters', () => {
     expect(Math.max(...counterRing(back).map((p) => p.z))).toBeCloseTo(face.point.z + 0.6, 6)
     expect(back.length).toBeLessThanOrEqual(2 + 1e-9)
     expect(counterFace(floor, { x: 7, z: 6.5 }, 0.45)).toBeNull()
+  })
+
+  it('start flush in a corner when started near it, and end flush with the face of the wall at the other', () => {
+    const floor = floorOf(room())
+    // Started 100 mm short of the inside corner of the south and west walls, on the south wall's face.
+    const face = counterFace(floor, { x: 4 + HALF + 0.1, z: 4.15 }, 0.45)!
+    expect(face.point.x).toBeCloseTo(4 + HALF, 6)
+    expect(face.before).toBeCloseTo(0, 6)
+    expect(face.after).toBeCloseTo(6 - 2 * HALF, 6)
+    // Pulled past the east wall, it stops at that wall's face, not its centre line.
+    const run = counterAlongFace(face, { x: 11, z: 5 }, 0.6)
+    expect(run.x + run.length).toBeCloseTo(10 - HALF, 6)
+    // Started further out, it starts where it was started.
+    expect(counterFace(floor, { x: 4.6, z: 4.15 }, 0.45)!.point.x).toBeCloseTo(4.6, 6)
+    // Started over the end of the west wall, it is moved out to the corner.
+    expect(counterFace(floor, { x: 4.05, z: 4.14 }, 0.45)!.point.x).toBeCloseTo(4 + HALF, 6)
+  })
+
+  it('stop at a wall meeting the face from the room side', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    // A partition from the south wall north to the north wall at x = 7, splitting the room.
+    doc = addCorner(doc, fid, 7, 4).document
+    doc = addCorner(doc, fid, 7, 9).document
+    const [south, north] = floorOf(doc).corners.slice(-2)
+    const split = addWall(doc, fid, south.id, north.id, 'double')
+    expect(split.ok).toBe(true)
+    doc = split.document
+    const face = counterFace(floorOf(doc), { x: 5, z: 4.3 }, 0.45)
+    expect(face).not.toBeNull()
+    const run = counterAlongFace(face!, { x: 9, z: 5 }, 0.6)
+    expect(run.x + run.length).toBeCloseTo(7 - HALF, 6)
+  })
+
+  it('stop at the end of a counter already on the face, and turn an L round one on the next wall', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    // A counter along the south wall from the south-west corner, 2 m long.
+    const south = counterFace(floorOf(doc), { x: 4.2, z: 4.15 }, 0.45)!
+    doc = addCounter(doc, fid, { ...counterAlongFace(south, { x: 4 + HALF + 2, z: 5 }, 0.6), kind: 'base', top: 'laminate' }).document
+    const floor = floorOf(doc)
+    // Started further along the south wall and drawn back, it stops at that counter's end.
+    const after = counterFace(floor, { x: 8, z: 4.15 }, 0.45)!
+    const back = counterAlongFace(after, { x: 5, z: 5 }, 0.6)
+    expect(back.x).toBeCloseTo(4 + HALF + 2, 6)
+    // Started just past that counter's end, it is pulled up flush to it.
+    expect(counterFace(floor, { x: 4 + HALF + 2.1, z: 4.15 }, 0.45)!.point.x).toBeCloseTo(4 + HALF + 2, 6)
+    // On the west wall, the face starts where the south counter's front edge is, 600 mm out from the corner.
+    const west = counterFace(floor, { x: 4.15, z: 4.4 }, 0.45)!
+    expect(west.point.z).toBeCloseTo(4 + HALF + 0.6, 6)
+    // A counter being carried does not stand in its own way.
+    const own = floor.counters![0]
+    expect(counterFace(floor, { x: 4.6, z: 4.15 }, 0.45, { ignore: own.id })!.point.x).toBeCloseTo(4.6, 6)
   })
 
   it('stand free as an island drawn corner to corner', () => {
@@ -255,15 +310,15 @@ describe('counters', () => {
     // Picked up 0.5 m along it and carried 1 m along the wall.
     const slid = counterCarried(floor, counter, { x: 6.52, z: 4.4 }, 0.5, 0.9)!
     expect(slid).toMatchObject({ dx: 1, dz: 0 })
-    // It lands within 25 mm of where it was carried to, a whole number of 50 mm steps from the wall's corner.
+    // It lands within 25 mm of where it was carried to, a whole number of 50 mm steps from the inside corner.
     expect(Math.abs(slid.x - 6.02)).toBeLessThanOrEqual(0.025 + 1e-9)
-    const fromCorner = (slid.x - 4) / 0.05
+    const fromCorner = (slid.x - (4 + HALF)) / 0.05
     expect(Math.abs(fromCorner - Math.round(fromCorner))).toBeLessThan(1e-6)
     expect(slid.z).toBeCloseTo(backZ, 6)
-    // Carried past the end of the wall, it stops at the corner.
+    // Carried past the end of the wall, it stops flush with the face of the wall at the corner.
     const end = counterCarried(floor, counter, { x: 9.9, z: 4.4 }, 0.5, 0.9)!
     const far = counterRing({ ...counter, ...end }).map((p) => p.x)
-    expect(Math.max(...far)).toBeLessThanOrEqual(10)
+    expect(Math.max(...far)).toBeCloseTo(10 - HALF, 6)
     // Carried to the west wall, it turns to stand against that, still with the room in front of it.
     const turned = counterCarried(floor, counter, { x: 4.3, z: 7 }, 0.5, 0.9)!
     expect(Math.abs(turned.dz)).toBeCloseTo(1, 6)

@@ -14,7 +14,7 @@ import {
 import { cornerById } from '../model/geom'
 import { systemOf, wallThickness } from '../model/systems'
 import { fixtureFootprint, fixtureSpec } from '../model/fixtures'
-import type { Counter, CounterKind, Document, Fixture, FixtureKind, Floor } from '../model/types'
+import type { Counter, CounterKind, Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
 
 type Point = { x: number; z: number }
 
@@ -106,9 +106,66 @@ function faceSpans(floor: Floor, point: Point, dir: Point): FaceSpan[] {
   return spans
 }
 
-// The face of a built wall nearest a point, within reach. The face is the side of the wall the point is on.
-export function counterFace(floor: Floor, p: Point, reach: number): CounterFace | null {
-  let best: (CounterFace & { d: number }) | null = null
+// How close to the corner of a face, or to the side of a kitchen fitting, a counter's start is pulled up to it.
+export const COUNTER_START_SNAP_M = 0.15
+
+// The stretches of a wall's face, as distances along the wall from its start corner, that other built walls stand
+// across: at a corner, the wall the face runs into; along it, a wall meeting it from the room side.
+function faceBlocks(floor: Floor, wallId: string, origin: Point, t: Point): [number, number][] {
+  const blocks: [number, number][] = []
+  for (const other of floor.walls) {
+    if (other.id === wallId || other.skin === 'logical') continue
+    const a = cornerById(floor.corners, other.startCornerId)
+    const b = cornerById(floor.corners, other.endCornerId)
+    if (!a || !b) continue
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (length < 1e-6) continue
+    const ot = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
+    const on = { x: -ot.z, z: ot.x }
+    const half = wallThickness(systemOf(other)) / 2
+    // Where the face line is inside the other wall: along it between its ends, and across it within its faces.
+    let [lo, hi] = [-Infinity, Infinity]
+    for (const [axis, from, to] of [[ot, 0, length], [on, -half, half]] as const) {
+      const v0 = (origin.x - a.x) * axis.x + (origin.z - a.z) * axis.z
+      const k = t.x * axis.x + t.z * axis.z
+      // A wall lying along the face line, such as the next length of the same wall, only touches it.
+      if (Math.abs(k) < 1e-9) {
+        if (v0 <= from + 1e-6 || v0 >= to - 1e-6) [lo, hi] = [1, 0]
+        continue
+      }
+      const [u0, u1] = [(from - v0) / k, (to - v0) / k].sort((p, q) => p - q)
+      lo = Math.max(lo, u0)
+      hi = Math.min(hi, u1)
+    }
+    if (hi - lo > 1e-6) blocks.push([lo, hi])
+  }
+  return blocks
+}
+
+// The stretches of a face, as distances along the wall from its start corner, that counters already stand on: those
+// along the face itself, and one along the next wall that fills the corner of an L.
+function counterBlocks(floor: Floor, origin: Point, t: Point, into: Point, ignore?: string): [number, number][] {
+  const deep = counterKindSpec('base').depth
+  const blocks: [number, number][] = []
+  for (const counter of floor.counters ?? []) {
+    if (counter.id === ignore) continue
+    const ring = counterRing(counter)
+    const across = ring.map((q) => (q.x - origin.x) * into.x + (q.z - origin.z) * into.z)
+    if (Math.max(...across) < 1e-3 || Math.min(...across) > deep - 1e-3) continue
+    const along = ring.map((q) => (q.x - origin.x) * t.x + (q.z - origin.z) * t.z)
+    blocks.push([Math.min(...along), Math.max(...along)])
+  }
+  return blocks
+}
+
+// The face of a built wall nearest a point, within reach. The face is the side of the wall the point is on, and it
+// runs between the walls and counters standing across it, so a counter ends flush with the face of the wall at a
+// corner, or with the end of another counter, rather than running into it. A point within a hand's width of either
+// end, or of the side of a kitchen fitting, is pulled up to it, so that a counter can start flush there. A counter
+// being moved is left out, so it does not stand in its own way.
+export function counterFace(floor: Floor, p: Point, reach: number, options: { snap?: number; ignore?: string } = {}): CounterFace | null {
+  const snap = options.snap ?? COUNTER_START_SNAP_M
+  let best: { wall: Wall; a: Point; t: Point; n: Point; length: number; half: number; side: 1 | -1; along: number; d: number } | null = null
   for (const wall of floor.walls) {
     if (wall.skin === 'logical') continue
     const a = cornerById(floor.corners, wall.startCornerId)
@@ -125,22 +182,49 @@ export function counterFace(floor: Floor, p: Point, reach: number): CounterFace 
     const side = off >= 0 ? 1 : -1
     const d = Math.abs(Math.abs(off) - half)
     if (d > reach || (best && d >= best.d)) continue
-    const u = Math.min(length, Math.max(0, along))
-    // With the room on its left: along the wall on its +normal side, back along it on the other.
-    const dir = side === 1 ? t : { x: -t.x, z: -t.z }
-    best = {
-      spans: [],
-      wallId: wall.id,
-      point: { x: a.x + t.x * u + n.x * half * side, z: a.z + t.z * u + n.z * half * side },
-      dir,
-      before: side === 1 ? u : length - u,
-      after: side === 1 ? length - u : u,
-      d,
-    }
+    best = { wall, a, t, n, length, half, side, along, d }
   }
   if (!best) return null
-  const { d: _d, ...face } = best
-  return { ...face, spans: faceSpans(floor, face.point, face.dir) }
+  const { wall, a, t, n, length, half, side } = best
+  const origin = { x: a.x + n.x * half * side, z: a.z + n.z * half * side }
+  const blocks = [...faceBlocks(floor, wall.id, origin, t), ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, options.ignore)]
+  // The free stretch of face a point is in, between the nearest things standing across the face either side of it.
+  const stretch = (u: number) => {
+    if (u < -1e-6 || u > length + 1e-6 || blocks.some(([from, to]) => u > from + 1e-6 && u < to - 1e-6)) return null
+    const lo = Math.max(0, ...blocks.filter(([, end]) => end <= u + 1e-6).map(([, end]) => end))
+    const hi = Math.min(length, ...blocks.filter(([from]) => from >= u - 1e-6).map(([from]) => from))
+    return hi - lo > 1e-6 ? { lo, hi } : null
+  }
+  // A point inside a wall or a counter standing across the face is moved out to whichever end of it has free face
+  // beyond, the nearer if both do.
+  let u = Math.min(length, Math.max(0, best.along))
+  if (!stretch(u)) {
+    const ends = blocks.filter(([from, to]) => u >= from - 1e-6 && u <= to + 1e-6).flatMap(([from, to]) => [from, to])
+    const free = ends.sort((q, r) => Math.abs(q - u) - Math.abs(r - u)).find((end) => stretch(end))
+    if (free === undefined) return null
+    u = free
+  }
+  const { lo, hi } = stretch(u)!
+  if (u - lo <= snap) u = lo
+  else if (hi - u <= snap) u = hi
+  // With the room on its left: along the wall on its +normal side, back along it on the other.
+  const dir = side === 1 ? t : { x: -t.x, z: -t.z }
+  const at = (value: number) => ({ x: origin.x + t.x * value, z: origin.z + t.z * value })
+  const extent = (value: number) => (side === 1 ? { before: value - lo, after: hi - value } : { before: hi - value, after: value - lo })
+  let face: CounterFace = { wallId: wall.id, point: at(u), dir, ...extent(u), spans: [] }
+  face = { ...face, spans: faceSpans(floor, face.point, face.dir) }
+  // Away from the corners, a start close to the side of a fitting standing against the face is pulled up to it.
+  if (u !== lo && u !== hi) {
+    const edge = face.spans
+      .flatMap((span) => [span.from, span.to])
+      .filter((value) => Math.abs(value) <= snap && value >= -face.before && value <= face.after)
+      .sort((q, r) => Math.abs(q) - Math.abs(r))[0]
+    if (edge !== undefined && Math.abs(edge) > 1e-9) {
+      const moved = u + edge * side
+      face = { ...face, point: at(moved), ...extent(moved), spans: face.spans.map((span) => ({ ...span, from: span.from - edge, to: span.to - edge })) }
+    }
+  }
+  return face
 }
 
 // The counters standing against one side of a wall, for showing on that wall in Focus.
@@ -198,7 +282,7 @@ export function counterAlongFace(face: CounterFace, p: Point, depth: number, sna
 // A counter against a wall, picked up and carried: it goes to the wall face nearest the pointer and slides along
 // it, keeping the point it was picked up by under the pointer, to the nearest 50 mm and no further than the wall.
 export function counterCarried(floor: Floor, counter: Counter, pointer: Point, grabAlong: number, reach: number): Pick<Counter, 'x' | 'z' | 'dx' | 'dz'> | null {
-  const face = counterFace(floor, pointer, reach)
+  const face = counterFace(floor, pointer, reach, { ignore: counter.id })
   if (!face || face.before + face.after < counter.length - 1e-6) return null
   // In 50 mm steps from the end of the wall, so that it lands a round distance from the corner.
   const start = Math.max(-face.before, Math.min(face.after - counter.length, step(face.before - grabAlong) - face.before))
