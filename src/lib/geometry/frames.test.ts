@@ -183,4 +183,16 @@ describe('buildOpeningFrameGeometry', () => {
     for (let i = 0; i < positions.count; i++) minY = Math.min(minY, positions.getY(i))
     expect(minY).toBeGreaterThanOrEqual(0.45 - 1e-6)
   })
+
+  it('places hinges on the hinge side and handle on the strike side of a door', () => {
+    const doorStart = openingFrameLayout({ u: 1, v: 0, width: 0.9, height: 2.1, kind: 'internal-door', hinge: 'start' })
+    expect(doorStart?.hardware).toBeDefined()
+    const hingesStart = doorStart!.hardware!.filter((hw) => Math.abs(hw.u0 - (doorStart!.inner.u0 - 0.015)) < 1e-4)
+    expect(hingesStart.length).toBe(2)
+
+    const doorEnd = openingFrameLayout({ u: 1, v: 0, width: 0.9, height: 2.1, kind: 'internal-door', hinge: 'end' })
+    expect(doorEnd?.hardware).toBeDefined()
+    const hingesEnd = doorEnd!.hardware!.filter((hw) => Math.abs(hw.u0 - (doorEnd!.inner.u1 - 0.015)) < 1e-4)
+    expect(hingesEnd.length).toBe(2)
+  })
 })

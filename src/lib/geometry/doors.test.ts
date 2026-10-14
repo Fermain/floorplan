@@ -65,4 +65,14 @@ describe('door swings', () => {
     const opening = floorOf(window).walls.find((wall) => wall.id === wallId)!.openings.find((item) => item.kind === 'window')!
     expect(setDoorSwing(window, fid, wallId, opening.id, { hinge: 'end' }).ok).toBe(false)
   })
+
+  it('opens into the more private room between two rooms by default', async () => {
+    const { defaultDoorSwing } = await import('./doors')
+    // Passage on side 1, Bedroom on side -1
+    expect(defaultDoorSwing({ outside: false, roomType: 'passage' }, { outside: false, roomType: 'bedroom' })).toBe(-1)
+    // Bedroom on side 1, Passage on side -1
+    expect(defaultDoorSwing({ outside: false, roomType: 'bedroom' }, { outside: false, roomType: 'passage' })).toBe(1)
+    // Living on side 1, Bathroom on side -1
+    expect(defaultDoorSwing({ outside: false, roomType: 'living' }, { outside: false, roomType: 'bathroom' })).toBe(-1)
+  })
 })

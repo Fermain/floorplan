@@ -3,6 +3,8 @@ import { cornerById, wallLength } from '../model/geom'
 import { leafOffset, systemOf } from '../model/systems'
 import type { Document, Floor, Opening, Wall } from '../model/types'
 import { doorSwings } from '../geometry/doors'
+import { fenceSpec } from '../model/fences'
+import { fencePlan } from '../geometry/gates'
 
 const PLOT_MARGIN_M = 1
 const NORTH_ARROW_LENGTH_M = 1.2
@@ -199,8 +201,38 @@ export function exportFloorSvg(document: Document, floorId: string): string {
     parts.push(polygonElement(poly))
   }
 
+  const plotMiddle = (() => {
+    const ring = document.plot.ring
+    const sum = ring.reduce((total, [x, z]) => ({ x: total.x + x, z: total.z + z }), { x: 0, z: 0 })
+    return ring.length > 0 ? { x: sum.x / ring.length, z: sum.z / ring.length } : { x: 0, z: 0 }
+  })()
+
   for (const wall of floor.walls) {
     if (wall.skin === 'logical') {
+      if (wall.fence) {
+        const spec = fenceSpec(wall.fence.type)
+        const drawn = fencePlan(floor, wall, plotMiddle)
+        if (drawn) {
+          for (const run of drawn.runs) {
+            const [p1, p2] = [planToSvg(run.from.x, run.from.z), planToSvg(run.to.x, run.to.z)]
+            parts.push(`<line x1="${formatNum(p1[0])}" y1="${formatNum(p1[1])}" x2="${formatNum(p2[0])}" y2="${formatNum(p2[1])}" stroke="${spec.colour}" stroke-width="0.03"/>`)
+            for (const post of run.posts) {
+              const [px, pz] = planToSvg(post.x, post.z)
+              const half = spec.postSize / 2
+              parts.push(`<rect x="${formatNum(px - half)}" y="${formatNum(pz - half)}" width="${formatNum(spec.postSize)}" height="${formatNum(spec.postSize)}" fill="${spec.colour}"/>`)
+            }
+          }
+          for (const swing of drawn.swings) {
+            const [l1, l2] = [planToSvg(swing.leaf[0].x, swing.leaf[0].z), planToSvg(swing.leaf[1].x, swing.leaf[1].z)]
+            parts.push(`<line x1="${formatNum(l1[0])}" y1="${formatNum(l1[1])}" x2="${formatNum(l2[0])}" y2="${formatNum(l2[1])}" stroke="#44403c" stroke-width="0.03"/>`)
+            parts.push(`<polyline points="${pointsAttr(swing.arc.map((p) => planToSvg(p.x, p.z)))}" fill="none" stroke="#44403c" stroke-width="0.015" stroke-dasharray="0.08 0.06"/>`)
+          }
+          for (const slide of drawn.slides) {
+            parts.push(`<polygon points="${pointsAttr(slide.ring.map((p) => planToSvg(p.x, p.z)))}" fill="none" stroke="#44403c" stroke-width="0.02" stroke-dasharray="0.08 0.06"/>`)
+          }
+          continue
+        }
+      }
       parts.push(logicalWallElement(wall, floor))
     }
   }

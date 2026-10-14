@@ -5,10 +5,12 @@ import { wallBetween } from './outline'
 import type { Ring } from './pad'
 import { isHabitable, layoutSpaces, type Cell, type ResolvedSpace } from './spaces'
 import { systemOf } from '../model/systems'
+import { fixturesOnWall } from './fixtures'
 
 export const LIGHT_MIN_RATIO = 0.1
 export const VENTILATION_MIN_RATIO = 0.05
 export const OPENABLE_FRACTION = 0.5
+export const AIR_BRICK_FREE_VENT_M2 = 0.01
 export const HABITABLE_MIN_AREA_M2 = 6
 export const HABITABLE_MIN_WIDTH_M = 2
 export const FENESTRATION_MAX_RATIO = 0.15
@@ -139,6 +141,11 @@ function roomChecks(floor: Floor, resolved: ResolvedSpace, exterior: Set<string>
       const area = glazedArea(opening, courseHeight)
       glazed += area
       openable += openableArea(opening, area)
+    }
+    for (const item of fixturesOnWall(floor, wall.id)) {
+      if (item.fixture.kind === 'air-brick') {
+        openable += AIR_BRICK_FREE_VENT_M2
+      }
     }
   }
   const area = resolved.area

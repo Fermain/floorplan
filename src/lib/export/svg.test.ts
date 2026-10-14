@@ -149,4 +149,24 @@ describe('exportFloorSvg', () => {
     expect(span).not.toBeNull()
     expect(span!).toBeCloseTo(1, 6)
   })
+
+  it('draws fences with posts, swinging gates with arcs, and sliding gates with rings', async () => {
+    const { addGate, setFence } = await import('../model/mutations')
+    let d = fixtureDocument()
+    const fid = floorId(d)
+    d = addCorner(d, fid, 2, 1).document
+    d = addCorner(d, fid, 14, 1).document
+    const corners = d.building.floors[0].corners
+    d = addWall(d, fid, corners[0].id, corners[1].id, 'logical').document
+    const wallId = d.building.floors[0].walls[0].id
+    d = setFence(d, fid, wallId, { type: 'palisade', height: 1.8 }).document
+    d = addGate(d, fid, wallId, { u: 1.5, width: 1, opening: 'swing' }).document
+    d = addGate(d, fid, wallId, { u: 8.5, width: 2, opening: 'sliding' }).document
+
+    const svg = exportFloorSvg(d, fid)
+    // Fence runs with posts (rect), swinging gate arc (polyline), and sliding gate ring (polygon)
+    expect(svg).toContain('<rect')
+    expect(svg).toContain('<polyline')
+    expect(svg).toContain('<polygon')
+  })
 })
