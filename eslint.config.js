@@ -34,6 +34,8 @@ export default defineConfig(
       ],
     },
   },
+  // Type information is only built for Svelte files, where svelte/no-unused-props uses it. No rule enabled for
+  // plain .ts and .js files needs it, and building it for them made lint take minutes rather than seconds.
   {
     files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
     languageOptions: {
@@ -42,14 +44,6 @@ export default defineConfig(
         extraFileExtensions: ['.svelte'],
         parser: ts.parser,
         svelteConfig,
-      },
-    },
-  },
-  {
-    files: ['**/*.{ts,js}'],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
       },
     },
   },
