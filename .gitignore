@@ -28,3 +28,6 @@ dist-ssr
 # SvelteKit
 .svelte-kit
 build
+
+# Personal projects kept for reference
+fun-farm.json
