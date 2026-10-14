@@ -49,7 +49,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { resolvedGate, sideToward } from '../../lib/geometry/gates'
   import { fenceRuns, GATE_MAX_WIDTH_M, GATE_MIN_WIDTH_M, GATE_PRESETS, gateLeaves, gateName } from '../../lib/model/gates'
-  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import {
     DEFAULT_FENCE_HEIGHT_M,
     FENCE_MAX_HEIGHT_M,
