@@ -167,6 +167,10 @@ export const DEFAULT_RATES: Record<string, number> = {
   'bed-edge:brick': 420,
   'bed-edge:stone': 480,
   'bed-edge:steel': 520,
+  'bed-flat-edge:timber': 120,
+  'bed-flat-edge:brick': 150,
+  'bed-flat-edge:stone': 180,
+  'bed-flat-edge:steel': 140,
 }
 
 export function assumptionsOf(costing: Costing | undefined): CostAssumptions {

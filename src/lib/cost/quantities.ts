@@ -777,6 +777,19 @@ export function takeoff(doc: Document): QuantityLine[] {
           rateKey: `bed-edge:${spec.id}`,
         })
       }
+      const flat = beds.filter((b) => b.height <= 0.05 && b.material === spec.id)
+      const flatLength = flat.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+      if (flatLength > 0) {
+        drafts.push({
+          id: `bed-flat-edge:${spec.id}`,
+          group: 'Landscaping',
+          label: `${spec.name} flush bed edging`,
+          note: 'Lawn and flower bed edging set flush with the ground',
+          unit: 'm',
+          quantity: Math.ceil(flatLength),
+          rateKey: `bed-flat-edge:${spec.id}`,
+        })
+      }
     }
   }
 

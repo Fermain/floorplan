@@ -22,7 +22,7 @@
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import Sprout from '@lucide/svelte/icons/sprout'
   import { BED_MATERIALS, DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedArea, bedMaterialSpec, bedPerimeter, bedSoilVolume } from '../../lib/model/beds'
-  import { BED_SOIL_COLOUR, bedAt } from '../../lib/geometry/beds'
+  import { BED_SOIL_COLOUR, bedAt, insetRing } from '../../lib/geometry/beds'
   import FixtureSymbol from './FixtureSymbol.svelte'
   import ContextPanel from '../shared/ContextPanel.svelte'
   import FittingSetup from '../shared/FittingSetup.svelte'
@@ -244,6 +244,7 @@
   let bedShape = $state<'rect' | 'outline'>('rect')
   let bedHeight = $state<number>(DEFAULT_RAISED_HEIGHT)
   let bedMaterial = $state<BedMaterial>(DEFAULT_BED_MATERIAL)
+  let bedFlatEdging = $state<BedMaterial | 'none'>('none')
   let selectedOutline = $state<{ floorId: string | null; ring: number; edge: number } | null>(null)
   let selectedCornerId = $state<string | null>(null)
   let selectedPlateFloorId = $state<string | null>(null)
@@ -2288,7 +2289,7 @@
 
   function layBed(ring: [number, number][]) {
     const height = bedHeight
-    const material = height > 0.05 ? bedMaterial : undefined
+    const material = height > 0.05 ? bedMaterial : (bedFlatEdging !== 'none' ? bedFlatEdging : undefined)
     if (applyResult(documentStore.addBed(ring, height, material))) {
       const added = documentStore.document.beds?.at(-1)
       bedDraft = []
@@ -2847,8 +2848,8 @@
     }
     if (tool === 'draw-bed') {
       const isRaised = bedHeight > 0.05
-      const spec = bedMaterialSpec(bedMaterial)
-      const name = isRaised ? `${spec.name} raised bed` : 'Flower bed'
+      const spec = bedMaterialSpec(isRaised ? bedMaterial : (bedFlatEdging !== 'none' ? bedFlatEdging : undefined))
+      const name = isRaised ? `${spec.name} raised bed` : (bedFlatEdging !== 'none' ? `Flower bed with ${spec.name.toLowerCase()} edging` : 'Flower bed')
       if (bedShape === 'rect') {
         return bedDraft.length === 0
           ? `${name}. Click one corner, then the opposite one; corners snap to the plot, walls, paving and beds.`
@@ -3168,13 +3169,36 @@
       </ToggleGroup.Root>
       {#if bedHeight > 0.05}
         <Select.Root type="single" value={bedMaterial} onValueChange={(next) => next && (bedMaterial = next as BedMaterial)}>
-          <Select.Trigger size="sm" class="w-40" aria-label="Edging material">
+          <Select.Trigger size="sm" class="w-40" aria-label="Raised bed wall material">
             <span class="flex items-center gap-2">
               <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={bedMaterialSpec(bedMaterial).colour}></span>
               {bedMaterialSpec(bedMaterial).name}
             </span>
           </Select.Trigger>
           <Select.Content>
+            {#each BED_MATERIALS as spec (spec.id)}
+              <Select.Item value={spec.id} label={spec.name}>
+                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+                {spec.name}
+              </Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {:else}
+        <Select.Root type="single" value={bedFlatEdging} onValueChange={(next) => next && (bedFlatEdging = next as BedMaterial | 'none')}>
+          <Select.Trigger size="sm" class="w-40" aria-label="Flush edging">
+            <span class="flex items-center gap-2">
+              {#if bedFlatEdging !== 'none'}
+                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={bedMaterialSpec(bedFlatEdging).colour}></span>
+                {bedMaterialSpec(bedFlatEdging).name}
+              {:else}
+                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15 bg-transparent"></span>
+                No edging
+              {/if}
+            </span>
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value="none" label="No edging">No edging</Select.Item>
             {#each BED_MATERIALS as spec (spec.id)}
               <Select.Item value={spec.id} label={spec.name}>
                 <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
@@ -3538,14 +3562,34 @@
           {@const isRaised = bed.height > 0.05}
           {@const mat = bedMaterialSpec(bed.material)}
           {@const isSelected = selectedBed === bed.id}
-          <polygon
-            points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
-            fill={BED_SOIL_COLOUR}
-            fill-opacity={isRaised ? '0.7' : '0.45'}
-            stroke={isSelected ? '#2563eb' : (isRaised ? mat.colour : '#57534e')}
-            stroke-width={s(isSelected ? 0.06 : (isRaised ? Math.max(0.04, mat.thickness) : 0.02))}
-            stroke-dasharray={!isRaised && !isSelected ? `${s(0.12)} ${s(0.08)}` : undefined}
-          />
+          {#if isRaised}
+            {@const inner = insetRing(bed.ring, mat.thickness)}
+            <!-- Retaining wall band sitting inside the outline -->
+            <polygon
+              points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
+              fill={mat.colour}
+              stroke={isSelected ? '#2563eb' : '#44403c'}
+              stroke-width={s(isSelected ? 0.05 : 0.015)}
+            />
+            <!-- Elevated soil inside the inner face -->
+            <polygon
+              points={pointsAttr(inner.map(([x, z]) => [x, z] as SvgPoint))}
+              fill={BED_SOIL_COLOUR}
+              fill-opacity="0.85"
+              stroke="#44403c"
+              stroke-width={s(0.015)}
+            />
+          {:else}
+            <!-- In-ground bed: soil fill with optional edging border or dashed boundary -->
+            <polygon
+              points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
+              fill={BED_SOIL_COLOUR}
+              fill-opacity="0.5"
+              stroke={isSelected ? '#2563eb' : (bed.material ? mat.colour : '#57534e')}
+              stroke-width={s(isSelected ? 0.05 : (bed.material ? 0.025 : 0.02))}
+              stroke-dasharray={!bed.material && !isSelected ? `${s(0.12)} ${s(0.08)}` : undefined}
+            />
+          {/if}
         {/each}
         {#if tool === 'draw-bed' && bedPreview.length >= 2}
           <polygon
@@ -4665,8 +4709,8 @@
       {@const mat = bedMaterialSpec(chosenBed.material)}
       <ContextPanel
         label="Garden bed"
-        title={isRaised ? `${mat.name} raised bed` : 'Flower bed'}
-        description="{checkFormat.format(area)} m² · {checkFormat.format(perim)} m perimeter · {checkFormat.format(volume)} m³ topsoil"
+        title={isRaised ? `${mat.name} raised bed` : (chosenBed.material ? `Flower bed with ${mat.name.toLowerCase()} edging` : 'Flower bed')}
+        description="{checkFormat.format(area)} m² · {isRaised || chosenBed.material ? `${checkFormat.format(perim)} m ${isRaised ? 'perimeter' : 'edging'} · ` : ''}{checkFormat.format(volume)} m³ topsoil"
         onclose={() => chooseSelection({})}
       >
         <div class="grid gap-1.5">
@@ -4701,13 +4745,13 @@
         </div>
         {#if chosenBed.height > 0.05}
           <div class="grid gap-1.5">
-            <Label>Edging material</Label>
+            <Label>Retaining wall material</Label>
             <Select.Root
               type="single"
               value={chosenBed.material ?? DEFAULT_BED_MATERIAL}
               onValueChange={(next) => next && applyResult(documentStore.updateBed(chosenBed.id, { material: next as BedMaterial }))}
             >
-              <Select.Trigger size="sm" class="w-full" aria-label="Edging material">
+              <Select.Trigger size="sm" class="w-full" aria-label="Retaining wall material">
                 <span class="flex items-center gap-2">
                   <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={mat.colour}></span>
                   {mat.name}
@@ -4723,6 +4767,39 @@
               </Select.Content>
             </Select.Root>
             <p class="text-xs text-muted-foreground">{mat.text}</p>
+          </div>
+        {:else}
+          <div class="grid gap-1.5">
+            <Label>Flush edging</Label>
+            <Select.Root
+              type="single"
+              value={chosenBed.material ?? 'none'}
+              onValueChange={(next) => applyResult(documentStore.updateBed(chosenBed.id, { material: next === 'none' ? undefined : (next as BedMaterial) }))}
+            >
+              <Select.Trigger size="sm" class="w-full" aria-label="Flush edging">
+                <span class="flex items-center gap-2">
+                  {#if chosenBed.material}
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={mat.colour}></span>
+                    {mat.name}
+                  {:else}
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15 bg-transparent"></span>
+                    No edging (lawn / earth edge)
+                  {/if}
+                </span>
+              </Select.Trigger>
+              <Select.Content>
+                <Select.Item value="none" label="No edging">No edging (lawn / earth edge)</Select.Item>
+                {#each BED_MATERIALS as spec (spec.id)}
+                  <Select.Item value={spec.id} label={spec.name}>
+                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
+                    {spec.name}
+                  </Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+            {#if chosenBed.material}
+              <p class="text-xs text-muted-foreground">{mat.text}</p>
+            {/if}
           </div>
         {/if}
         <Button variant="destructive" onclick={removeChosenBed}>Delete bed</Button>

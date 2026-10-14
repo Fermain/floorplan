@@ -266,6 +266,67 @@ describe('landscaping costing takeoff', () => {
     expect(timberEdgeLine?.amount).toBe(3200)
   })
 
+  it('quantifies flush in-ground bed edging when specified', () => {
+    let doc = emptyDoc()
+    // Flat bed with brick-on-edge edging: 4 × 2 = 8 m², 12 m perimeter
+    doc = addBed(doc, [[2, 2], [6, 2], [6, 4], [2, 4]], 0, 'brick').document
+    // Flat bed without edging: 3 × 3 = 9 m², 12 m perimeter
+    doc = addBed(doc, [[10, 2], [13, 2], [13, 5], [10, 5]], 0).document
+
+    const lines = takeoff(doc)
+    const landscapeLines = lines.filter((line) => line.group === 'Landscaping')
+
+    // Topsoil covers both beds: (8 + 9) * 0.15 = 2.55 m³
+    const topsoilLine = landscapeLines.find((l) => l.id === 'landscaping:topsoil')
+    expect(topsoilLine).toBeDefined()
+
+    // Flush brick edging for the first bed only
+    const brickEdgeLine = landscapeLines.find((l) => l.id === 'bed-flat-edge:brick')
+    expect(brickEdgeLine).toBeDefined()
+    expect(brickEdgeLine?.unit).toBe('m')
+    expect(brickEdgeLine?.quantity).toBe(12)
+    expect(brickEdgeLine?.rateKey).toBe('bed-flat-edge:brick')
+    expect(brickEdgeLine?.rate).toBe(150)
+    expect(brickEdgeLine?.amount).toBe(1800)
+
+    // No raised edge lines
+    expect(landscapeLines.some((l) => l.id.startsWith('bed-edge:'))).toBe(false)
+  })
+
+  it('builds retaining walls and top rim cap for concave L-shaped beds without dropping the cap', () => {
+    let doc = emptyDoc()
+    // L-shaped concave bed
+    const ring: [number, number][] = [
+      [2, 2],
+      [8, 2],
+      [8, 4],
+      [4, 4],
+      [4, 8],
+      [2, 8],
+    ]
+    doc = addBed(doc, ring, 0.4, 'brick').document
+
+    const groundAt = () => 10
+    const parts = buildBedParts(doc, groundAt)
+    const spec = bedMaterialSpec('brick')
+    const wallPart = parts.find((p) => p.colour === spec.colour)
+    const soilPart = parts.find((p) => p.colour === BED_SOIL_COLOUR)
+
+    expect(wallPart).toBeDefined()
+    expect(soilPart).toBeDefined()
+
+    // Check that horizontal top rim faces at topY (10.4) exist
+    const wallPos = wallPart!.geometry.getAttribute('position')
+    let topCapVertices = 0
+    for (let i = 0; i < wallPos.count; i++) {
+      if (Math.abs(wallPos.getY(i) - 10.4) < 1e-3) {
+        topCapVertices++
+      }
+    }
+    // The top cap rim must have vertices and not be skipped
+    expect(topCapVertices).toBeGreaterThanOrEqual(6)
+  })
+
   it('produces no landscaping lines if document has no beds', () => {
     const doc = emptyDoc()
     const lines = takeoff(doc)
