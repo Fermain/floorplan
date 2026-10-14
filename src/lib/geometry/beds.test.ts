@@ -6,6 +6,7 @@ import {
   bedPerimeter,
   bedProblem,
   bedSoilVolume,
+  bedWallArea,
   DEFAULT_RAISED_HEIGHT,
   IN_GROUND_DEPTH_M,
 } from '../model/beds'
@@ -239,16 +240,18 @@ describe('beds geometry & 3D rendering', () => {
 })
 
 describe('landscaping costing takeoff', () => {
-  it('quantifies topsoil and raised bed edging', () => {
+  it('quantifies topsoil and raised bed edging scaled by height', () => {
     let doc = emptyDoc()
     // In-ground bed: 4 × 2 = 8 m² -> 8 * 0.15 = 1.2 m³ soil
     doc = addBed(doc, [[2, 2], [6, 2], [6, 4], [2, 4]], 0).document
-    // Raised timber bed: 3 × 2 = 6 m² area, 10 m perimeter, 0.4 m height
+    // Raised timber bed: 3 × 2 = 6 m² area, 10 m perimeter, 0.4 m height -> 4.0 m² face (+5% waste = 4.2 m²)
     doc = addBed(doc, [[8, 2], [11, 2], [11, 4], [8, 4]], 0.4, 'timber').document
+    // Raised brick bed: 4 × 2 = 8 m² area, 12 m perimeter, 0.5 m height -> 6.0 m² face (+5% waste = 6.3 m²)
+    doc = addBed(doc, [[2, 6], [6, 6], [6, 8], [2, 8]], 0.5, 'brick').document
 
     const lines = takeoff(doc)
     const landscapeLines = lines.filter((line) => line.group === 'Landscaping')
-    expect(landscapeLines.length).toBeGreaterThanOrEqual(2)
+    expect(landscapeLines.length).toBeGreaterThanOrEqual(3)
 
     const topsoilLine = landscapeLines.find((l) => l.id === 'landscaping:topsoil')
     expect(topsoilLine).toBeDefined()
@@ -257,13 +260,27 @@ describe('landscaping costing takeoff', () => {
     expect(topsoilLine?.rate).toBe(550)
     expect(topsoilLine?.amount).toBeGreaterThan(0)
 
+    // Timber raised bed edging scaled by wall area (unit m²)
     const timberEdgeLine = landscapeLines.find((l) => l.id === 'bed-edge:timber')
     expect(timberEdgeLine).toBeDefined()
-    expect(timberEdgeLine?.unit).toBe('m')
-    expect(timberEdgeLine?.quantity).toBe(10) // 10 m perimeter
+    expect(timberEdgeLine?.unit).toBe('m²')
+    expect(timberEdgeLine?.quantity).toBe(4.2) // 10 m × 0.4 m × 1.05
     expect(timberEdgeLine?.rateKey).toBe('bed-edge:timber')
     expect(timberEdgeLine?.rate).toBe(320)
-    expect(timberEdgeLine?.amount).toBe(3200)
+
+    // Brick raised bed edging scaled by wall area (unit m²)
+    const brickEdgeLine = landscapeLines.find((l) => l.id === 'bed-edge:brick')
+    expect(brickEdgeLine).toBeDefined()
+    expect(brickEdgeLine?.unit).toBe('m²')
+    expect(brickEdgeLine?.quantity).toBe(6.3) // 12 m × 0.5 m × 1.05
+    expect(brickEdgeLine?.rateKey).toBe('bed-edge:brick')
+
+    // Concrete strip footing for masonry raised bed
+    const footingLine = landscapeLines.find((l) => l.id === 'bed-footing')
+    expect(footingLine).toBeDefined()
+    expect(footingLine?.unit).toBe('m³')
+    expect(footingLine?.rateKey).toBe('concrete-m3')
+    expect(footingLine?.quantity).toBe(0.57) // 12 m × 0.3 m × 0.15 m × 1.05
   })
 
   it('quantifies flush in-ground bed edging when specified', () => {
@@ -325,6 +342,30 @@ describe('landscaping costing takeoff', () => {
     }
     // The top cap rim must have vertices and not be skipped
     expect(topCapVertices).toBeGreaterThanOrEqual(6)
+  })
+
+  it('calculates wall area and soil volume accounting for sloping terrain', () => {
+    // Bed 4m × 2m on ground sloping from y=10 at x=2 to y=12 at x=6
+    const bed = {
+      ring: [
+        [2, 2],
+        [6, 2],
+        [6, 4],
+        [2, 4],
+      ] as [number, number][],
+      height: 0.4,
+      material: 'stone' as const,
+    }
+    const groundAt = (x: number) => 10 + (x - 2) * 0.5 // x=2 -> 10, x=6 -> 12
+    const areaFlat = bedWallArea(bed)
+    const areaSloped = bedWallArea(bed, groundAt)
+    expect(areaFlat).toBe(12 * 0.4) // 4.8 m²
+    expect(areaSloped).toBeGreaterThan(areaFlat)
+    expect(areaSloped).toBeCloseTo(16.8)
+
+    const soilFlat = bedSoilVolume(bed)
+    const soilSloped = bedSoilVolume(bed, groundAt)
+    expect(soilSloped).toBeGreaterThan(soilFlat)
   })
 
   it('produces no landscaping lines if document has no beds', () => {

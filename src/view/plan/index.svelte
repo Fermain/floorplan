@@ -4725,7 +4725,13 @@
               value={Math.round(chosenBed.height * 1000)}
               onchange={(event) => {
                 const h = Math.max(0, Math.min(1.2, Number(event.currentTarget.value) / 1000))
-                applyResult(documentStore.updateBed(chosenBed.id, { height: h, ...(h > 0.05 && !chosenBed.material ? { material: DEFAULT_BED_MATERIAL } : {}) }))
+                applyResult(
+                  documentStore.updateBed(chosenBed.id, {
+                    height: h,
+                    ...(h > 0.05 && !chosenBed.material ? { material: DEFAULT_BED_MATERIAL } : {}),
+                    ...(h <= 0.05 && chosenBed.height > 0.05 ? { material: undefined } : {}),
+                  }),
+                )
               }}
             />
             <ToggleGroup.Root
@@ -4734,7 +4740,7 @@
               size="sm"
               value={chosenBed.height <= 0.05 ? 'ground' : 'raised'}
               onValueChange={(val) => {
-                if (val === 'ground') applyResult(documentStore.updateBed(chosenBed.id, { height: 0 }))
+                if (val === 'ground') applyResult(documentStore.updateBed(chosenBed.id, { height: 0, material: undefined }))
                 else if (val === 'raised') applyResult(documentStore.updateBed(chosenBed.id, { height: DEFAULT_RAISED_HEIGHT, material: chosenBed.material ?? DEFAULT_BED_MATERIAL }))
               }}
             >

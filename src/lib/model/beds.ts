@@ -65,16 +65,55 @@ export function bedPerimeter(ring: [number, number][]): number {
   return length
 }
 
+// Wall face area in square metres: on sloping ground, the retaining wall extends down from the level top cap
+// to the terrain along each edge, matching the 3D geometry in Review.
+export function bedWallArea(bed: Pick<GardenBed, 'ring' | 'height'>, groundAt?: (x: number, z: number) => number): number {
+  if (bed.height <= 0.05) return 0
+  const n = bed.ring.length
+  if (n < 3) return 0
+
+  if (!groundAt) {
+    return bedPerimeter(bed.ring) * bed.height
+  }
+
+  const groundHeights = bed.ring.map(([x, z]) => groundAt(x, z))
+  const maxGround = Math.max(...groundHeights)
+  const topY = maxGround + bed.height
+
+  let totalArea = 0
+  for (let i = 0; i < n; i++) {
+    const a = bed.ring[i]
+    const b = bed.ring[(i + 1) % n]
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1])
+    const ya = groundAt(a[0], a[1])
+    const yb = groundAt(b[0], b[1])
+    const hA = Math.max(0, topY - ya)
+    const hB = Math.max(0, topY - yb)
+    totalArea += (length * (hA + hB)) / 2
+  }
+  return totalArea
+}
+
 // Soil volume in cubic metres: for in-ground beds, a 150 mm cultivated topsoil layer; for raised beds, the inner
 // volume inside the retaining walls, filled to 30 mm below the top rim.
-export function bedSoilVolume(bed: Pick<GardenBed, 'ring' | 'height' | 'material'>): number {
+export function bedSoilVolume(bed: Pick<GardenBed, 'ring' | 'height' | 'material'>, groundAt?: (x: number, z: number) => number): number {
   const area = bedArea(bed.ring)
   if (bed.height <= 0.05) {
     return area * IN_GROUND_DEPTH_M
   }
   const spec = bedMaterialSpec(bed.material)
   const innerArea = Math.max(0.1 * area, area - bedPerimeter(bed.ring) * spec.thickness)
-  const soilDepth = Math.max(0.05, bed.height - 0.03)
+
+  if (!groundAt) {
+    const soilDepth = Math.max(0.05, bed.height - 0.03)
+    return innerArea * soilDepth
+  }
+
+  const groundHeights = bed.ring.map(([x, z]) => groundAt(x, z))
+  const maxGround = Math.max(...groundHeights)
+  const avgGround = groundHeights.reduce((sum, h) => sum + h, 0) / groundHeights.length
+  const topY = maxGround + bed.height
+  const soilDepth = Math.max(0.05, topY - 0.03 - avgGround)
   return innerArea * soilDepth
 }
 

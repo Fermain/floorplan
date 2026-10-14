@@ -176,13 +176,13 @@ describe('exportFloorSvg', () => {
     const fid = floorId(d)
     d = addBed(d, [[2, 2], [6, 2], [6, 4], [2, 4]], 0.4, 'brick').document
     d = addBed(d, [[8, 2], [11, 2], [11, 4], [8, 4]], 0, 'timber').document
-    d = addPaving(d, [[14, 2], [18, 2], [18, 6], [14, 6]], 'clay-pavers').document
+    d = addPaving(d, [[14, 2], [18, 2], [18, 6], [14, 6]], 'cement-pavers').document
 
     const svg = exportFloorSvg(d, fid)
     // Raised bed wall & inner soil polygons, flat bed edging polygon, and paving polygon
     expect(svg).toContain('fill="#a65f43"') // brick raised bed wall
     expect(svg).toContain('fill="#34261f"') // soil colour
     expect(svg).toContain('stroke="#825633"') // timber flat edging stroke
-    expect(svg).toContain('fill="#a65f43"') // brick paving fill
+    expect(svg).toContain('fill="#9c958b"') // cement paving fill
   })
 })

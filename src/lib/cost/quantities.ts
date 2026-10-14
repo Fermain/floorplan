@@ -21,7 +21,9 @@ import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
 import { carportQuantities } from '../geometry/carports'
 import { counterTotals } from '../geometry/counters'
-import { BED_MATERIALS, DEFAULT_BED_MATERIAL, bedPerimeter, bedSoilVolume } from '../model/beds'
+import { siteField } from '../geometry/fixtures'
+import { bilinearHeight } from '../geometry/terrain'
+import { BED_MATERIALS, DEFAULT_BED_MATERIAL, bedPerimeter, bedSoilVolume, bedWallArea } from '../model/beds'
 import { retainingTotals } from '../geometry/retaining'
 import { RETAINING_TYPES } from '../model/retaining'
 import { COUNTER_KINDS, COUNTER_TOPS } from '../model/counters'
@@ -748,10 +750,12 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'paving-edge', group: 'Paving', label: 'Paving kerb and edge restraint', note: 'Round pavers, blocks and gravel', unit: 'm', quantity: Math.ceil(edging), rateKey: 'paving-edge' })
   }
 
-  // Landscaping: flower beds and raised garden beds. Topsoil mix by volume, retaining edging by length.
+  // Landscaping: flower beds and raised garden beds. Topsoil mix by volume, retaining edging by area, footings for brick/stone.
   const beds = doc.beds ?? []
   if (beds.length > 0) {
-    const totalSoil = beds.reduce((sum, bed) => sum + bedSoilVolume(bed), 0)
+    const field = siteField(doc)
+    const groundAt = (x: number, z: number) => bilinearHeight(field, x, z)
+    const totalSoil = beds.reduce((sum, bed) => sum + bedSoilVolume(bed, groundAt), 0)
     if (totalSoil > 0) {
       drafts.push({
         id: 'landscaping:topsoil',
@@ -763,17 +767,36 @@ export function takeoff(doc: Document): QuantityLine[] {
         rateKey: 'topsoil',
       })
     }
+
+    // Concrete strip footings for brick and stone retaining walls
+    const masonryBeds = beds.filter((b) => b.height > 0.05 && (b.material === 'brick' || b.material === 'stone'))
+    const masonryLength = masonryBeds.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+    if (masonryLength > 0) {
+      const FOOTING_WIDTH_M = 0.3
+      const FOOTING_DEPTH_M = 0.15
+      drafts.push({
+        id: 'bed-footing',
+        group: 'Landscaping',
+        label: 'Concrete footing for masonry beds',
+        note: `${round(masonryLength, 1)} m at 300 × 150 mm under brick and stone raised beds`,
+        unit: 'm³',
+        quantity: round(masonryLength * FOOTING_WIDTH_M * FOOTING_DEPTH_M * waste, 2),
+        rateKey: 'concrete-m3',
+      })
+    }
+
     for (const spec of BED_MATERIALS) {
       const raised = beds.filter((b) => b.height > 0.05 && (b.material ?? DEFAULT_BED_MATERIAL) === spec.id)
+      const area = raised.reduce((sum, b) => sum + bedWallArea(b, groundAt), 0)
       const length = raised.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
-      if (length > 0) {
+      if (area > 0) {
         drafts.push({
           id: `bed-edge:${spec.id}`,
           group: 'Landscaping',
           label: `${spec.name} raised bed edging`,
-          note: 'Edging and retaining walls for raised garden beds',
-          unit: 'm',
-          quantity: Math.ceil(length),
+          note: `${round(length, 1)} m perimeter, retaining wall face`,
+          unit: 'm²',
+          quantity: round(area * waste, 1),
           rateKey: `bed-edge:${spec.id}`,
         })
       }
