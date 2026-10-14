@@ -195,4 +195,47 @@ describe('buildOpeningFrameGeometry', () => {
     const hingesEnd = doorEnd!.hardware!.filter((hw) => Math.abs(hw.u0 - (doorEnd!.inner.u1 - 0.015)) < 1e-4)
     expect(hingesEnd.length).toBe(2)
   })
+
+  it('places door hinges on the room-priority default swing side when no swing is set', () => {
+    const wall: Wall = {
+      id: 'w1',
+      startCornerId: 'a',
+      endCornerId: 'b',
+      skin: 'single',
+      openings: [{ id: 'd1', kind: 'internal-door', u: 1, v: 0, width: 0.9, height: 2.1, aligned: true }],
+    }
+    const floor: Floor = {
+      id: 'f1',
+      index: 0,
+      datumHeight: 0,
+      corners: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 4, z: 0 },
+      ],
+      walls: [wall],
+      roomFinishes: {},
+    }
+    // Resolver where side 1 is passage and side -1 is bedroom. Bedroom has higher priority than passage,
+    // so default swing should be -1.
+    const resolver = (_w: Wall, side: 1 | -1) => ({
+      outside: false,
+      roomType: side === -1 ? ('bedroom' as const) : ('passage' as const),
+    })
+
+    const geometry = buildOpeningFrameGeometry(floor, wall, undefined, resolver)
+    expect(geometry).not.toBeNull()
+
+    // Single-leaf wall has thickness 0.11 m (half-thickness 0.055 m).
+    // Hinge depth is 0.015 m (half-depth 0.0075 m).
+    // Hinge on side -1 should sit at z < 0 (-0.055 - 0.0075 = -0.0625 m).
+    const positions = geometry!.getAttribute('position')
+    let minZ = Infinity
+    let maxZ = -Infinity
+    for (let i = 0; i < positions.count; i++) {
+      minZ = Math.min(minZ, positions.getZ(i))
+      maxZ = Math.max(maxZ, positions.getZ(i))
+    }
+    // Verify that hinge stands out on side -1 (minZ < -0.06)
+    expect(minZ).toBeLessThan(-0.06)
+  })
 })

@@ -4,7 +4,7 @@ import type { Floor, Opening, RoomType, Wall } from '../model/types'
 import { outsideFaces } from './finishes'
 import { doorLeafCount, FRAME_SECTION } from './frames'
 import { wallReach } from './outline'
-import { cellAt, layoutSpaces, type WallSide } from './spaces'
+import { cellAt, layoutSpaces, type Cell, type WallSide } from './spaces'
 
 type Point = { x: number; z: number }
 
@@ -61,11 +61,39 @@ export function resolvedSwing(
   return { hinge: opening.hinge ?? 'start', swing: opening.swing ?? fallback }
 }
 
+export type DoorFaceResolver = (wall: Wall, side: WallSide) => FaceInfo
+
+export function createDoorFaceResolver(
+  floor: Floor,
+  providedOutside?: (wall: Wall, side: WallSide) => boolean,
+): DoorFaceResolver {
+  let isOutside = providedOutside ?? null
+  let layout: ReturnType<typeof layoutSpaces> | null = null
+  let cells: Cell[] | null = null
+
+  return (wall: Wall, side: WallSide): FaceInfo => {
+    if (!isOutside) isOutside = outsideFaces(floor)
+    if (isOutside(wall, side)) return { outside: true }
+    if (!layout) {
+      layout = layoutSpaces(floor)
+      cells = [...layout.loose, ...layout.spaces.flatMap((resolved) => resolved.cells)]
+    }
+    const a = cornerById(floor.corners, wall.startCornerId)
+    const b = cornerById(floor.corners, wall.endCornerId)
+    if (!a || !b) return { outside: false }
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (length < 1e-9) return { outside: false }
+    const n = { x: -(b.z - a.z) / length, z: (b.x - a.x) / length }
+    const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
+    const cell = cellAt(cells!, mid.x + n.x * side * 0.05, mid.z + n.z * side * 0.05)
+    const named = cell ? layout.spaces.find((resolved) => resolved.cells.includes(cell)) : undefined
+    return { outside: false, roomType: named?.space.type }
+  }
+}
+
 // Every hinged door on a storey, as it is drawn on the plan. A pair of leaves is hung one from each side.
 export function doorSwings(floor: Floor): DoorSwing[] {
-  const isOutside = outsideFaces(floor)
-  const layout = layoutSpaces(floor)
-  const cells = [...layout.loose, ...layout.spaces.flatMap((resolved) => resolved.cells)]
+  const resolver = createDoorFaceResolver(floor)
   const swings: DoorSwing[] = []
   for (const wall of floor.walls) {
     if (wall.skin === 'logical') continue
@@ -78,15 +106,7 @@ export function doorSwings(floor: Floor): DoorSwing[] {
     if (length < 1e-9) continue
     const t = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
     const n = { x: -t.z, z: t.x }
-    const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
-    const faceInfo = (side: WallSide): FaceInfo => {
-      const outside = isOutside(wall, side)
-      if (outside) return { outside: true }
-      const cell = cellAt(cells, mid.x + n.x * side * 0.05, mid.z + n.z * side * 0.05)
-      const named = cell ? layout.spaces.find((resolved) => resolved.cells.includes(cell)) : undefined
-      return { outside: false, roomType: named?.space.type }
-    }
-    for (const opening of doors) swings.push(...openingSwings(wall, opening, a, t, n, faceInfo))
+    for (const opening of doors) swings.push(...openingSwings(wall, opening, a, t, n, (side) => resolver(wall, side)))
   }
   return swings
 }

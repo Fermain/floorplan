@@ -35,6 +35,7 @@
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildFinishSkin, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { outsideFaces, resolveFinish } from '../../lib/geometry/finishes'
+  import { createDoorFaceResolver } from '../../lib/geometry/doors'
   import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
   import { coveringOf } from '../../lib/geometry/coverings'
   import { coveringTexture } from './roofTexture'
@@ -482,6 +483,7 @@
         pillars.push({ key: `${floor.id}:${key}`, parts: buildPillarParts(group.type, group.spots, system, group.datum) })
       }
       const outside = outsideFaces(floor)
+      const doorResolver = createDoorFaceResolver(floor, outside)
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') {
           const line = wall.fence ? fenceFrame(floor, wall) : null
@@ -500,7 +502,7 @@
         const geoms = buildWallGeometries(floor, wall, samples, head)
         const courses = buildCourseFaceGeometries(floor, wall, samples, head)
         const lintel = buildLintelGeometry(floor, wall)
-        const frame = buildOpeningFrameGeometry(floor, wall, samples)
+        const frame = buildOpeningFrameGeometry(floor, wall, samples, doorResolver)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
         const panels = buildOpeningPanelMeshes(floor, wall, samples)
         const skins: WallMeshes['skins'] = []

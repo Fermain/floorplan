@@ -1,7 +1,7 @@
 import { BLOCK_HEIGHT, BLOCK_THICKNESS } from '../plot/fixture'
 import { leafOffset, systemOf } from '../model/systems'
 import type { Floor, OpeningKind, Wall } from '../model/types'
-import { outsideFaces } from './finishes'
+import { createDoorFaceResolver, resolvedSwing, type DoorFaceResolver } from './doors'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
@@ -352,6 +352,7 @@ export function buildOpeningFrameGeometry(
   floor: Floor,
   wall: Wall,
   bottomSamples?: { u: number; y: number }[],
+  doorResolver?: DoorFaceResolver,
 ): BufferGeometry | null {
   if (wall.skin === 'logical') return null
   const openings = wall.openings
@@ -362,11 +363,12 @@ export function buildOpeningFrameGeometry(
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
-  const isOutside = outsideFaces(floor)
+  let resolver = doorResolver
   for (const opening of openings) {
     const layout = openingFrameLayout(opening, system.courseHeight)
     if (!layout) continue
-    const swingSide = opening.swing ?? (isOutside(wall, 1) && !isOutside(wall, -1) ? -1 : 1)
+    if (!resolver && opening.swing === undefined) resolver = createDoorFaceResolver(floor)
+    const swingSide = opening.swing ?? resolvedSwing(opening, (side) => resolver!(wall, side)).swing
     for (const member of layout.members) {
       const visible = clipToWallBottom(member, bottomSamples)
       if (!visible) continue
