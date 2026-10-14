@@ -402,6 +402,8 @@ const WATER: Finish = { colour: '#b7c9d4', roughness: 0.2, metalness: 0.05 }
 const PLASTIC: Finish = { colour: '#d8dde2', roughness: 0.5, metalness: 0.05 }
 const DB: Finish = { colour: '#6b7280', roughness: 0.45, metalness: 0.55 }
 const DB_FACE: Finish = { colour: '#4b5563', roughness: 0.5, metalness: 0.45 }
+const TERRACOTTA: Finish = { colour: '#a5583a', roughness: 0.85, metalness: 0 }
+const VENT_SLOT: Finish = { colour: '#2b211d', roughness: 0.95, metalness: 0 }
 
 // A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
 const FLOOR_CLEAR_M = 0.003
@@ -738,6 +740,11 @@ function pieces(fixture: Fixture, counter: Counter | null = null): Piece[] {
         box(0.04, 0.015, 0.055, 0, 0.025, h * 0.35, CERAMIC_LID),
         puck(0.012, 0.02, 0, 0.03, h * 0.75, CHROME, 8),
       ]
+    case 'air-brick': {
+      // A clay face with a grid of dark slots through it.
+      const slots = [-0.075, -0.025, 0.025, 0.075].flatMap((along) => [h * 0.22, h * 0.58].map((y) => box(0.03, 0.004, h * 0.22, along, d + 0.002, y, VENT_SLOT)))
+      return [box(w, d, h, 0, d / 2, 0, TERRACOTTA), ...slots]
+    }
     default:
       return [box(w, d, h, 0, d / 2, 0, PLATE)]
   }

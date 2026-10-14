@@ -430,9 +430,9 @@ export function takeoff(doc: Document): QuantityLine[] {
     if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank') continue
     drafts.push({
       id: `fixture:${spec.id}`,
-      group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : 'Plumbing',
+      group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : spec.trade === 'building' ? 'Masonry' : 'Plumbing',
       label: spec.name,
-      note: 'Fitting only; cable, pipe and labour not yet counted',
+      note: spec.trade === 'building' ? 'The unit only; building it in is not yet counted' : 'Fitting only; cable, pipe and labour not yet counted',
       unit: 'each',
       quantity: count,
       rateKey: `fixture:${spec.id}`,

@@ -92,6 +92,12 @@
     {/each}
   {:else if fixture.kind === 'outside-tap'}
     <circle r={0.05} class="solid" />
+  {:else if fixture.kind === 'air-brick'}
+    <!-- Drawn standing a little proud of the wall, so it can be seen and picked at plan scale. -->
+    <rect x={-w / 2} y={-d / 2} width={w} height={0.06} class="fill" />
+    {#each [-0.055, 0, 0.055] as x (x)}
+      <line x1={x} y1={-d / 2} x2={x} y2={0.06 - d / 2} />
+    {/each}
   {/if}
 </g>
 
