@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { addOpening, addWallRing, nameCell } from '../model/mutations'
+import { addFixture, addOpening, addWallRing, nameCell } from '../model/mutations'
 import type { Document, RoomType } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildingChecks, minimumWidth } from './sans'
+import { fixtureOnFace } from './fixtures'
+import { AIR_BRICK_FREE_VENT_M2, buildingChecks, minimumWidth } from './sans'
 
 function room(width: number, depth: number, type: RoomType = 'bedroom'): Document {
   const d = fixtureDocument()
@@ -40,6 +41,16 @@ function withWindow(doc: Document, z: number, u: number): Document {
   return r.document
 }
 
+function withAirBrick(doc: Document, z: number, u: number): Document {
+  const floor = doc.building.floors[0]
+  const wall = wallAlong(doc, z)
+  const draft = fixtureOnFace(floor, wall, 1, 'air-brick', u, 2.0)
+  expect(draft).not.toBeNull()
+  const r = addFixture(doc, floor.id, draft!)
+  expect(r.ok).toBe(true)
+  return r.document
+}
+
 function checksOf(doc: Document) {
   const [room] = buildingChecks(doc).rooms
   return Object.fromEntries(room.checks.map((item) => [item.id, item]))
@@ -64,6 +75,18 @@ describe('SANS 10400 room checks', () => {
     const checks = checksOf(doc)
     expect(checks.light.ok).toBe(true)
     expect(checks.ventilation.ok).toBe(true)
+  })
+
+  it('counts air bricks toward natural ventilation without adding glazed daylight area', () => {
+    let doc = room(4, 4)
+    const before = buildingChecks(doc).rooms[0]
+    expect(before.openable).toBe(0)
+    expect(before.glazed).toBe(0)
+
+    doc = withAirBrick(doc, 4, 1.5)
+    const after = buildingChecks(doc).rooms[0]
+    expect(after.openable).toBeCloseTo(AIR_BRICK_FREE_VENT_M2, 6)
+    expect(after.glazed).toBe(0)
   })
 
   it('counts a window that looks onto a patio, which is open to the air', () => {

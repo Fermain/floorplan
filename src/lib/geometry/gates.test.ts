@@ -28,7 +28,11 @@ describe('gates', () => {
     expect(addGate(one.document, floorId, wallId, { u: 4.5, width: 1, opening: 'swing' }).ok).toBe(false)
     expect(addGate(one.document, floorId, wallId, { u: 0.05, width: 1, opening: 'swing' }).ok).toBe(false)
     expect(addGate(one.document, floorId, wallId, { u: 11.5, width: 1, opening: 'swing' }).ok).toBe(false)
-    expect(addGate(one.document, floorId, wallId, { u: 7, width: 3.6, opening: 'sliding' }).ok).toBe(true)
+    // Run-back overlapping another gate or running off the fence is refused.
+    expect(addGate(one.document, floorId, wallId, { u: 7, width: 3.6, opening: 'sliding' }).ok).toBe(false)
+    expect(addGate(one.document, floorId, wallId, { u: 2, width: 2.5, opening: 'sliding' }).ok).toBe(false)
+    expect(addGate(one.document, floorId, wallId, { u: 8, width: 2.5, opening: 'sliding', hinge: 'end' }).ok).toBe(false)
+    expect(addGate(one.document, floorId, wallId, { u: 8.5, width: 3, opening: 'sliding' }).ok).toBe(true)
     const id = wallOf(one.document, wallId).fence!.gates![0].id
     expect(updateGate(one.document, floorId, wallId, id, { width: 0.2 }).ok).toBe(false)
     expect(removeGate(one.document, floorId, wallId, id).document.building.floors[0].walls.find((wall) => wall.id === wallId)!.fence!.gates).toBeUndefined()
@@ -46,8 +50,8 @@ describe('gates', () => {
 
   it('swing open toward the middle of the plot, a wide one as a pair, and a sliding one runs back beside the fence', () => {
     const { doc, floorId, wallId } = fenced()
-    let gated = addGate(doc, floorId, wallId, { u: 2, width: 1, opening: 'swing' }).document
-    gated = addGate(gated, floorId, wallId, { u: 4, width: 3.6, opening: 'swing' }).document
+    let gated = addGate(doc, floorId, wallId, { u: 1.5, width: 1, opening: 'swing' }).document
+    gated = addGate(gated, floorId, wallId, { u: 3.5, width: 2.5, opening: 'swing' }).document
     gated = addGate(gated, floorId, wallId, { u: 8.5, width: 2, opening: 'sliding' }).document
     const floor = gated.building.floors[0]
     const plan = fencePlan(floor, wallOf(gated, wallId), { x: 8, z: 10 })!

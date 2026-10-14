@@ -36,6 +36,30 @@ export function gatesProblem(gates: Gate[], length: number): string | null {
     reached = gate.u + gate.width
   }
   if (sorted.length > 0 && reached > length - GATE_POST_CLEAR_M + 1e-9) return 'gates need room for a post between them and the end of the fence'
+  for (const gate of sorted) {
+    if (gate.opening === 'sliding') {
+      const slideEnd = gate.hinge === 'end'
+      const run0 = slideEnd ? gate.u + gate.width : gate.u - gate.width
+      const run1 = slideEnd ? gate.u + 2 * gate.width : gate.u
+      if (run0 < -1e-9 || run1 > length + 1e-9) {
+        return 'a sliding gate needs room along the fence to slide back'
+      }
+      for (const other of sorted) {
+        if (other.id === gate.id) continue
+        if (Math.max(run0, other.u) < Math.min(run1, other.u + other.width) - 1e-9) {
+          return 'a sliding gate needs room along the fence to slide back'
+        }
+        if (other.opening === 'sliding') {
+          const oSlideEnd = other.hinge === 'end'
+          const oRun0 = oSlideEnd ? other.u + other.width : other.u - other.width
+          const oRun1 = oSlideEnd ? other.u + 2 * other.width : other.u
+          if (Math.max(run0, oRun0) < Math.min(run1, oRun1) - 1e-9) {
+            return 'a sliding gate needs room along the fence to slide back'
+          }
+        }
+      }
+    }
+  }
   return null
 }
 

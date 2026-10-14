@@ -32,6 +32,8 @@ export type OpeningRect = {
   width: number
   height: number
   kind?: OpeningKind
+  hinge?: 'start' | 'end'
+  swing?: 1 | -1
 }
 
 export type FrameMemberSpan = {
@@ -47,6 +49,7 @@ export type OpeningFrameLayout = {
   members: FrameMemberSpan[]
   glass: FrameMemberSpan[]
   panels: FrameMemberSpan[]
+  hardware?: FrameMemberSpan[]
 }
 
 type Vec2 = { x: number; z: number }
@@ -186,15 +189,47 @@ export function openingFrameLayout(opening: OpeningRect, courseHeight = BLOCK_HE
   ]
   const glass: FrameMemberSpan[] = []
   const panels: FrameMemberSpan[] = []
+  const hardware: FrameMemberSpan[] = []
   const bay = { u0: inner.u0, u1: inner.u1, y0: inner.y0, y1: inner.y1 }
   if (opening.kind === 'external-door' || opening.kind === 'internal-door') {
     const maxLeaf = opening.kind === 'internal-door' ? INTERNAL_LEAF_MAX : EXTERNAL_LEAF_MAX
-    const leaves = splitSpan(bay, panelCount(inner.u1 - inner.u0, maxLeaf), 'u')
+    const leafCount = panelCount(inner.u1 - inner.u0, maxLeaf)
+    const leaves = splitSpan(bay, leafCount, 'u')
     members.push(...leaves.bars)
     for (const leaf of leaves.cells) {
       const door = fourPanelLeaf(leaf)
       members.push(...door.bars)
       panels.push(...door.cells)
+    }
+    if (leafCount === 1) {
+      const hingeEnd = opening.hinge === 'end'
+      const hingeU = hingeEnd ? inner.u1 : inner.u0
+      hardware.push(
+        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
+        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
+      )
+      const handleU = hingeEnd ? inner.u0 + DOOR_STILE * 0.45 : inner.u1 - DOOR_STILE * 0.45
+      const handleDir = hingeEnd ? 1 : -1
+      hardware.push(
+        { u0: handleU - 0.018, u1: handleU + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
+        { u0: Math.min(handleU, handleU + handleDir * 0.09), u1: Math.max(handleU, handleU + handleDir * 0.09), y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
+      )
+    } else if (leafCount === 2) {
+      hardware.push(
+        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
+        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
+        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
+        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
+      )
+      const mid = (inner.u0 + inner.u1) / 2
+      const leftH = mid - DOOR_STILE * 0.45
+      const rightH = mid + DOOR_STILE * 0.45
+      hardware.push(
+        { u0: leftH - 0.018, u1: leftH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
+        { u0: leftH - 0.09, u1: leftH, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
+        { u0: rightH - 0.018, u1: rightH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
+        { u0: rightH, u1: rightH + 0.09, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
+      )
     }
   } else if (opening.kind === 'garage') {
     const split = splitSpan(bay, panelCount(inner.y1 - inner.y0, GARAGE_PANEL_MAX), 'y')
@@ -205,7 +240,7 @@ export function openingFrameLayout(opening: OpeningRect, courseHeight = BLOCK_HE
     members.push(...split.bars)
     glass.push(...split.cells.map(insetGlass))
   }
-  return { outer, inner, members, glass, panels }
+  return { outer, inner, members, glass, panels, hardware }
 }
 
 function gradeAt(u: number, samples: { u: number; y: number }[] | undefined): number {
@@ -336,6 +371,23 @@ export function buildOpeningFrameGeometry(
         visible.y1,
         along,
         system.leafThickness,
+        0,
+        unitBox,
+        matrix,
+        parts,
+      )
+    }
+    for (const hw of layout.hardware ?? []) {
+      const visible = clipToWallBottom(hw, bottomSamples)
+      if (!visible) continue
+      placeBox(
+        wallFrame,
+        visible.u0,
+        visible.u1,
+        visible.y0,
+        visible.y1,
+        along,
+        system.leafThickness + 0.02,
         0,
         unitBox,
         matrix,

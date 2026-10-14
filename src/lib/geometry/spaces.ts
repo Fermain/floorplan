@@ -141,7 +141,7 @@ export function ringLabelPoint(ring: Ring): { x: number; z: number } {
 
 export type WallSide = 1 | -1
 
-export type WallFace = { side: WallSide; label: string; outside: boolean }
+export type WallFace = { side: WallSide; label: string; outside: boolean; roomType?: RoomType }
 
 // Side 1 faces (-dz, dx) from the wall's start to its end; side -1 faces the other way.
 export function wallFaces(floor: Floor, wallId: string): [WallFace, WallFace] | null {
@@ -160,7 +160,7 @@ export function wallFaces(floor: Floor, wallId: string): [WallFace, WallFace] | 
     const cell = cellAt(cells, mid.x + normal.x * side * 0.05, mid.z + normal.z * side * 0.05)
     if (!cell) return { side, label: 'Outside', outside: true }
     const named = layout.spaces.find((resolved) => resolved.cells.includes(cell))
-    return { side, label: named?.space.name ?? 'Inside', outside: false }
+    return { side, label: named?.space.name ?? 'Inside', outside: false, roomType: named?.space.type }
   }
   return [face(1), face(-1)]
 }

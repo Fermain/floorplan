@@ -48,7 +48,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { resolvedGate, sideToward } from '../../lib/geometry/gates'
-  import { fenceRuns, GATE_MAX_WIDTH_M, GATE_MIN_WIDTH_M, GATE_PRESETS, gateLeaves, gateName } from '../../lib/model/gates'
+  import { fenceRuns, GATE_MAX_WIDTH_M, GATE_MIN_WIDTH_M, GATE_PRESETS, gateLeaves, gateName, gatesProblem } from '../../lib/model/gates'
   import {
     DEFAULT_FENCE_HEIGHT_M,
     FENCE_MAX_HEIGHT_M,
@@ -120,6 +120,8 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   let selectedFixtureId = $state<string | null>(null)
   type FixtureDrag = { id: string; grabU: number; grabV: number; u: number; y: number; moved: boolean }
   let fixtureDrag = $state<FixtureDrag | null>(null)
+  type GateDrag = { id: string; grabU: number; u: number; originU: number; moved: boolean }
+  let gateDrag = $state<GateDrag | null>(null)
 
   const doc = $derived(documentStore.document)
 
@@ -154,6 +156,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   const logical = $derived(wall?.skin === 'logical')
   const fence = $derived(logical ? wall?.fence : undefined)
+  const displayFence = $derived.by(() => {
+    if (!logical || !wall?.fence) return undefined
+    const moving = gateDrag
+    if (!moving) return wall.fence
+    const gates = wall.fence.gates?.map((g) => (g.id === moving.id ? { ...g, u: moving.u } : g))
+    return { ...wall.fence, gates }
+  })
   const support = $derived(logical ? wall?.support : undefined)
 
   const frame = $derived.by(() => {
@@ -625,10 +634,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   }
 
   const fenceParts = $derived.by((): FencePart[] => {
-    if (!floor || !wall || !fence) return []
+    if (!floor || !wall || !displayFence) return []
     const line = fenceFrame(floor, wall)
     const base = floor.datumHeight
-    return line ? buildFenceParts(line, fence, () => base) : []
+    return line ? buildFenceParts(line, displayFence, () => base) : []
   })
 
   $effect(() => {
@@ -698,7 +707,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   })
   const gateInward = $derived(floor && wall ? sideToward(floor, wall, plotMiddle) : 1)
   const fenceGates = $derived(
-    (fence?.gates ?? [])
+    (displayFence?.gates ?? [])
       .map((gate) => {
         const hang = resolvedGate(gate, gateInward)
         const length = frame?.length ?? 0
@@ -887,10 +896,29 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   }
 
   function onViewportPointerDown(event: PointerEvent) {
-    if (!locked || !floor || !wall || !frame || logical) return
+    if (!locked || !floor || !wall || !frame) return
     const uv = uvFromEvent(event)
     if (!uv) return
     readout = uv
+
+    if (logical) {
+      if (wall.fence?.gates && wall.fence.gates.length > 0) {
+        const height = wall.fence.height ?? DEFAULT_FENCE_HEIGHT_M
+        const hitGate = wall.fence.gates.find((g) => uv.u >= g.u && uv.u <= g.u + g.width && uv.v >= 0 && uv.v <= height)
+        if (hitGate) {
+          gateDrag = {
+            id: hitGate.id,
+            grabU: uv.u - hitGate.u,
+            u: hitGate.u,
+            originU: hitGate.u,
+            moved: false,
+          }
+          ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+          return
+        }
+      }
+      return
+    }
 
     const fitting = fittingAt(uv.u, uv.v)
     if (fitting) {
@@ -999,7 +1027,10 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   // How the picked door hangs, as seen from this side: the end its hinges are on, and the side it opens to.
   const doorHang = $derived.by(() => {
     if (!editingOpening || !swingsOpen(editingOpening.kind) || !faces) return null
-    const hang = resolvedSwing(editingOpening, (which) => faces.find((face) => face.side === which)?.outside ?? false)
+    const hang = resolvedSwing(editingOpening, (which) => {
+      const face = faces.find((f) => f.side === which)
+      return { outside: face?.outside ?? false, roomType: face?.roomType }
+    })
     const into = faces.find((face) => face.side === hang.swing)
     return {
       ...hang,
@@ -1173,6 +1204,19 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       return
     }
 
+    const draggingGate = gateDrag
+    if (draggingGate && frame && wall.fence?.gates) {
+      const movingGate = wall.fence.gates.find((g) => g.id === draggingGate.id)
+      if (!movingGate) return
+      const rawU = uv.u - draggingGate.grabU
+      const snappedU = Math.round(rawU * 20) / 20
+      const testGates = wall.fence.gates.map((g) => (g.id === movingGate.id ? { ...g, u: snappedU } : g))
+      if (!gatesProblem(testGates, frame.length)) {
+        gateDrag = { ...draggingGate, u: snappedU, moved: draggingGate.moved || Math.abs(snappedU - draggingGate.originU) > 0.01 }
+      }
+      return
+    }
+
     const current = drag
     if (!current || !frame) return
     const moving = wall.openings.find((opening) => opening.id === current.id)
@@ -1185,6 +1229,13 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   }
 
   function onViewportPointerUp(event: PointerEvent) {
+    const movingGate = gateDrag
+    if (movingGate && floor && wall) {
+      if (movingGate.moved) {
+        documentStore.updateGate(floor.id, wall.id, movingGate.id, { u: movingGate.u })
+      }
+      gateDrag = null
+    }
     const movingFitting = fixtureDrag
     if (movingFitting && floor && wall) {
       const item = wallFittings.find((entry) => entry.fixture.id === movingFitting.id)
