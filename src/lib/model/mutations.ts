@@ -9,6 +9,7 @@ import {
   maxOpeningWidth,
   openingWidthLimits,
   placeOpeningU,
+  swingsOpen,
 } from './openings'
 import { pointInPlot, segmentAllowedInPlot, wallSegmentInPlot } from './plot-check'
 import { carportProblem } from './carports'
@@ -931,6 +932,29 @@ export function updateOpening(
           openings: w.openings.map((o) => (o.id === openingId ? updated : o)),
         }
       : w,
+  )
+  return ok(replaceFloor(document, { ...floor, walls }))
+}
+
+// Which end of a door its leaf hangs from, and which side of the wall it opens to.
+export function setDoorSwing(
+  document: Document,
+  floorId: string,
+  wallId: string,
+  openingId: string,
+  patch: Partial<Pick<Opening, 'hinge' | 'swing'>>,
+): MutationResult {
+  const floor = getFloor(document, floorId)
+  if (!floor) return fail(document, 'floor not found')
+  const wall = floor.walls.find((w) => w.id === wallId)
+  if (!wall) return fail(document, 'wall not found')
+  const existing = wall.openings.find((o) => o.id === openingId)
+  if (!existing) return fail(document, 'opening not found')
+  if (!swingsOpen(existing.kind)) return fail(document, 'only a hinged door swings')
+  if (patch.hinge !== undefined && patch.hinge !== 'start' && patch.hinge !== 'end') return fail(document, 'unknown hinge')
+  if (patch.swing !== undefined && patch.swing !== 1 && patch.swing !== -1) return fail(document, 'unknown swing')
+  const walls = floor.walls.map((w) =>
+    w.id === wallId ? { ...w, openings: w.openings.map((o) => (o.id === openingId ? { ...o, ...patch } : o)) } : w,
   )
   return ok(replaceFloor(document, { ...floor, walls }))
 }

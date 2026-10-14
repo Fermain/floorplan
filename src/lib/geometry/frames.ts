@@ -61,6 +61,12 @@ function paneLimit(kind: OpeningKind | undefined): number {
   return kind === 'door' ? DOOR_PANEL_MAX : WINDOW_PANE_MAX
 }
 
+// How many leaves a hinged door of this width is hung as: one, or a pair meeting in the middle once it is too wide
+// for a single leaf, as Review draws it.
+export function doorLeafCount(kind: OpeningKind, width: number): number {
+  return panelCount(width - 2 * FRAME_SECTION, kind === 'internal-door' ? INTERNAL_LEAF_MAX : EXTERNAL_LEAF_MAX)
+}
+
 function panelCount(innerWidth: number, maxPane: number): number {
   let count = 1
   while (count < 12) {
