@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
 import { counterRing } from '../model/counters'
-import { addCorner, addCounter, addFixture, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
+import { addCorner, addCounter, addFixture, addOpening, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
 import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, countersOnWall, counterTotals } from './counters'
@@ -104,6 +104,25 @@ describe('counters', () => {
     // A counter being carried does not stand in its own way.
     const own = floor.counters![0]
     expect(counterFace(floor, { x: 4.6, z: 4.15 }, 0.45, { ignore: own.id })!.point.x).toBeCloseTo(4.6, 6)
+  })
+
+  it('stop clear of a doorway in their wall, and of a window that comes down below the worktop', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const south = floorOf(doc).walls.find((wall) => counterFace(floorOf(doc), { x: 6, z: 4.15 }, 0.45)!.wallId === wall.id)!
+    const start = floorOf(doc).corners.find((corner) => corner.id === south.startCornerId)!
+    // A door 1.5 m along the south wall from its start corner, 0.9 m wide.
+    const added = addOpening(doc, fid, south.id, 'internal-door', 1.5)
+    expect(added.ok).toBe(true)
+    doc = added.document
+    const door = floorOf(doc).walls.find((wall) => wall.id === south.id)!.openings[0]
+    // Where the door's sides are along the face, in x.
+    const along = (u: number) => start.x + (start.x < 7 ? u : -u)
+    const sides = [along(door.u), along(door.u + door.width)].sort((a, b) => a - b)
+    const face = counterFace(floorOf(doc), { x: 4.3, z: 4.15 }, 0.45)!
+    const run = counterAlongFace(face, { x: 9.5, z: 5 }, 0.6)
+    // Drawn from the west end toward the door, it stops 100 mm short of the doorway.
+    expect(run.x + run.length).toBeCloseTo(sides[0] - 0.1, 6)
   })
 
   it('stand free as an island drawn corner to corner', () => {

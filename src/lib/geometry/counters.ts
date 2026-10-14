@@ -14,6 +14,7 @@ import {
 import { cornerById } from '../model/geom'
 import { systemOf, wallThickness } from '../model/systems'
 import { fixtureFootprint, fixtureSpec } from '../model/fixtures'
+import { isFloorOpening } from '../model/openings'
 import type { Counter, CounterKind, Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
 
 type Point = { x: number; z: number }
@@ -158,8 +159,21 @@ function counterBlocks(floor: Floor, origin: Point, t: Point, into: Point, ignor
   return blocks
 }
 
+// Room left beside a doorway for its frame and architrave, so that a counter stops clear of the door.
+export const COUNTER_DOOR_CLEAR_M = 0.1
+
+// The stretches of a wall, as distances along it from its start corner, that its own openings take from a counter:
+// a door or other opening to the floor, with room for its architrave, and a window whose sill is below the worktop.
+function openingBlocks(wall: Wall): [number, number][] {
+  const top = counterKindSpec('base').height
+  return wall.openings.flatMap((opening): [number, number][] => {
+    if (isFloorOpening(opening.kind)) return [[opening.u - COUNTER_DOOR_CLEAR_M, opening.u + opening.width + COUNTER_DOOR_CLEAR_M]]
+    return opening.v < top - 1e-3 ? [[opening.u, opening.u + opening.width]] : []
+  })
+}
+
 // The face of a built wall nearest a point, within reach. The face is the side of the wall the point is on, and it
-// runs between the walls and counters standing across it, so a counter ends flush with the face of the wall at a
+// runs between the walls, counters and doorways standing across it, so a counter ends flush with the face of the wall at a
 // corner, or with the end of another counter, rather than running into it. A point within a hand's width of either
 // end, or of the side of a kitchen fitting, is pulled up to it, so that a counter can start flush there. A counter
 // being moved is left out, so it does not stand in its own way.
@@ -187,7 +201,7 @@ export function counterFace(floor: Floor, p: Point, reach: number, options: { sn
   if (!best) return null
   const { wall, a, t, n, length, half, side } = best
   const origin = { x: a.x + n.x * half * side, z: a.z + n.z * half * side }
-  const blocks = [...faceBlocks(floor, wall.id, origin, t), ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, options.ignore)]
+  const blocks = [...faceBlocks(floor, wall.id, origin, t), ...openingBlocks(wall), ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, options.ignore)]
   // The free stretch of face a point is in, between the nearest things standing across the face either side of it.
   const stretch = (u: number) => {
     if (u < -1e-6 || u > length + 1e-6 || blocks.some(([from, to]) => u > from + 1e-6 && u < to - 1e-6)) return null
