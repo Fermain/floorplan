@@ -83,6 +83,7 @@ export const DEFAULT_RATES: Record<string, number> = {
   'carport-steel': 180,
   'carport-roof:sheet': 260,
   'carport-roof:shade-cloth': 190,
+  'carport-roof:shade-cloth-dark': 210,
   'gas-valve': 220,
   'gas-coc': 1500,
   gully: 450,
