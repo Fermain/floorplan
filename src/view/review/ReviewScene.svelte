@@ -566,7 +566,7 @@
         key: level.key,
         floorId: level.floorId,
         datum: level.datum,
-        parts: buildCounterParts(level.items, level.datum + finishedFloor(floor), floor.fixtures ?? []),
+        parts: buildCounterParts(level.items, level.datum + finishedFloor(floor), floor.fixtures ?? [], level.datum + WALL_HEAD_M),
       })),
     )
     counterMeshes = counters

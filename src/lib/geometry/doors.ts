@@ -18,7 +18,6 @@ export type FaceInfo = { outside: boolean; roomType?: RoomType }
 export function roomDoorPriority(type: RoomType | undefined): number {
   if (!type) return 1
   switch (type) {
-    case 'toilet': return 10
     case 'bathroom': return 9
     case 'store': return 8
     case 'laundry': return 7
@@ -29,6 +28,7 @@ export function roomDoorPriority(type: RoomType | undefined): number {
     case 'living': return 2
     case 'other': return 1
     case 'passage': return 0
+    case 'toilet': return -0.5 // A small toilet door opens outward so a fallen person does not block it.
     case 'deck': return -1
     case 'garage': return 0
   }

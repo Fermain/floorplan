@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
-import { counterRing } from '../model/counters'
+import { counterRing, cupboardBays } from '../model/counters'
 import { addCorner, addCounter, addFixture, addOpening, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
@@ -389,7 +389,30 @@ describe('counters', () => {
     expect(parts.some((p) => p.colour === '#4a4a4f')).toBe(true)
     expect(parts.some((p) => p.colour === '#c4beaf')).toBe(true)
 
+    // With finished floor 150 mm above slab datum, cupboard caps at ceiling (2.4 m) rather than poking through
+    const partsWithCeiling = buildCounterParts(floorOf(doc).counters!, 0.15, [], 2.4)
+    for (const part of partsWithCeiling) {
+      part.geometry.computeBoundingBox()
+      expect(part.geometry.boundingBox!.max.y).toBeLessThanOrEqual(2.4 + 1e-6)
+    }
+
+    // A 1.95 m cupboard has 3 bays (~600 mm) in both Plan and Review
+    const bays = cupboardBays({ x: 0, z: 0, dx: 1, dz: 0, length: 1.95, depth: 0.6 })
+    expect(bays.length).toBe(3)
+
     // Found in countersOnWall
     expect(countersOnWall(floorOf(doc), south.id, 1).length).toBe(1)
+
+    // Deep cupboards check clearance up to their full depth
+    // Add an island 0.8 m out from the south wall face
+    const islandData: Omit<Counter, 'id'> = { x: 5, z: backZ + 0.8, dx: 1, dz: 0, length: 1.5, depth: 0.6, kind: 'island', top: 'laminate' }
+    const docWithIsland = addCounter(doc, fid, islandData).document
+    // Standard 600 mm base counter face does not include the island in blocks:
+    const normalFace = counterFace(floorOf(docWithIsland), { x: 5.5, z: backZ + 0.1 }, 0.45, { kind: 'base', depth: 0.6 })!
+    expect(normalFace.before + normalFace.after).toBeGreaterThan(1.5)
+    // Deep 1.2 m pantry cupboard DOES include the island in blocks:
+    const deepFace = counterFace(floorOf(docWithIsland), { x: 5.5, z: backZ + 0.1 }, 0.45, { kind: 'cupboard', depth: 1.2 })
+    // The island standing at z = backZ + 0.8 intersects the 1.2m deep cupboard zone
+    expect(deepFace === null || deepFace.before + deepFace.after < normalFace.before + normalFace.after).toBe(true)
   })
 })

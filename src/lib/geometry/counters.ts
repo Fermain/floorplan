@@ -5,6 +5,7 @@ import {
   counterRing,
   counterUnder,
   counterTopSpec,
+  cupboardBays,
   WALL_UNIT_BOTTOM_M,
   WALL_UNIT_DEPTH_M,
   WALL_UNIT_TOP_M,
@@ -145,14 +146,13 @@ function faceBlocks(floor: Floor, wallId: string, origin: Point, t: Point): [num
 
 // The stretches of a face, as distances along the wall from its start corner, that counters already stand on: those
 // along the face itself, and one along the next wall that fills the corner of an L.
-function counterBlocks(floor: Floor, origin: Point, t: Point, into: Point, ignore?: string): [number, number][] {
-  const deep = counterKindSpec('base').depth
+function counterBlocks(floor: Floor, origin: Point, t: Point, into: Point, depth: number, ignore?: string): [number, number][] {
   const blocks: [number, number][] = []
   for (const counter of floor.counters ?? []) {
     if (counter.id === ignore) continue
     const ring = counterRing(counter)
     const across = ring.map((q) => (q.x - origin.x) * into.x + (q.z - origin.z) * into.z)
-    if (Math.max(...across) < 1e-3 || Math.min(...across) > deep - 1e-3) continue
+    if (Math.max(...across) < 1e-3 || Math.min(...across) > depth - 1e-3) continue
     const along = ring.map((q) => (q.x - origin.x) * t.x + (q.z - origin.z) * t.z)
     blocks.push([Math.min(...along), Math.max(...along)])
   }
@@ -177,7 +177,7 @@ function openingBlocks(wall: Wall, kind: CounterKind = 'base'): [number, number]
 // corner, or with the end of another counter, rather than running into it. A point within a hand's width of either
 // end, or of the side of a kitchen fitting, is pulled up to it, so that a counter can start flush there. A counter
 // being moved is left out, so it does not stand in its own way.
-export function counterFace(floor: Floor, p: Point, reach: number, options: { snap?: number; ignore?: string; kind?: CounterKind } = {}): CounterFace | null {
+export function counterFace(floor: Floor, p: Point, reach: number, options: { snap?: number; ignore?: string; kind?: CounterKind; depth?: number } = {}): CounterFace | null {
   const snap = options.snap ?? COUNTER_START_SNAP_M
   let best: { wall: Wall; a: Point; t: Point; n: Point; length: number; half: number; side: 1 | -1; along: number; d: number } | null = null
   for (const wall of floor.walls) {
@@ -201,10 +201,11 @@ export function counterFace(floor: Floor, p: Point, reach: number, options: { sn
   if (!best) return null
   const { wall, a, t, n, length, half, side } = best
   const origin = { x: a.x + n.x * half * side, z: a.z + n.z * half * side }
+  const deep = options.depth ?? (options.kind ? counterKindSpec(options.kind).depth : counterKindSpec('base').depth)
   const blocks = [
     ...faceBlocks(floor, wall.id, origin, t),
     ...openingBlocks(wall, options.kind ?? 'base'),
-    ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, options.ignore),
+    ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, deep, options.ignore),
   ]
   // The free stretch of face a point is in, between the nearest things standing across the face either side of it.
   const stretch = (u: number) => {
@@ -300,7 +301,7 @@ export function counterAlongFace(face: CounterFace, p: Point, depth: number, sna
 // A counter against a wall, picked up and carried: it goes to the wall face nearest the pointer and slides along
 // it, keeping the point it was picked up by under the pointer, to the nearest 50 mm and no further than the wall.
 export function counterCarried(floor: Floor, counter: Counter, pointer: Point, grabAlong: number, reach: number): Pick<Counter, 'x' | 'z' | 'dx' | 'dz'> | null {
-  const face = counterFace(floor, pointer, reach, { ignore: counter.id, kind: counter.kind })
+  const face = counterFace(floor, pointer, reach, { ignore: counter.id, kind: counter.kind, depth: counter.depth })
   if (!face || face.before + face.after < counter.length - 1e-6) return null
   // In 50 mm steps from the end of the wall, so that it lands a round distance from the corner.
   const start = Math.max(-face.before, Math.min(face.after - counter.length, step(face.before - grabAlong) - face.before))
@@ -429,16 +430,17 @@ const HANDLE_COLOUR = '#4a4a4f'
 
 // The counters of a storey for Review, standing on its floor: a plinth, the cupboards, the worktop over them, and
 // any cupboards on the wall above.
-export function buildCounterParts(counters: Counter[], floorY: number, fixtures: Fixture[] = []): CounterPart[] {
+export function buildCounterParts(counters: Counter[], floorY: number, fixtures: Fixture[] = [], ceilingY?: number): CounterPart[] {
   const groups = new Map<string, BufferGeometry[]>()
   const push = (colour: string, geometries: BufferGeometry[]) => groups.set(colour, [...(groups.get(colour) ?? []), ...geometries])
   for (const counter of counters) {
     const { height } = counterKindSpec(counter.kind)
-    const top = floorY + height
+    const top = counter.kind === 'cupboard' && ceilingY !== undefined ? Math.min(floorY + height, ceilingY) : floorY + height
     if (counter.kind === 'cupboard') {
       push(PLINTH_COLOUR, slab(counter, 0, counter.depth - 0.03, floorY, floorY + PLINTH_M))
       push(CARCASS_COLOUR, slab(counter, 0, counter.depth, floorY + PLINTH_M, top))
-      const numDoors = Math.max(1, Math.round(counter.length / 0.55))
+      const bays = cupboardBays(counter)
+      const numDoors = bays.length
       const doorWidth = counter.length / numDoors
       for (let i = 1; i < numDoors; i++) {
         const u = i * doorWidth

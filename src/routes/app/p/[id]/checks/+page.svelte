@@ -147,7 +147,7 @@
     { id: 'backup', title: 'Load shedding and solar', issues: powerList, empty: electrical.circuits.length === 0 ? 'No circuits yet' : null },
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
-    { id: 'kitchens', title: 'Kitchens', issues: kitchenList, empty: counterLength > 0 ? null : 'No counters yet' },
+    { id: 'joinery', title: 'Joinery', issues: kitchenList, empty: counterLength > 0 || joinery.units.cupboard > 0 ? null : 'No counters or cupboards yet' },
     { id: 'carports', title: 'Carports', issues: carportList, empty: (doc.carports ?? []).length > 0 ? null : 'None placed' },
     { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
     { id: 'walls', title: 'Wall finishes', issues: wallList, empty: hasWalls ? null : 'No walls yet' },
@@ -556,9 +556,9 @@
         {/if}
       </section>
 
-      <section aria-labelledby="checks-kitchens">
-        {@render heading('kitchens', 'Counters against the fittings that stand between them. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
-        {#if !folded.includes('kitchens')}
+      <section aria-labelledby="checks-joinery">
+        {@render heading('joinery', 'Counters, worktops and built-in cupboards. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
+        {#if !folded.includes('joinery')}
           {@render attend(kitchenList)}
           {#if counterLength > 0 || joinery.units.cupboard > 0}
             {@render facts([

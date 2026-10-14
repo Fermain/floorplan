@@ -1,6 +1,7 @@
 import { BLOCK_HEIGHT, BLOCK_THICKNESS } from '../plot/fixture'
 import { leafOffset, systemOf } from '../model/systems'
 import type { Floor, OpeningKind, Wall } from '../model/types'
+import { outsideFaces } from './finishes'
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
@@ -43,13 +44,17 @@ export type FrameMemberSpan = {
   y1: number
 }
 
+export type FrameHardwareSpan = FrameMemberSpan & {
+  type?: 'hinge' | 'handle'
+}
+
 export type OpeningFrameLayout = {
   outer: FrameMemberSpan
   inner: FrameMemberSpan
   members: FrameMemberSpan[]
   glass: FrameMemberSpan[]
   panels: FrameMemberSpan[]
-  hardware?: FrameMemberSpan[]
+  hardware?: FrameHardwareSpan[]
 }
 
 type Vec2 = { x: number; z: number }
@@ -189,7 +194,7 @@ export function openingFrameLayout(opening: OpeningRect, courseHeight = BLOCK_HE
   ]
   const glass: FrameMemberSpan[] = []
   const panels: FrameMemberSpan[] = []
-  const hardware: FrameMemberSpan[] = []
+  const hardware: FrameHardwareSpan[] = []
   const bay = { u0: inner.u0, u1: inner.u1, y0: inner.y0, y1: inner.y1 }
   if (opening.kind === 'external-door' || opening.kind === 'internal-door') {
     const maxLeaf = opening.kind === 'internal-door' ? INTERNAL_LEAF_MAX : EXTERNAL_LEAF_MAX
@@ -205,30 +210,30 @@ export function openingFrameLayout(opening: OpeningRect, courseHeight = BLOCK_HE
       const hingeEnd = opening.hinge === 'end'
       const hingeU = hingeEnd ? inner.u1 : inner.u0
       hardware.push(
-        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
-        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
+        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30, type: 'hinge' },
+        { u0: hingeU - 0.015, u1: hingeU + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24, type: 'hinge' },
       )
       const handleU = hingeEnd ? inner.u0 + DOOR_STILE * 0.45 : inner.u1 - DOOR_STILE * 0.45
       const handleDir = hingeEnd ? 1 : -1
       hardware.push(
-        { u0: handleU - 0.018, u1: handleU + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
-        { u0: Math.min(handleU, handleU + handleDir * 0.09), u1: Math.max(handleU, handleU + handleDir * 0.09), y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
+        { u0: handleU - 0.018, u1: handleU + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07, type: 'handle' },
+        { u0: Math.min(handleU, handleU + handleDir * 0.09), u1: Math.max(handleU, handleU + handleDir * 0.09), y0: inner.y0 + 1.00, y1: inner.y0 + 1.03, type: 'handle' },
       )
     } else if (leafCount === 2) {
       hardware.push(
-        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
-        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
-        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30 },
-        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24 },
+        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30, type: 'hinge' },
+        { u0: inner.u0 - 0.015, u1: inner.u0 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24, type: 'hinge' },
+        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y0 + 0.22, y1: inner.y0 + 0.30, type: 'hinge' },
+        { u0: inner.u1 - 0.015, u1: inner.u1 + 0.015, y0: inner.y1 - 0.32, y1: inner.y1 - 0.24, type: 'hinge' },
       )
       const mid = (inner.u0 + inner.u1) / 2
       const leftH = mid - DOOR_STILE * 0.45
       const rightH = mid + DOOR_STILE * 0.45
       hardware.push(
-        { u0: leftH - 0.018, u1: leftH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
-        { u0: leftH - 0.09, u1: leftH, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
-        { u0: rightH - 0.018, u1: rightH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07 },
-        { u0: rightH, u1: rightH + 0.09, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03 },
+        { u0: leftH - 0.018, u1: leftH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07, type: 'handle' },
+        { u0: leftH - 0.09, u1: leftH, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03, type: 'handle' },
+        { u0: rightH - 0.018, u1: rightH + 0.018, y0: inner.y0 + 0.93, y1: inner.y0 + 1.07, type: 'handle' },
+        { u0: rightH, u1: rightH + 0.09, y0: inner.y0 + 1.00, y1: inner.y0 + 1.03, type: 'handle' },
       )
     }
   } else if (opening.kind === 'garage') {
@@ -357,9 +362,11 @@ export function buildOpeningFrameGeometry(
   const unitBox = new BoxGeometry(1, 1, 1)
   const matrix = new Matrix4()
   const parts: BufferGeometry[] = []
+  const isOutside = outsideFaces(floor)
   for (const opening of openings) {
     const layout = openingFrameLayout(opening, system.courseHeight)
     if (!layout) continue
+    const swingSide = opening.swing ?? (isOutside(wall, 1) && !isOutside(wall, -1) ? -1 : 1)
     for (const member of layout.members) {
       const visible = clipToWallBottom(member, bottomSamples)
       if (!visible) continue
@@ -380,19 +387,50 @@ export function buildOpeningFrameGeometry(
     for (const hw of layout.hardware ?? []) {
       const visible = clipToWallBottom(hw, bottomSamples)
       if (!visible) continue
-      placeBox(
-        wallFrame,
-        visible.u0,
-        visible.u1,
-        visible.y0,
-        visible.y1,
-        along,
-        system.leafThickness + 0.02,
-        0,
-        unitBox,
-        matrix,
-        parts,
-      )
+      if (hw.type === 'hinge') {
+        const hingeDepth = 0.015
+        placeBox(
+          wallFrame,
+          visible.u0,
+          visible.u1,
+          visible.y0,
+          visible.y1,
+          along,
+          hingeDepth,
+          swingSide * (system.leafThickness / 2 + hingeDepth / 2),
+          unitBox,
+          matrix,
+          parts,
+        )
+      } else if (hw.type === 'handle') {
+        placeBox(
+          wallFrame,
+          visible.u0,
+          visible.u1,
+          visible.y0,
+          visible.y1,
+          along,
+          system.leafThickness + 0.12,
+          0,
+          unitBox,
+          matrix,
+          parts,
+        )
+      } else {
+        placeBox(
+          wallFrame,
+          visible.u0,
+          visible.u1,
+          visible.y0,
+          visible.y1,
+          along,
+          system.leafThickness + 0.02,
+          0,
+          unitBox,
+          matrix,
+          parts,
+        )
+      }
     }
   }
   return mergeParts(parts, unitBox)
