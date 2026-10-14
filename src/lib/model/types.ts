@@ -158,9 +158,12 @@ export type FixtureKind =
   | 'gas-geyser'
   | 'gas-cylinder'
   | 'air-brick'
+  | 'aircon-indoor'
+  | 'aircon-outdoor'
 
 export type BottleSize = 9 | 19 | 48
 export type TankLitres = 1000 | 2500 | 5000 | 10000
+export type AirconBtu = 9000 | 12000 | 18000 | 24000
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -177,6 +180,8 @@ export type Fixture = {
   cage?: boolean
   // Rainwater tanks only: how much the tank holds.
   litres?: TankLitres
+  // Air conditioners only: cooling capacity in BTU/h.
+  btu?: AirconBtu
   // Stoves only: a hob set into a worktop with an oven under it, rather than a stove standing in a gap.
   builtIn?: boolean
 }

@@ -6,15 +6,16 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres, AirconBtu } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
+import { AIRCON_BTUS, AIRCON_SIZES, BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
+import { airconLayout } from '../geometry/aircon'
 import { gasLayout } from '../geometry/gas'
 import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
@@ -42,7 +43,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -61,7 +62,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -427,8 +428,8 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    // Gas bottles and rainwater tanks are counted below, by size.
-    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank') continue
+    // Gas bottles, rainwater tanks and air conditioners are counted below, by size.
+    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank' || spec.id === 'aircon-indoor' || spec.id === 'aircon-outdoor') continue
     drafts.push({
       id: `fixture:${spec.id}`,
       group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : spec.trade === 'building' ? 'Masonry' : 'Plumbing',
@@ -643,6 +644,63 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'gas-pipe', group: 'Gas', label: 'Copper gas pipe 15 mm', note: 'From the bottles round the outside walls to each appliance, plus 10%', unit: 'm', quantity: Math.ceil(gas.length * 1.1), rateKey: 'gas-pipe' })
     drafts.push({ id: 'gas-valve', group: 'Gas', label: 'Gas isolating valves', note: 'One at each appliance', unit: 'each', quantity: gas.runs.length, rateKey: 'gas-valve' })
     drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
+  }
+
+  const aircon = airconLayout(doc)
+  const indoorCounts = new Map<AirconBtu, number>()
+  const outdoorCounts = new Map<AirconBtu, number>()
+  for (const item of aircon.indoors) indoorCounts.set(item.btu, (indoorCounts.get(item.btu) ?? 0) + 1)
+  for (const item of aircon.outdoors) outdoorCounts.set(item.btu, (outdoorCounts.get(item.btu) ?? 0) + 1)
+
+  for (const btu of AIRCON_BTUS) {
+    const indoorCount = indoorCounts.get(btu)
+    if (indoorCount) {
+      drafts.push({
+        id: `aircon-indoor:${btu}`,
+        group: 'Air conditioning',
+        label: `Indoor aircon ${btu.toLocaleString('en-ZA')} BTU`,
+        note: `High-wall split unit (cools up to ${AIRCON_SIZES[btu].indoor.m2Max} m²)`,
+        unit: 'each',
+        quantity: indoorCount,
+        rateKey: `aircon-indoor:${btu}`,
+      })
+    }
+    const outdoorCount = outdoorCounts.get(btu)
+    if (outdoorCount) {
+      drafts.push({
+        id: `aircon-outdoor:${btu}`,
+        group: 'Air conditioning',
+        label: `Outdoor compressor ${btu.toLocaleString('en-ZA')} BTU`,
+        note: 'Outdoor condenser unit on wall brackets',
+        unit: 'each',
+        quantity: outdoorCount,
+        rateKey: `aircon-outdoor:${btu}`,
+      })
+    }
+  }
+
+  if (aircon.outdoors.length > 0) {
+    drafts.push({
+      id: 'aircon-isolator',
+      group: 'Air conditioning',
+      label: 'Weatherproof isolator switch 20 A',
+      note: 'Beside each outdoor compressor unit (SANS 10142-1)',
+      unit: 'each',
+      quantity: aircon.outdoors.length,
+      rateKey: 'aircon-isolator',
+    })
+  }
+
+  if (aircon.totalPipeLength > 0) {
+    drafts.push({
+      id: 'aircon-pipe',
+      group: 'Air conditioning',
+      label: 'Insulated refrigerant copper pipe pair',
+      note: 'Between indoor and outdoor units with interconnecting cable, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(aircon.totalPipeLength * 1.1),
+      rateKey: 'aircon-pipe',
+    })
   }
 
   // Paving and the apron: the surface laid, by area; the layers under it, by volume; the edging, by length.

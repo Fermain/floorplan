@@ -11,6 +11,7 @@
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
   import { gasLayout } from '$lib/geometry/gas'
+  import { airconIssues, airconLayout } from '$lib/geometry/aircon'
   import { finishIssues } from '$lib/geometry/finishes'
   import { counterIssues, counterTotals } from '$lib/geometry/counters'
   import { carportIssues } from '$lib/geometry/carports'
@@ -138,6 +139,9 @@
     }
   })
   const hasGas = $derived(gas.appliances.length > 0 || gas.cylinders.length > 0)
+  const aircon = $derived(airconLayout(doc))
+  const airconList = $derived(airconIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
+  const hasAircon = $derived(aircon.indoors.length > 0 || aircon.outdoors.length > 0)
   const hasWalls = $derived(doc.building.floors.some((floor) => floor.walls.some((wall) => wall.skin !== 'logical')))
 
   // The sections down the page, each with what it has to attend to, or why it has nothing to show yet.
@@ -147,6 +151,7 @@
     { id: 'backup', title: 'Load shedding and solar', issues: powerList, empty: electrical.circuits.length === 0 ? 'No circuits yet' : null },
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
+    { id: 'aircon', title: 'Air conditioning', issues: airconList, empty: hasAircon ? null : 'No aircons placed' },
     { id: 'joinery', title: 'Joinery', issues: kitchenList, empty: counterLength > 0 || joinery.units.cupboard > 0 ? null : 'No counters or cupboards yet' },
     { id: 'carports', title: 'Carports', issues: carportList, empty: (doc.carports ?? []).length > 0 ? null : 'None placed' },
     { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
@@ -263,6 +268,29 @@
           ? gas.cylinders.map((item) => `${bottleSetup(item.fixture).count} × ${bottleSetup(item.fixture).kg} kg`).join(', ')
           : '–',
       note: 'Two or more on a changeover regulator, so one can be swapped while the other runs',
+    },
+  ])
+
+  const airconFacts = $derived<Fact[]>([
+    {
+      label: 'Split units',
+      value: `${aircon.indoors.length} indoor, ${aircon.outdoors.length} outdoor`,
+      note: `${aircon.pairs.filter((p) => p.direct).length} back-to-back, ${aircon.pairs.filter((p) => !p.direct).length} piped over ceiling`,
+    },
+    {
+      label: 'Cooling capacity',
+      value: aircon.totalCoolingBtu > 0 ? `${aircon.totalCoolingBtu.toLocaleString('en-ZA')} BTU (${aircon.totalCoolingKw} kW)` : '–',
+      note: 'Rated heat pump / cooling capacity across all indoor units',
+    },
+    {
+      label: 'Refrigerant pipe',
+      value: aircon.totalPipeLength > 0 ? `${number.format(aircon.totalPipeLength)} m` : '–',
+      note: 'Insulated copper pair with interconnecting control cable',
+    },
+    {
+      label: 'Electrical circuits',
+      value: aircon.outdoors.length > 0 ? `${aircon.outdoors.length} × 20 A` : '–',
+      note: 'Dedicated circuits from the distribution board with outdoor isolator switches',
     },
   ])
 
@@ -552,6 +580,18 @@
             {@render facts(gasFacts)}
           {:else}
             <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place a gas stove, a gas geyser or bottles with the Fittings tool and the gas run appears here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-aircon">
+        {@render heading('aircon', 'Split-unit air conditioners: indoor high-wall units paired with outdoor compressor units, with insulated copper refrigerant pipes and dedicated 20 A electrical circuits.')}
+        {#if !folded.includes('aircon')}
+          {@render attend(airconList)}
+          {#if hasAircon}
+            {@render facts(airconFacts)}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place an indoor aircon unit and outdoor compressor with the Fittings tool and the installation appears here.</p>
           {/if}
         {/if}
       </section>

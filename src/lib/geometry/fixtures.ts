@@ -49,7 +49,7 @@ function floorSupportDatum(doc: Document, floor: Floor): number {
 }
 
 // The level patch of ground a floor-standing outdoor fitting needs, in plan.
-export function fixturePadRing(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): Ring {
+export function fixturePadRing(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu'>): Ring {
   if (fixture.kind === 'water-tank') {
     const depth = fixtureSize(fixture).depth
     const { side } = tankSlab(fixtureSize(fixture).width)
@@ -103,7 +103,7 @@ function maxGradeInRing(field: Document['heightfield'], ring: Ring): number {
 
 // World height of the leveled pad under an outdoor floor fitting: the high point of the natural ground
 // under its footprint, and at least the building pad when it stands beside a leveled wall.
-export function fixturePadWorldDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+export function fixturePadWorldDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu'>): number {
   const ring = fixturePadRing(fixture)
   const natural = maxGradeInRing(doc.heightfield, ring)
   const pad = groundPad(doc)
@@ -134,7 +134,7 @@ export function fixturePads(doc: Document): LevelPad[] {
 }
 
 // How far above the ground floor's structural datum the underside of a fitting stands.
-export function fixtureStandAboveDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): number {
+export function fixtureStandAboveDatum(doc: Document, floor: Floor, fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu'>): number {
   if (!standsOnGrade(floor, fixture)) return finishedFloor(floor)
   return fixturePadWorldDatum(doc, floor, fixture) - floorWorldDatum(floor.datumHeight, floorSupportDatum(doc, floor))
 }
@@ -146,7 +146,7 @@ export function siteField(doc: Document): Document['heightfield'] {
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
-export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn'>>
+export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn' | 'btu'>>
 
 function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: FixtureSetup = {}): Omit<Fixture, 'id'> {
   const reach = fixtureSize({ kind, ...setup }).depth / 2 + FACE_GAP_M
@@ -744,6 +744,34 @@ function pieces(fixture: Fixture, counter: Counter | null = null): Piece[] {
       // A clay face with a grid of dark slots through it.
       const slots = [-0.075, -0.025, 0.025, 0.075].flatMap((along) => [h * 0.22, h * 0.58].map((y) => box(0.03, 0.004, h * 0.22, along, d + 0.002, y, VENT_SLOT)))
       return [box(w, d, h, 0, d / 2, 0, TERRACOTTA), ...slots]
+    }
+    case 'aircon-indoor': {
+      // High-wall split unit with bottom airflow vane, top intake grille and status LED.
+      return [
+        box(w, d, h, 0, d / 2, 0, APPLIANCE),
+        box(w * 0.88, 0.015, 0.035, 0, d - 0.005, 0.025, APPLIANCE_DARK),
+        box(w * 0.86, 0.02, 0.008, 0, d + 0.005, 0.04, BRUSHED),
+        box(w * 0.82, d * 0.65, 0.006, 0, d * 0.45, h - 0.003, APPLIANCE_DARK),
+        box(0.04, 0.006, 0.018, w * 0.32, d + 0.002, h * 0.45, GLOW),
+      ]
+    }
+    case 'aircon-outdoor': {
+      // Condenser box with circular fan grille, hub, service compartment and wall mounting brackets.
+      const fanX = -w * 0.12
+      const fanY = h * 0.5
+      return [
+        box(w, d, h, 0, d / 2, 0, APPLIANCE),
+        puck(h * 0.38, 0.012, fanX, d + 0.006, fanY, APPLIANCE_DARK, 24),
+        puck(0.05, 0.018, fanX, d + 0.008, fanY, BRUSHED, 16),
+        box(h * 0.72, 0.01, 0.01, fanX, d + 0.007, fanY, BRUSHED),
+        box(0.01, 0.01, h * 0.72, fanX, d + 0.007, fanY, BRUSHED),
+        box(w * 0.22, 0.012, h * 0.75, w * 0.34, d + 0.005, h * 0.12, BRUSHED),
+        // Wall mounting brackets underneath
+        box(0.04, d * 1.15, 0.035, -w * 0.32, d * 0.55, -0.035, BRUSHED),
+        box(0.04, d * 1.15, 0.035, w * 0.32, d * 0.55, -0.035, BRUSHED),
+        box(0.04, 0.03, 0.3, -w * 0.32, 0.015, -0.3, BRUSHED),
+        box(0.04, 0.03, 0.3, w * 0.32, 0.015, -0.3, BRUSHED),
+      ]
     }
     default:
       return [box(w, d, h, 0, d / 2, 0, PLATE)]

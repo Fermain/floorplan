@@ -98,6 +98,18 @@
     {#each [-0.055, 0, 0.055] as x (x)}
       <line x1={x} y1={-d / 2} x2={x} y2={0.06 - d / 2} />
     {/each}
+  {:else if fixture.kind === 'aircon-indoor'}
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />
+    <line x1={-w / 2 + 0.04} y1={d / 2 - 0.04} x2={w / 2 - 0.04} y2={d / 2 - 0.04} />
+    <path d="M {-w * 0.22} {d / 2 - 0.04} L {-w * 0.16} {d / 2 + 0.04} M {w * 0.16} {d / 2 - 0.04} L {w * 0.22} {d / 2 + 0.04}" />
+  {:else if fixture.kind === 'aircon-outdoor'}
+    {@const fanR = Math.min(d * 0.44, 0.16)}
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} class="fill" />
+    <circle cx={-w * 0.14} cy={0} r={fanR} />
+    <circle cx={-w * 0.14} cy={0} r={fanR * 0.35} class="solid" />
+    <line x1={-w * 0.14 - fanR} y1={0} x2={-w * 0.14 + fanR} y2={0} />
+    <line x1={-w * 0.14} y1={-fanR} x2={-w * 0.14} y2={fanR} />
+    <line x1={w * 0.2} y1={-d / 2} x2={w * 0.2} y2={d / 2} />
   {/if}
 </g>
 
@@ -116,6 +128,9 @@
   }
   .fixture.gas {
     --ink: #a21caf;
+  }
+  .fixture.building {
+    --ink: #0f766e;
   }
   .fixture.invalid {
     --ink: #b91c1c;

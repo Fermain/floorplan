@@ -2142,7 +2142,7 @@
   // The size the next fitting will have: what the ghost shows, which may be the indoor default.
   const placeSize = $derived.by(() => {
     const shown = fixtureGhost?.placement.fixture
-    const setup = shown ? { bottleKg: shown.bottleKg, litres: shown.litres, ...placeSizes[fixtureKind] } : placeSizes[fixtureKind]
+    const setup = shown ? { bottleKg: shown.bottleKg, litres: shown.litres, btu: shown.btu, ...placeSizes[fixtureKind] } : placeSizes[fixtureKind]
     const name = sizeName(fixtureKind, setup)
     return name ? { name, setup: setup ?? {} } : null
   })
