@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BUILDING_TOOLS, isToolInScope, SITE_TOOLS, scopeForTool } from './scope'
+import { BUILDING_TOOLS, isToolInScope, isToolInRoomFocus, ROOM_TOOLS, SITE_TOOLS, scopeForTool } from './scope'
 
 describe('plan scope partitioning', () => {
   it('partitions tools into building and site scopes', () => {
@@ -30,6 +30,16 @@ describe('plan scope partitioning', () => {
     expect(SITE_TOOLS).not.toContain('draw-fixture')
   })
 
+  it('defines room focus interior tools', () => {
+    expect(ROOM_TOOLS).toEqual(['select', 'draw-counter', 'draw-fixture'])
+    expect(isToolInRoomFocus('select')).toBe(true)
+    expect(isToolInRoomFocus('draw-counter')).toBe(true)
+    expect(isToolInRoomFocus('draw-fixture')).toBe(true)
+    expect(isToolInRoomFocus('draw-double')).toBe(false)
+    expect(isToolInRoomFocus('draw-stair')).toBe(false)
+    expect(isToolInRoomFocus('draw-paving')).toBe(false)
+  })
+
   it('verifies tool presence in scope', () => {
     expect(isToolInScope('draw-double', 'building')).toBe(true)
     expect(isToolInScope('draw-double', 'site')).toBe(false)
@@ -53,3 +63,4 @@ describe('plan scope partitioning', () => {
     expect(scopeForTool('select')).toBeNull()
   })
 })
+
