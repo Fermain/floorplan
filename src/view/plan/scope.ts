@@ -31,11 +31,22 @@ export const SITE_TOOLS: readonly Tool[] = [
   'draw-retaining',
 ]
 
+export const ROOM_TOOLS: readonly Tool[] = [
+  'select',
+  'draw-counter',
+  'draw-fixture',
+]
+
 export function isToolInScope(tool: Tool, scope: PlanScope): boolean {
   return scope === 'building' ? BUILDING_TOOLS.includes(tool) : SITE_TOOLS.includes(tool)
+}
+
+export function isToolInRoomFocus(tool: Tool): boolean {
+  return ROOM_TOOLS.includes(tool)
 }
 
 export function scopeForTool(tool: Tool): PlanScope | null {
   if (tool === 'select') return null
   return SITE_TOOLS.includes(tool) ? 'site' : 'building'
 }
+

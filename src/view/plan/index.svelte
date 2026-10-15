@@ -158,6 +158,7 @@
     type Tool,
     type PlanScope,
     isToolInScope,
+    isToolInRoomFocus,
     scopeForTool,
   } from './scope'
 
@@ -948,6 +949,22 @@
     if (!svg || !activeFloor) return
     const plan = clientToPlan(svg, event.clientX, event.clientY)
     if (!plan) return
+    if (focusedCells) {
+      const id = pickWall(activeFloor, plan.x, plan.z)
+      const wall = id && activeFloor ? activeFloor.walls.find((w) => w.id === id) : null
+      const isRoomWall = wall && focusedCells.cornerIds.has(wall.startCornerId) && focusedCells.cornerIds.has(wall.endCornerId)
+      if (isRoomWall && id) {
+        if (planScope !== 'building') switchScope('building')
+        chooseSelection({ wallId: id })
+        onFocus?.(id)
+        return
+      }
+      const inside = pointInsideRings(focusedCells.rings, plan.x, plan.z)
+      if (!inside) {
+        leaveRoom()
+        return
+      }
+    }
     const id = pickWall(activeFloor, plan.x, plan.z)
     if (id) {
       if (planScope !== 'building') switchScope('building')
@@ -1273,6 +1290,7 @@
   const NODE_DOT_M = 0.15
 
   function beginNodeDrag(floor: Floor, plan: { x: number; z: number }, event: PointerEvent): boolean {
+    if (focusedCells) return false
     const node = nearestCorner(floor.corners, plan.x, plan.z, NODE_HIT_M)
     if (!node || !svgEl) return false
     moveDrag = {
@@ -1448,7 +1466,7 @@
   }
 
   function trackNodeHover(floor: Floor, plan: { x: number; z: number }) {
-    if (tool !== 'select' || planScope !== 'building') {
+    if (focusedCells || tool !== 'select' || planScope !== 'building') {
       hoverNodeId = null
       return
     }
@@ -1564,6 +1582,7 @@
   }
 
   function onShiftKey(event: KeyboardEvent) {
+    if (focusedCells || planScope !== 'building') return
     if (event.key !== 'Shift' || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return
     if (typingTarget(event)) return
     toggleRectangle()
@@ -1577,6 +1596,7 @@
   function setTool(chosen: Tool) {
     // An example being previewed can be picked over but not drawn on.
     const next = documentStore.readOnly ? 'select' : chosen
+    if (focusedCells && !isToolInRoomFocus(next)) return
     const reqScope = scopeForTool(next)
     if (reqScope && reqScope !== planScope) {
       planScope = reqScope
@@ -1926,7 +1946,7 @@
   const turnRadius = $derived(ROTATE_HIT_M * turnScale)
 
   const rotateHandle = $derived.by(() => {
-    if (tool !== 'select' || planScope !== 'building' || !activeFloor || moveDrag) return null
+    if (focusedCells || tool !== 'select' || planScope !== 'building' || !activeFloor || moveDrag) return null
     const id = rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
     if (!id || connectedCornerIds(activeFloor, id).length < 2) return null
     const corner = cornerById(activeFloor.corners, id)
@@ -1956,7 +1976,7 @@
   })
 
   const hoveredCorner = $derived.by(() => {
-    if (!activeFloor || planScope !== 'building') return undefined
+    if (focusedCells || !activeFloor || planScope !== 'building') return undefined
     if (tool === 'select') {
       const id = moveDrag?.nodeId ?? rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
       return id ? activeFloor.corners.find((corner) => corner.id === id) : undefined
@@ -2601,7 +2621,10 @@
     if (!focusedRoom) return null
     for (const entry of levelLayouts) {
       const found = entry.layout.spaces.find((resolved) => resolved.space.id === focusedRoom)
-      if (found) return { name: found.space.name, rings: found.cells.map((cell) => cell.ring) }
+      if (found) {
+        const cornerIds = new Set(found.cells.flatMap((cell) => cell.room.cornerIds))
+        return { name: found.space.name, rings: found.cells.map((cell) => cell.ring), cornerIds }
+      }
     }
     return null
   })
@@ -2624,16 +2647,23 @@
     zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
   }
 
-  // A kitchen is laid out with the counter tool in hand, and a bedroom or store with cupboards.
+  // A kitchen is laid out with the counter tool in hand, a bedroom or store with cupboards,
+  // a bathroom or WC with fittings, and other spaces with select.
   function layOutRoom(space: Space, rings: { x: number; z: number }[][]) {
     focusRoom(space.id, rings)
     chooseSelection({})
+    const nameLower = space.name.toLowerCase()
     if (space.type === 'kitchen') {
       counterKind = 'base'
       setTool('draw-counter')
-    } else if (space.type === 'bedroom' || space.type === 'store') {
+    } else if (space.type === 'bedroom' || space.type === 'store' || nameLower.includes('scullery') || nameLower.includes('pantry')) {
       counterKind = 'cupboard'
       setTool('draw-counter')
+    } else if (space.type === 'bathroom' || space.type === 'toilet' || nameLower.includes('ensuite') || nameLower.includes('wc')) {
+      fixtureKind = space.type === 'toilet' || nameLower.includes('wc') || nameLower.includes('toilet') ? 'wc' : 'basin'
+      setTool('draw-fixture')
+    } else {
+      setTool('select')
     }
   }
 
@@ -2658,6 +2688,8 @@
 
   function leaveRoom() {
     focusedRoom = null
+    chooseSelection({})
+    counterStart = null
     if (turnBeforeRoom !== null) setTurn(turnBeforeRoom)
     turnBeforeRoom = null
     fitView()
@@ -3142,55 +3174,12 @@
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
   <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3" class:hidden={documentStore.readOnly}>
-    <ToggleGroup.Root
-      type="single"
-      variant="outline"
-      size="sm"
-      value={planScope}
-      onValueChange={(next) => {
-        if (next) switchScope(next as PlanScope)
-      }}
-      aria-label="Scope"
-    >
-      <ToggleGroup.Item value="building" aria-label="Building Mode" title="Building Mode: walls, rooms, stairs, counters, fittings" class="max-sm:px-2">
-        <Home /><span class="hidden sm:inline">Building</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="site" aria-label="Site Mode" title="Site Mode: paving, beds, carports, retaining walls" class="max-sm:px-2">
-        <Trees /><span class="hidden sm:inline">Site</span>
-      </ToggleGroup.Item>
-    </ToggleGroup.Root>
-    <div class="h-4 w-px bg-border shrink-0"></div>
-    {#if planScope === 'building'}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={tool === 'draw-rect' ? 'draw-double' : tool}
-        onValueChange={(next) => {
-          if (next) setTool(next as Tool)
-        }}
-        aria-label="Building tools"
-      >
-        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-          <MousePointer2 /><span class="hidden sm:inline">Select</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
-          <BrickWall /><span class="hidden sm:inline">Wall</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
-          <SquareDashed /><span class="hidden sm:inline">Logical</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
-          <Footprints /><span class="hidden sm:inline">Stair</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
-          <ChefHat /><span class="hidden sm:inline">Counters</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
-          <Plug /><span class="hidden sm:inline">Fittings</span>
-        </ToggleGroup.Item>
-      </ToggleGroup.Root>
-    {:else}
+    {#if focusedCells}
+      <div class="flex items-center gap-1.5 text-xs font-medium px-1">
+        <span class="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Room</span>
+        <span class="font-semibold text-foreground truncate max-w-[120px] sm:max-w-none">{focusedCells.name}</span>
+      </div>
+      <div class="h-4 w-px bg-border shrink-0"></div>
       <ToggleGroup.Root
         type="single"
         variant="outline"
@@ -3199,29 +3188,99 @@
         onValueChange={(next) => {
           if (next) setTool(next as Tool)
         }}
-        aria-label="Site tools"
+        aria-label="Room interior tools"
       >
         <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
           <MousePointer2 /><span class="hidden sm:inline">Select</span>
         </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
-          <Grid2x2 /><span class="hidden sm:inline">Paving</span>
+        <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
+          <ChefHat /><span class="hidden sm:inline">Counters</span>
         </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
-          <Sprout /><span class="hidden sm:inline">Beds</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
-          <CarFront /><span class="hidden sm:inline">Carport</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
-          <Mountain /><span class="hidden sm:inline">Retaining</span>
+        <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
+          <Plug /><span class="hidden sm:inline">Fittings</span>
         </ToggleGroup.Item>
       </ToggleGroup.Root>
-    {/if}
-    {#if focusedCells}
-      <Button size="sm" variant="outline" title="Back to the whole plan" onclick={leaveRoom}>
-        <Maximize2 />{focusedCells.name}: whole plan
+      <div class="h-4 w-px bg-border shrink-0"></div>
+      <Button size="sm" variant="outline" title="Back to the whole plan (Esc)" onclick={leaveRoom} class="max-sm:px-2">
+        <Maximize2 /><span class="hidden sm:inline">Whole Plan (Esc)</span><span class="sm:hidden">Whole Plan</span>
       </Button>
+    {:else}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={planScope}
+        onValueChange={(next) => {
+          if (next) switchScope(next as PlanScope)
+        }}
+        aria-label="Scope"
+      >
+        <ToggleGroup.Item value="building" aria-label="Building Mode" title="Building Mode: walls, rooms, stairs, counters, fittings" class="max-sm:px-2">
+          <Home /><span class="hidden sm:inline">Building</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="site" aria-label="Site Mode" title="Site Mode: paving, beds, carports, retaining walls" class="max-sm:px-2">
+          <Trees /><span class="hidden sm:inline">Site</span>
+        </ToggleGroup.Item>
+      </ToggleGroup.Root>
+      <div class="h-4 w-px bg-border shrink-0"></div>
+      {#if planScope === 'building'}
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          size="sm"
+          value={tool === 'draw-rect' ? 'draw-double' : tool}
+          onValueChange={(next) => {
+            if (next) setTool(next as Tool)
+          }}
+          aria-label="Building tools"
+        >
+          <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
+            <MousePointer2 /><span class="hidden sm:inline">Select</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
+            <BrickWall /><span class="hidden sm:inline">Wall</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
+            <SquareDashed /><span class="hidden sm:inline">Logical</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
+            <Footprints /><span class="hidden sm:inline">Stair</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
+            <ChefHat /><span class="hidden sm:inline">Counters</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
+            <Plug /><span class="hidden sm:inline">Fittings</span>
+          </ToggleGroup.Item>
+        </ToggleGroup.Root>
+      {:else}
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          size="sm"
+          value={tool}
+          onValueChange={(next) => {
+            if (next) setTool(next as Tool)
+          }}
+          aria-label="Site tools"
+        >
+          <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
+            <MousePointer2 /><span class="hidden sm:inline">Select</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
+            <Grid2x2 /><span class="hidden sm:inline">Paving</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
+            <Sprout /><span class="hidden sm:inline">Beds</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
+            <CarFront /><span class="hidden sm:inline">Carport</span>
+          </ToggleGroup.Item>
+          <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
+            <Mountain /><span class="hidden sm:inline">Retaining</span>
+          </ToggleGroup.Item>
+        </ToggleGroup.Root>
+      {/if}
     {/if}
     {#if tool === 'draw-retaining'}
       <Select.Root type="single" value={retainingType} onValueChange={(next) => next && (retainingType = next as RetainingType)}>
@@ -4241,44 +4300,58 @@
     {#if focusedCells}
       <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
       <path
-        d="M -1000 -1000 H 2000 V 2000 H -1000 Z {focusedCells.rings.map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}"
+        d="M -10000 -10000 H 20000 V 20000 H -10000 Z {focusedCells.rings.map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}"
         fill="var(--background)"
-        fill-opacity="0.86"
+        fill-opacity="0.88"
         fill-rule="evenodd"
         pointer-events="none"
       />
+      {#each focusedCells.rings as ring, i (i)}
+        <polygon
+          points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+          fill="none"
+          stroke="#2563eb"
+          stroke-width={s(0.03)}
+          stroke-linejoin="round"
+          pointer-events="none"
+        />
+      {/each}
     {/if}
       <g class="room-labels" pointer-events="none" class:hidden={planScope === 'site'}>
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
-            {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
-            <text
-              transform={upright(at.x, at.z)}
-              y={-labelSize * 0.35}
-              font-size={labelSize}
-              text-anchor="middle"
-              class="room-name"
-              class:short={shortSpaceIds.has(resolved.space.id)}
-            >
-              {resolved.space.name}
-            </text>
-            <text
-              transform={upright(at.x, at.z)}
-              y={labelSize * 0.8}
-              font-size={labelSize * 0.8}
-              text-anchor="middle"
-              class="room-area"
-              class:short={shortSpaceIds.has(resolved.space.id)}
-            >
-              {areaFormat.format(resolved.area)} m²{shortSpaceIds.has(resolved.space.id) ? ' · check' : ''}
-            </text>
+            {#if !focusedRoom || resolved.space.id === focusedRoom}
+              {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
+              <text
+                transform={upright(at.x, at.z)}
+                y={-labelSize * 0.35}
+                font-size={labelSize}
+                text-anchor="middle"
+                class="room-name"
+                class:short={shortSpaceIds.has(resolved.space.id)}
+              >
+                {resolved.space.name}
+              </text>
+              <text
+                transform={upright(at.x, at.z)}
+                y={labelSize * 0.8}
+                font-size={labelSize * 0.8}
+                text-anchor="middle"
+                class="room-area"
+                class:short={shortSpaceIds.has(resolved.space.id)}
+              >
+                {areaFormat.format(resolved.area)} m²{shortSpaceIds.has(resolved.space.id) ? ' · check' : ''}
+              </text>
+            {/if}
           {/each}
-          {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
-            {@const at = ringLabelPoint(cell.net)}
-            <text transform={upright(at.x, at.z)} y={labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
-              {areaFormat.format(cell.netArea)} m²
-            </text>
-          {/each}
+          {#if !focusedRoom}
+            {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
+              {@const at = ringLabelPoint(cell.net)}
+              <text transform={upright(at.x, at.z)} y={labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
+                {areaFormat.format(cell.netArea)} m²
+              </text>
+            {/each}
+          {/if}
         {/each}
       </g>
       {#each logicalWalls as wall (wall.id)}
@@ -4483,15 +4556,17 @@
           </text>
         {/if}
       {/if}
-      {#each displayFloor.corners as corner (corner.id)}
-        <circle
-          cx={corner.x}
-          cy={corner.z}
-          r={s(hoveredCorner?.id === corner.id ? 0.28 : (planScope === 'building' ? 0.16 : 0.08))}
-          fill={hoveredCorner?.id === corner.id ? '#2563eb' : (planScope === 'building' ? '#18181b' : '#71717a')}
-          pointer-events="none"
-        />
-      {/each}
+      {#if !focusedCells}
+        {#each displayFloor.corners as corner (corner.id)}
+          <circle
+            cx={corner.x}
+            cy={corner.z}
+            r={s(hoveredCorner?.id === corner.id ? 0.28 : (planScope === 'building' ? 0.16 : 0.08))}
+            fill={hoveredCorner?.id === corner.id ? '#2563eb' : (planScope === 'building' ? '#18181b' : '#71717a')}
+            pointer-events="none"
+          />
+        {/each}
+      {/if}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
           <circle r={turnRadius} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
