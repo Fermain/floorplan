@@ -1,5 +1,5 @@
 import { WALL_HEAD } from '../plot/fixture'
-import type { BottleSize, Fixture, FixtureKind, TankLitres } from './types'
+import type { AirconBtu, BottleSize, Fixture, FixtureKind, TankLitres, WoodBurnerKw } from './types'
 
 // Building: part of the shell rather than a service, such as an air brick.
 export type Trade = 'electrical' | 'plumbing' | 'gas' | 'building'
@@ -44,6 +44,9 @@ export const FIXTURES: readonly FixtureSpec[] = [
   { id: 'gas-geyser', trade: 'gas', name: 'Gas geyser', text: 'A 16 litre a minute instantaneous gas water heater on an outside wall. Hydrostatic: the water pressure lights it, so it needs no electrical point.', mount: 'wall', outside: true, width: 0.35, depth: 0.2, height: 0.6, y: 1.2 },
   { id: 'gas-cylinder', trade: 'gas', name: 'Gas bottles', text: 'One to four LP gas bottles on a regulator and manifold, on a level slab against an outside wall, locked in a steel cage.', mount: 'floor', outside: true, width: 0.9, depth: 0.475, height: 1.4, y: 0 },
   { id: 'air-brick', trade: 'building', name: 'Air brick', text: 'A clay vent built into an outside wall, a brick long and two courses high, that airs a room or the roof space and never closes. Put one high in a kitchen, bathroom or room with a gas appliance.', mount: 'wall', outside: true, width: 0.222, depth: 0.012, height: 0.146, y: 2.0 },
+  { id: 'aircon-indoor', trade: 'building', name: 'Indoor aircon', text: 'A high-wall split unit inside the room, near ceiling level.', mount: 'wall', outside: false, width: 0.85, depth: 0.2, height: 0.29, y: 2.0 },
+  { id: 'aircon-outdoor', trade: 'building', name: 'Outdoor compressor', text: 'The outdoor condenser unit for a split air conditioner, on wall brackets.', mount: 'wall', outside: true, width: 0.8, depth: 0.3, height: 0.55, y: 0.5 },
+  { id: 'wood-burner', trade: 'building', name: 'Wood burner', text: 'A freestanding closed-combustion wood burning fireplace on the floor, with a flue through the ceiling and roof.', mount: 'floor', outside: false, width: 0.6, depth: 0.45, height: 0.8, y: 0 },
   { id: 'outside-tap', trade: 'plumbing', name: 'Garden tap', text: 'A tap on an outside wall.', mount: 'wall', outside: true, width: 0.08, depth: 0.1, height: 0.08, y: 0.5 },
 ]
 
@@ -110,8 +113,8 @@ export function indoorBottles<T extends Omit<Fixture, 'id'>>(fixture: T): T {
   return reseat(fixture, { bottles: 1, bottleKg: 9, cage: false })
 }
 
-// Change gas bottles' count, size or cage, keeping the back of the row where it was.
-export function reseat<T extends Omit<Fixture, 'id'>>(fixture: T, patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres'>>): T {
+// Change gas bottles' count, size or cage, a tank's litres, an aircon's BTU, or a wood burner's kW, keeping the back where it was.
+export function reseat<T extends Omit<Fixture, 'id'>>(fixture: T, patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu' | 'kw'>>): T {
   const next = { ...fixture, ...patch }
   const shift = (fixtureSize(next).depth - fixtureSize(fixture).depth) / 2
   return { ...next, x: fixture.x + fixture.dx * shift, z: fixture.z + fixture.dz * shift }
@@ -127,19 +130,72 @@ export const TANKS: Record<TankLitres, { name: string; dia: number; height: numb
 export const TANK_SIZES: TankLitres[] = [1000, 2500, 5000, 10000]
 export const DEFAULT_TANK_LITRES: TankLitres = 5000
 
-// Fittings that come in sizes step through them: gas bottles by weight, tanks by litres.
-export type SizeSetup = Partial<Pick<Fixture, 'bottleKg' | 'litres'>>
+// High-wall split air conditioners: cooling capacities in BTU/h and unit dimensions.
+export const AIRCON_BTUS: readonly AirconBtu[] = [9000, 12000, 18000, 24000]
+export const DEFAULT_AIRCON_BTU: AirconBtu = 12000
+
+export const AIRCON_SIZES: Record<
+  AirconBtu,
+  {
+    indoor: { width: number; depth: number; height: number; m2Max: number }
+    outdoor: { width: number; depth: number; height: number }
+  }
+> = {
+  9000: {
+    indoor: { width: 0.8, depth: 0.19, height: 0.28, m2Max: 18 },
+    outdoor: { width: 0.76, depth: 0.28, height: 0.54 },
+  },
+  12000: {
+    indoor: { width: 0.85, depth: 0.2, height: 0.29, m2Max: 25 },
+    outdoor: { width: 0.8, depth: 0.3, height: 0.55 },
+  },
+  18000: {
+    indoor: { width: 0.96, depth: 0.22, height: 0.31, m2Max: 35 },
+    outdoor: { width: 0.85, depth: 0.32, height: 0.65 },
+  },
+  24000: {
+    indoor: { width: 1.08, depth: 0.24, height: 0.33, m2Max: 50 },
+    outdoor: { width: 0.9, depth: 0.35, height: 0.7 },
+  },
+}
+
+// Closed-combustion freestanding wood burning fireplaces: nominal heat output in kW and dimensions.
+export const WOOD_BURNER_KWS: readonly WoodBurnerKw[] = [8, 10, 12, 14]
+export const DEFAULT_WOOD_BURNER_KW: WoodBurnerKw = 10
+
+export const WOOD_BURNER_SIZES: Record<
+  WoodBurnerKw,
+  {
+    width: number
+    depth: number
+    height: number
+    m2Max: number
+    flueDia: number
+  }
+> = {
+  8: { width: 0.52, depth: 0.4, height: 0.72, m2Max: 65, flueDia: 0.15 },
+  10: { width: 0.6, depth: 0.45, height: 0.8, m2Max: 85, flueDia: 0.15 },
+  12: { width: 0.68, depth: 0.48, height: 0.85, m2Max: 110, flueDia: 0.18 },
+  14: { width: 0.76, depth: 0.52, height: 0.9, m2Max: 135, flueDia: 0.18 },
+}
+
+// Fittings that come in sizes step through them: gas bottles by weight, tanks by litres, aircons by BTU, wood burners by kW.
+export type SizeSetup = Partial<Pick<Fixture, 'bottleKg' | 'litres' | 'btu' | 'kw'>>
 
 export function sizeName(kind: FixtureKind, setup: SizeSetup = {}): string | null {
   if (kind === 'gas-cylinder') return BOTTLES[setup.bottleKg ?? DEFAULT_BOTTLE_KG].name
   if (kind === 'water-tank') return TANKS[setup.litres ?? DEFAULT_TANK_LITRES].name
+  if (kind === 'aircon-indoor' || kind === 'aircon-outdoor') return `${(setup.btu ?? DEFAULT_AIRCON_BTU).toLocaleString('en-ZA')} BTU`
+  if (kind === 'wood-burner') return `${setup.kw ?? DEFAULT_WOOD_BURNER_KW} kW`
   return null
 }
 
 export function stepSize(kind: FixtureKind, setup: SizeSetup, by: 1 | -1): SizeSetup {
-  const step = <T>(sizes: T[], now: T) => sizes[Math.min(sizes.length - 1, Math.max(0, sizes.indexOf(now) + by))]
+  const step = <T>(sizes: readonly T[], now: T) => sizes[Math.min(sizes.length - 1, Math.max(0, sizes.indexOf(now) + by))]
   if (kind === 'gas-cylinder') return { ...setup, bottleKg: step(BOTTLE_SIZES, setup.bottleKg ?? DEFAULT_BOTTLE_KG) }
   if (kind === 'water-tank') return { ...setup, litres: step(TANK_SIZES, setup.litres ?? DEFAULT_TANK_LITRES) }
+  if (kind === 'aircon-indoor' || kind === 'aircon-outdoor') return { ...setup, btu: step(AIRCON_BTUS, setup.btu ?? DEFAULT_AIRCON_BTU) }
+  if (kind === 'wood-burner') return { ...setup, kw: step(WOOD_BURNER_KWS, setup.kw ?? DEFAULT_WOOD_BURNER_KW) }
   return setup
 }
 
@@ -147,12 +203,24 @@ export function tankLitres(fixture: Pick<Fixture, 'litres'>): TankLitres {
   return fixture.litres ?? DEFAULT_TANK_LITRES
 }
 
-// A fitting's size; most are fixed, but gas bottles grow with how many there are, how big, and their cage.
-export function fixtureSize(fixture: Pick<Fixture, 'kind' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): { width: number; depth: number; height: number } {
+// A fitting's size; most are fixed, but gas bottles, tanks, air conditioners and wood burners grow with their capacity.
+export function fixtureSize(fixture: Pick<Fixture, 'kind' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu' | 'kw'>): { width: number; depth: number; height: number } {
   const spec = fixtureSpec(fixture.kind)
   if (fixture.kind === 'water-tank') {
     const tank = TANKS[tankLitres(fixture)]
     return { width: tank.dia, depth: tank.dia, height: tank.height }
+  }
+  if (fixture.kind === 'aircon-indoor') {
+    const size = AIRCON_SIZES[fixture.btu ?? DEFAULT_AIRCON_BTU].indoor
+    return { width: size.width, depth: size.depth, height: size.height }
+  }
+  if (fixture.kind === 'aircon-outdoor') {
+    const size = AIRCON_SIZES[fixture.btu ?? DEFAULT_AIRCON_BTU].outdoor
+    return { width: size.width, depth: size.depth, height: size.height }
+  }
+  if (fixture.kind === 'wood-burner') {
+    const size = WOOD_BURNER_SIZES[fixture.kw ?? DEFAULT_WOOD_BURNER_KW]
+    return { width: size.width, depth: size.depth, height: size.height }
   }
   if (fixture.kind !== 'gas-cylinder') return { width: spec.width, depth: spec.depth, height: spec.height }
   const { count, kg, cage } = bottleSetup(fixture)
@@ -168,7 +236,7 @@ export function fixtureSpec(kind: FixtureKind): FixtureSpec {
 // Fittings that can be built into a counter: a hob in the worktop with an oven under it.
 export const BUILT_IN: readonly FixtureKind[] = ['stove', 'gas-stove']
 
-export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'y' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn'>): string | null {
+export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'y' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn' | 'btu' | 'kw'>): string | null {
   if (!FIXTURES.some((item) => item.id === fixture.kind)) return 'unknown fixture'
   if (![fixture.x, fixture.z, fixture.dx, fixture.dz, fixture.y].every(Number.isFinite)) return 'fixture position is not a number'
   if (Math.abs(Math.hypot(fixture.dx, fixture.dz) - 1) > 1e-6) return 'fixture needs a facing direction'
@@ -178,12 +246,14 @@ export function fixtureProblem(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' 
   if (bottleKg !== undefined && !BOTTLE_SIZES.includes(bottleKg)) return 'unknown gas bottle size'
   if (cage !== undefined && typeof cage !== 'boolean') return 'cage is yes or no'
   if (fixture.litres !== undefined && !TANK_SIZES.includes(fixture.litres)) return 'unknown tank size'
+  if (fixture.btu !== undefined && !AIRCON_BTUS.includes(fixture.btu)) return 'unknown aircon btu size'
+  if (fixture.kw !== undefined && !WOOD_BURNER_KWS.includes(fixture.kw)) return 'unknown wood burner kw rating'
   if (fixture.builtIn !== undefined && (typeof fixture.builtIn !== 'boolean' || !BUILT_IN.includes(fixture.kind))) return 'only a stove can be built in'
   return null
 }
 
 // The four corners of the fixture's footprint, back edge first.
-export function fixtureFootprint(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres'>): { x: number; z: number }[] {
+export function fixtureFootprint(fixture: Pick<Fixture, 'kind' | 'x' | 'z' | 'dx' | 'dz' | 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu' | 'kw'>): { x: number; z: number }[] {
   const spec = fixtureSize(fixture)
   const side = { x: -fixture.dz, z: fixture.dx }
   const at = (along: number, across: number) => ({

@@ -5,6 +5,9 @@ import type { Document, Floor, Opening, Wall } from '../model/types'
 import { doorSwings } from '../geometry/doors'
 import { fenceSpec } from '../model/fences'
 import { fencePlan } from '../geometry/gates'
+import { PAVING } from '../geometry/paving'
+import { bedMaterialSpec } from '../model/beds'
+import { BED_SOIL_COLOUR, insetRing } from '../geometry/beds'
 
 const PLOT_MARGIN_M = 1
 const NORTH_ARROW_LENGTH_M = 1.2
@@ -196,6 +199,32 @@ export function exportFloorSvg(document: Document, floorId: string): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${formatNum(minX)} ${formatNum(minZ)} ${formatNum(width)} ${formatNum(height)}">`,
     plotRingElement(document.plot.ring),
   ]
+
+  if (floor.index === 0) {
+    for (const area of document.paving ?? []) {
+      const spec = PAVING[area.surface]
+      const pts = area.ring.map(([x, z]) => planToSvg(x, z))
+      parts.push(`<polygon points="${pointsAttr(pts)}" fill="${spec.colour}" fill-opacity="0.6" stroke="#57534e" stroke-width="0.02"/>`)
+    }
+    for (const bed of document.beds ?? []) {
+      const isRaised = bed.height > 0.05
+      const mat = bedMaterialSpec(bed.material)
+      if (isRaised) {
+        const outerPts = bed.ring.map(([x, z]) => planToSvg(x, z))
+        parts.push(`<polygon points="${pointsAttr(outerPts)}" fill="${mat.colour}" stroke="#44403c" stroke-width="0.015"/>`)
+        const inner = insetRing(bed.ring, mat.thickness)
+        const innerPts = inner.map(([x, z]) => planToSvg(x, z))
+        parts.push(`<polygon points="${pointsAttr(innerPts)}" fill="${BED_SOIL_COLOUR}" fill-opacity="0.8" stroke="#44403c" stroke-width="0.015"/>`)
+      } else {
+        const pts = bed.ring.map(([x, z]) => planToSvg(x, z))
+        if (bed.material) {
+          parts.push(`<polygon points="${pointsAttr(pts)}" fill="${BED_SOIL_COLOUR}" fill-opacity="0.5" stroke="${mat.colour}" stroke-width="0.025"/>`)
+        } else {
+          parts.push(`<polygon points="${pointsAttr(pts)}" fill="${BED_SOIL_COLOUR}" fill-opacity="0.5" stroke="#57534e" stroke-width="0.02" stroke-dasharray="0.12 0.08"/>`)
+        }
+      }
+    }
+  }
 
   for (const poly of solidWallPolygonsForFloor(floor)) {
     parts.push(polygonElement(poly))

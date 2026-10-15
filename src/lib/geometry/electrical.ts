@@ -22,7 +22,7 @@ export const BATHROOM_ZONE_M = 0.6
 export const CABLE_WASTE = 1.1
 const BOARD_SIZES = [8, 12, 16, 24, 36]
 
-export type CircuitKind = 'lights' | 'plugs' | 'stove' | 'geyser'
+export type CircuitKind = 'lights' | 'plugs' | 'stove' | 'geyser' | 'aircon'
 
 export type Placed = { floor: Floor; fixture: Fixture }
 
@@ -56,6 +56,7 @@ const CIRCUIT_INFO: Record<CircuitKind, { prefix: string; label: string; breaker
   plugs: { prefix: 'P', label: 'Plugs', breaker: 20, cable: 2.5 },
   stove: { prefix: 'S', label: 'Stove', breaker: 32, cable: 6 },
   geyser: { prefix: 'G', label: 'Geyser', breaker: 20, cable: 2.5 },
+  aircon: { prefix: 'AC', label: 'Aircon', breaker: 20, cable: 2.5 },
 }
 
 // Height of the ceiling void a run goes through, and of the point where the cable meets a fitting, both from the floor datum.
@@ -142,7 +143,7 @@ export function electricalLayout(doc: Document): ElectricalLayout {
   if (!board) return { board: null, circuits: [], ways: 0, boardSize: null, boxes }
 
   const circuits: Circuit[] = []
-  const count: Record<CircuitKind, number> = { lights: 0, plugs: 0, stove: 0, geyser: 0 }
+  const count: Record<CircuitKind, number> = { lights: 0, plugs: 0, stove: 0, geyser: 0, aircon: 0 }
   const add = (kind: CircuitKind, points: Placed[], extra = { length: 0, drops: 0 }) => {
     const info = CIRCUIT_INFO[kind]
     count[kind] += 1
@@ -171,6 +172,9 @@ export function electricalLayout(doc: Document): ElectricalLayout {
   }
   for (const item of electrical.filter((entry) => entry.fixture.kind === 'stove-isolator')) add('stove', [item])
   for (const item of placed.filter((entry) => entry.fixture.kind === 'geyser' || entry.fixture.kind === 'solar-geyser')) add('geyser', [item])
+  const airconCompressors = placed.filter((entry) => entry.fixture.kind === 'aircon-outdoor')
+  const fallbackAircons = airconCompressors.length === 0 ? placed.filter((entry) => entry.fixture.kind === 'aircon-indoor') : []
+  for (const item of [...airconCompressors, ...fallbackAircons]) add('aircon', [item])
 
   // Each circuit takes one way; the main switch and the earth leakage unit take two each.
   const ways = circuits.length + 4

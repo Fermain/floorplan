@@ -2,13 +2,19 @@
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
   import * as Select from '$lib/components/ui/select'
+  import { airconLayout } from '../../lib/geometry/aircon'
+  import { chimneyLayout } from '../../lib/geometry/chimney'
   import { gasLayout } from '../../lib/geometry/gas'
   import { gutterLayout } from '../../lib/geometry/gutters'
   import {
+    AIRCON_BTUS,
+    AIRCON_SIZES,
     BOTTLE_SIZES,
     BOTTLES,
     bottleSetup,
     BUILT_IN,
+    DEFAULT_AIRCON_BTU,
+    DEFAULT_WOOD_BURNER_KW,
     fitFixtureY,
     fixtureSpec,
     MAX_BOTTLES,
@@ -16,8 +22,10 @@
     TANK_SIZES,
     TANKS,
     tankLitres,
+    WOOD_BURNER_KWS,
+    WOOD_BURNER_SIZES,
   } from '../../lib/model/fixtures'
-  import type { BottleSize, Fixture, FixtureKind, MutationResult, TankLitres } from '../../lib/model/types'
+  import type { AirconBtu, BottleSize, Fixture, FixtureKind, MutationResult, TankLitres, WoodBurnerKw } from '../../lib/model/types'
   import { documentStore } from '../../lib/state/document.svelte'
 
   // A fitting's own controls, the same in Plan and Focus: what kind it is, its size, and its height.
@@ -31,6 +39,10 @@
   const gas = $derived(spec.trade === 'gas' ? gasLayout(doc) : null)
   const fed = $derived(gas ? gas.runs.filter((run) => run.cylinder.fixture.id === fixture.id) : [])
   const run = $derived(gas ? gas.runs.find((item) => item.item.fixture.id === fixture.id) : undefined)
+  const aircon = $derived(fixture.kind === 'aircon-indoor' || fixture.kind === 'aircon-outdoor' ? airconLayout(doc) : null)
+  const airconPair = $derived(aircon ? aircon.pairs.find((p) => p.indoor.fixture.id === fixture.id || p.outdoor.fixture.id === fixture.id) : null)
+  const chimney = $derived(fixture.kind === 'wood-burner' ? chimneyLayout(doc) : null)
+  const burnerInfo = $derived(chimney ? chimney.woodBurners.find((b) => b.fixture.id === fixture.id) : null)
   const metres = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 1 })
   const id = $derived(`fitting-${fixture.id}`)
 
@@ -38,7 +50,7 @@
     onresult?.(result)
   }
 
-  function setSetup(patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres'>>) {
+  function setSetup(patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu' | 'kw'>>) {
     apply(documentStore.setFixtureSetup(floorId, fixture.id, patch))
   }
 
@@ -140,6 +152,74 @@
     </p>
   {:else}
     <p class="text-amber-700">No gas yet: place gas bottles against an outside wall.</p>
+  {/if}
+{/if}
+
+{#if fixture.kind === 'aircon-indoor' || fixture.kind === 'aircon-outdoor'}
+  <div class="grid gap-1.5">
+    <Label for="{id}-btu">Capacity</Label>
+    <Select.Root
+      type="single"
+      value={String(fixture.btu ?? DEFAULT_AIRCON_BTU)}
+      onValueChange={(next) => next && setSetup({ btu: Number(next) as AirconBtu })}
+    >
+      <Select.Trigger id="{id}-btu" size="sm" class="w-full">
+        {(fixture.btu ?? DEFAULT_AIRCON_BTU).toLocaleString('en-ZA')} BTU (up to {AIRCON_SIZES[fixture.btu ?? DEFAULT_AIRCON_BTU].indoor.m2Max} m²)
+      </Select.Trigger>
+      <Select.Content>
+        {#each AIRCON_BTUS as btu (btu)}
+          <Select.Item value={String(btu)} label="{btu.toLocaleString('en-ZA')} BTU (up to {AIRCON_SIZES[btu].indoor.m2Max} m²)" />
+        {/each}
+      </Select.Content>
+    </Select.Root>
+  </div>
+  {#if airconPair}
+    {#if airconPair.direct}
+      <p>
+        Back-to-back installation: about {metres.format(airconPair.pipeLength)} m pipe through the wall to the
+        {fixture.kind === 'aircon-indoor' ? 'outdoor compressor' : 'indoor unit'}.
+      </p>
+    {:else}
+      <p>
+        Connected to the {fixture.kind === 'aircon-indoor' ? 'outdoor compressor' : 'indoor unit'}: about {metres.format(airconPair.pipeLength)} m of
+        insulated refrigerant pipe.
+      </p>
+    {/if}
+  {:else}
+    <p class="text-amber-700">
+      {fixture.kind === 'aircon-indoor'
+        ? 'No outdoor compressor connected: place one against an outside wall.'
+        : 'No indoor unit connected: place an indoor aircon in a room.'}
+    </p>
+  {/if}
+{/if}
+
+{#if fixture.kind === 'wood-burner'}
+  <div class="grid gap-1.5">
+    <Label for="{id}-kw">Heat output</Label>
+    <Select.Root
+      type="single"
+      value={String(fixture.kw ?? DEFAULT_WOOD_BURNER_KW)}
+      onValueChange={(next) => next && setSetup({ kw: Number(next) as WoodBurnerKw })}
+    >
+      <Select.Trigger id="{id}-kw" size="sm" class="w-full">
+        {fixture.kw ?? DEFAULT_WOOD_BURNER_KW} kW (heats up to {WOOD_BURNER_SIZES[fixture.kw ?? DEFAULT_WOOD_BURNER_KW].m2Max} m²)
+      </Select.Trigger>
+      <Select.Content>
+        {#each WOOD_BURNER_KWS as kw (kw)}
+          <Select.Item value={String(kw)} label="{kw} kW (heats up to {WOOD_BURNER_SIZES[kw].m2Max} m²)" />
+        {/each}
+      </Select.Content>
+    </Select.Root>
+  </div>
+  {#if burnerInfo}
+    {#if burnerInfo.roofTopY !== null}
+      <p>
+        Flue rises through the ceiling and roof: about {metres.format(burnerInfo.flueLength)} m of pipe to the cowl on the roof.
+      </p>
+    {:else}
+      <p class="text-amber-700">No roof above the wood burner for the chimney flue to exit through.</p>
+    {/if}
   {/if}
 {/if}
 

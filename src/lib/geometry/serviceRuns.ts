@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { fixtureSize, fixtureSpec } from '../model/fixtures'
 import type { Document, Fixture, Floor } from '../model/types'
 import { WALL_HEAD } from '../plot/fixture'
+import { airconLayout } from './aircon'
 import { electricalLayout } from './electrical'
 import { finishedFloor, siteField } from './fixtures'
 import { GAS_RUN_Y, gasLayout } from './gas'
@@ -12,7 +13,7 @@ import { bilinearHeight } from './terrain'
 
 // The services of a house as runs through space, for seeing through the walls in Review. Like the layouts they
 // come from, they are indicative: where a pipe or a cable would go, not a drawing to build from.
-export type ServiceKind = 'drain' | 'cold' | 'hot' | 'lights' | 'plugs' | 'heavy' | 'gas'
+export type ServiceKind = 'drain' | 'cold' | 'hot' | 'lights' | 'plugs' | 'heavy' | 'gas' | 'aircon'
 export type ServiceRun = { kind: ServiceKind; radius: number; points: [number, number, number][] }
 
 export const SERVICE_KINDS: { id: ServiceKind; name: string; colour: string }[] = [
@@ -23,6 +24,7 @@ export const SERVICE_KINDS: { id: ServiceKind; name: string; colour: string }[] 
   { id: 'plugs', name: 'Plugs', colour: '#f97316' },
   { id: 'heavy', name: 'Stove and geyser', colour: '#a855f7' },
   { id: 'gas', name: 'Gas', colour: '#65a30d' },
+  { id: 'aircon', name: 'Air conditioning', colour: '#06b6d4' },
 ]
 
 type Placed = { floor: Floor; fixture: Fixture }
@@ -36,7 +38,7 @@ const TRENCH_DEPTH_M = 0.5
 const TRENCH_STEP_M = 2
 const BUILDING_REACH_M = 1.5
 // Runs that share a ceiling are stepped apart a little so each can be told from the others.
-const LIFT: Record<ServiceKind, number> = { drain: 0, cold: 0, hot: 0.07, lights: 0.14, plugs: 0.2, heavy: 0.26, gas: 0 }
+const LIFT: Record<ServiceKind, number> = { drain: 0, cold: 0, hot: 0.07, lights: 0.14, plugs: 0.2, heavy: 0.26, gas: 0, aircon: 0.3 }
 
 // Along one way and then the other, at one height, the way a pipe or a cable is run square to the walls.
 function square(from: { x: number; z: number }, to: { x: number; z: number }, y: number): P3[] {
@@ -179,6 +181,30 @@ export function serviceRuns(doc: Document): ServiceRun[] {
     points.push([item.fixture.x, floorOf(item) + item.fixture.y + 0.3, item.fixture.z])
     if (points.length > 1) runs.push({ kind: 'gas', radius: 0.012, points })
   }
+
+  // Air conditioning refrigerant pipe and condensate drain runs between indoor and outdoor units.
+  for (const pair of airconLayout(doc).pairs) {
+    const inItem = pair.indoor
+    const outItem = pair.outdoor
+    const inMeets: P3 = [inItem.fixture.x, floorOf(inItem) + inItem.fixture.y + 0.14, inItem.fixture.z]
+    const outMeets: P3 = [outItem.fixture.x, floorOf(outItem) + outItem.fixture.y + 0.25, outItem.fixture.z]
+    if (pair.direct) {
+      runs.push({ kind: 'aircon', radius: 0.016, points: [inMeets, [outItem.fixture.x, inMeets[1], outItem.fixture.z], outMeets] })
+    } else {
+      const over = ceilingOf(inItem, 'aircon')
+      const points: P3[] = [inMeets, ...across(inItem.fixture, outItem.fixture, over, 'aircon'), outMeets]
+      runs.push({ kind: 'aircon', radius: 0.016, points })
+    }
+    // Condensate drain pipe falling through exterior wall to ground
+    const drainPlan = pair.condensatePath.at(-1) ?? { x: inItem.fixture.x, z: inItem.fixture.z }
+    const inDrainStart: P3 = [inItem.fixture.x, floorOf(inItem) + inItem.fixture.y + 0.08, inItem.fixture.z]
+    const horizDist = Math.hypot(drainPlan.x - inItem.fixture.x, drainPlan.z - inItem.fixture.z)
+    const drainExitY = Math.max(floorOf(inItem) + 0.1, inDrainStart[1] - horizDist * 0.02)
+    const drainExit: P3 = [drainPlan.x, drainExitY, drainPlan.z]
+    const drainBottom: P3 = [drainPlan.x, ground(drainPlan.x, drainPlan.z) + 0.15, drainPlan.z]
+    runs.push({ kind: 'drain', radius: 0.012, points: [inDrainStart, drainExit, drainBottom] })
+  }
+
   return runs
 }
 

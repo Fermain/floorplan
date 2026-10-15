@@ -249,7 +249,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     floor ? buildFixtureParts(shownFittings, (fixture) => floor.datumHeight + fixtureStandAboveDatum(doc, floor, fixture), faceCounters) : [],
   )
   const counterParts = $derived.by((): CounterPart[] =>
-    floor && faceCounters.length > 0 ? buildCounterParts(faceCounters, floor.datumHeight + finishedFloor(floor), shownFittings) : [],
+    floor && faceCounters.length > 0 ? buildCounterParts(faceCounters, floor.datumHeight + finishedFloor(floor), shownFittings, floor.datumHeight + WALL_HEAD) : [],
   )
 
   $effect(() => {

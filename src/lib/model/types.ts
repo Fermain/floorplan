@@ -158,9 +158,14 @@ export type FixtureKind =
   | 'gas-geyser'
   | 'gas-cylinder'
   | 'air-brick'
+  | 'aircon-indoor'
+  | 'aircon-outdoor'
+  | 'wood-burner'
 
 export type BottleSize = 9 | 19 | 48
 export type TankLitres = 1000 | 2500 | 5000 | 10000
+export type AirconBtu = 9000 | 12000 | 18000 | 24000
+export type WoodBurnerKw = 8 | 10 | 12 | 14
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -177,6 +182,10 @@ export type Fixture = {
   cage?: boolean
   // Rainwater tanks only: how much the tank holds.
   litres?: TankLitres
+  // Air conditioners only: cooling capacity in BTU/h.
+  btu?: AirconBtu
+  // Wood burners only: nominal heat output in kW.
+  kw?: WoodBurnerKw
   // Stoves only: a hob set into a worktop with an oven under it, rather than a stove standing in a gap.
   builtIn?: boolean
 }
@@ -285,7 +294,7 @@ export type SiteServices = {
 // A run of kitchen counter: cupboards under a worktop. It is placed by the start of its back edge, the way it
 // runs, and its length; its depth comes out to the left of the way it runs, so a counter drawn along a wall runs
 // with the room on its left.
-export type CounterKind = 'base' | 'island' | 'bar'
+export type CounterKind = 'base' | 'island' | 'bar' | 'cupboard'
 export type CounterTop = 'laminate' | 'granite' | 'timber'
 export type Counter = {
   id: string
@@ -324,6 +333,16 @@ export type RetainingWall = {
   type: RetainingType
 }
 
+// A flower bed or raised vegetable bed: an area drawn on the ground, either level with the earth or built up
+// within retaining walls of timber, brick, stone or steel.
+export type BedMaterial = 'timber' | 'brick' | 'stone' | 'steel'
+export type GardenBed = {
+  id: string
+  ring: [number, number][]
+  height: number
+  material?: BedMaterial
+}
+
 export type Document = {
   plot: Plot
   heightfield: Heightfield
@@ -333,6 +352,7 @@ export type Document = {
   paving?: PavingArea[]
   carports?: Carport[]
   retaining?: RetainingWall[]
+  beds?: GardenBed[]
   // The house as it stood when it was marked as built. With one, the project is an alteration to that house:
   // what is drawn is compared with it, and only the difference is priced.
   baseline?: Baseline

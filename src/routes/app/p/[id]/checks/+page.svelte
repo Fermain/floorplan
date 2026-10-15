@@ -11,6 +11,8 @@
   import { electricalIssues, electricalLayout } from '$lib/geometry/electrical'
   import { plumbingLayout } from '$lib/geometry/plumbing'
   import { gasLayout } from '$lib/geometry/gas'
+  import { airconIssues, airconLayout } from '$lib/geometry/aircon'
+  import { chimneyLayout } from '$lib/geometry/chimney'
   import { finishIssues } from '$lib/geometry/finishes'
   import { counterIssues, counterTotals } from '$lib/geometry/counters'
   import { carportIssues } from '$lib/geometry/carports'
@@ -138,6 +140,12 @@
     }
   })
   const hasGas = $derived(gas.appliances.length > 0 || gas.cylinders.length > 0)
+  const aircon = $derived(airconLayout(doc))
+  const airconList = $derived(airconIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
+  const hasAircon = $derived(aircon.indoors.length > 0 || aircon.outdoors.length > 0)
+  const chimney = $derived(chimneyLayout(doc))
+  const heatingList = $derived(chimney.issues.map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
+  const hasWoodBurner = $derived(chimney.woodBurners.length > 0)
   const hasWalls = $derived(doc.building.floors.some((floor) => floor.walls.some((wall) => wall.skin !== 'logical')))
 
   // The sections down the page, each with what it has to attend to, or why it has nothing to show yet.
@@ -147,7 +155,9 @@
     { id: 'backup', title: 'Load shedding and solar', issues: powerList, empty: electrical.circuits.length === 0 ? 'No circuits yet' : null },
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
-    { id: 'kitchens', title: 'Kitchens', issues: kitchenList, empty: counterLength > 0 ? null : 'No counters yet' },
+    { id: 'aircon', title: 'Air conditioning', issues: airconList, empty: hasAircon ? null : 'No aircons placed' },
+    { id: 'heating', title: 'Heating', issues: heatingList, empty: hasWoodBurner ? null : 'No wood burners placed' },
+    { id: 'joinery', title: 'Joinery', issues: kitchenList, empty: counterLength > 0 || joinery.units.cupboard > 0 ? null : 'No counters or cupboards yet' },
     { id: 'carports', title: 'Carports', issues: carportList, empty: (doc.carports ?? []).length > 0 ? null : 'None placed' },
     { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
     { id: 'walls', title: 'Wall finishes', issues: wallList, empty: hasWalls ? null : 'No walls yet' },
@@ -263,6 +273,60 @@
           ? gas.cylinders.map((item) => `${bottleSetup(item.fixture).count} × ${bottleSetup(item.fixture).kg} kg`).join(', ')
           : '–',
       note: 'Two or more on a changeover regulator, so one can be swapped while the other runs',
+    },
+  ])
+
+  const airconFacts = $derived<Fact[]>([
+    {
+      label: 'Split units',
+      value: `${aircon.indoors.length} indoor, ${aircon.outdoors.length} outdoor`,
+      note: `${aircon.pairs.filter((p) => p.direct).length} back-to-back, ${aircon.pairs.filter((p) => !p.direct).length} piped over ceiling`,
+    },
+    {
+      label: 'Cooling capacity',
+      value: aircon.totalCoolingBtu > 0 ? `${aircon.totalCoolingBtu.toLocaleString('en-ZA')} BTU (${aircon.totalCoolingKw} kW)` : '–',
+      note: 'Rated heat pump / cooling capacity across all indoor units',
+    },
+    {
+      label: 'Refrigerant pipe',
+      value: aircon.totalPipeLength > 0 ? `${number.format(aircon.totalPipeLength)} m` : '–',
+      note: 'Insulated copper pair with interconnecting control cable',
+    },
+    {
+      label: 'Condensate drain',
+      value: aircon.totalCondensateLength > 0 ? `${number.format(aircon.totalCondensateLength)} m` : '–',
+      note: '20 mm uPVC pipe falling to exterior discharge or gully',
+    },
+    {
+      label: 'Electrical circuits',
+      value: aircon.outdoors.length > 0 ? `${aircon.outdoors.length} × 20 A` : '–',
+      note: 'Dedicated circuits from the distribution board with outdoor isolator switches',
+    },
+  ])
+
+  const heatingFacts = $derived<Fact[]>([
+    {
+      label: 'Wood burners',
+      value: String(chimney.woodBurners.length),
+      note:
+        chimney.woodBurners.length > 0
+          ? chimney.woodBurners.map((b) => `${b.kw} kW (${b.roomName ?? 'room'})`).join(', ')
+          : 'None placed',
+    },
+    {
+      label: 'Heating capacity',
+      value: chimney.totalKw > 0 ? `${chimney.totalKw} kW` : '–',
+      note: 'Nominal closed-combustion heating output',
+    },
+    {
+      label: 'Flue pipe run',
+      value: chimney.totalFlueLength > 0 ? `${number.format(chimney.totalFlueLength)} m` : '–',
+      note: 'Room vitreous enamel flue and insulated stainless roof flue',
+    },
+    {
+      label: 'Roof cowls',
+      value: String(chimney.woodBurners.filter((b) => b.roofTopY !== null).length),
+      note: 'Anti-downdraught cowls with rain hats and roof storm collars',
     },
   ])
 
@@ -556,17 +620,42 @@
         {/if}
       </section>
 
-      <section aria-labelledby="checks-kitchens">
-        {@render heading('kitchens', 'Counters against the fittings that stand between them. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
-        {#if !folded.includes('kitchens')}
+      <section aria-labelledby="checks-aircon">
+        {@render heading('aircon', 'Split-unit air conditioners: indoor high-wall units paired with outdoor compressor units, with insulated copper refrigerant pipes and dedicated 20 A electrical circuits.')}
+        {#if !folded.includes('aircon')}
+          {@render attend(airconList)}
+          {#if hasAircon}
+            {@render facts(airconFacts)}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place an indoor aircon unit and outdoor compressor with the Fittings tool and the installation appears here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-heating">
+        {@render heading('heating', 'Freestanding closed-combustion wood burners with flue pipes through the ceiling and roof. A certified installer fits the flue and flashing to manufacturer specifications and SANS 10400-V.')}
+        {#if !folded.includes('heating')}
+          {@render attend(heatingList)}
+          {#if hasWoodBurner}
+            {@render facts(heatingFacts)}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place a wood burner in a room with the Fittings tool and the heating check appears here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-joinery">
+        {@render heading('joinery', 'Counters, worktops and built-in cupboards. A stove or a washing machine stands in a gap in the counter; a sink comes in its own unit, which a counter runs on from.')}
+        {#if !folded.includes('joinery')}
           {@render attend(kitchenList)}
-          {#if counterLength > 0}
+          {#if counterLength > 0 || joinery.units.cupboard > 0}
             {@render facts([
-              { label: 'Counters', value: `${number.format(counterLength)} m`, note: [joinery.units.island > 0 ? 'with an island' : '', joinery.units.bar > 0 ? 'with a bar' : ''].filter(Boolean).join(', ') },
-              { label: 'Wall cupboards', value: joinery.wallUnits > 0 ? `${number.format(joinery.wallUnits)} m` : 'None' },
+              ...(counterLength > 0 ? [{ label: 'Counters', value: `${number.format(counterLength)} m`, note: [joinery.units.island > 0 ? 'with an island' : '', joinery.units.bar > 0 ? 'with a bar' : ''].filter(Boolean).join(', ') }] : []),
+              ...(joinery.wallUnits > 0 ? [{ label: 'Wall cupboards', value: `${number.format(joinery.wallUnits)} m` }] : []),
+              ...(joinery.units.cupboard > 0 ? [{ label: 'Built-in cupboards', value: `${number.format(joinery.units.cupboard)} m` }] : []),
             ])}
           {:else}
-            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters with the Counters tool on the plan and they are checked here.</p>
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Draw counters and cupboards with the Counters tool on the plan and they are checked here.</p>
           {/if}
         {/if}
       </section>

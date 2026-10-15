@@ -10,6 +10,7 @@ import { fixturesOnWall } from './fixtures'
 export const LIGHT_MIN_RATIO = 0.1
 export const VENTILATION_MIN_RATIO = 0.05
 export const OPENABLE_FRACTION = 0.5
+// Assumed effective free ventilation area of a clay air brick (~10,000 mm²; design assumption).
 export const AIR_BRICK_FREE_VENT_M2 = 0.01
 export const HABITABLE_MIN_AREA_M2 = 6
 export const HABITABLE_MIN_WIDTH_M = 2

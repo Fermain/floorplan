@@ -6,20 +6,25 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres, AirconBtu, WoodBurnerKw } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
+import { AIRCON_BTUS, AIRCON_SIZES, BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres, WOOD_BURNER_KWS, WOOD_BURNER_SIZES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
+import { airconLayout } from '../geometry/aircon'
+import { chimneyLayout } from '../geometry/chimney'
 import { gasLayout } from '../geometry/gas'
 import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
 import { carportQuantities } from '../geometry/carports'
 import { counterTotals } from '../geometry/counters'
+import { siteField } from '../geometry/fixtures'
+import { bilinearHeight } from '../geometry/terrain'
+import { BED_MATERIALS, DEFAULT_BED_MATERIAL, bedPerimeter, bedSoilVolume, bedWallArea } from '../model/beds'
 import { retainingTotals } from '../geometry/retaining'
 import { RETAINING_TYPES } from '../model/retaining'
 import { COUNTER_KINDS, COUNTER_TOPS } from '../model/counters'
@@ -42,7 +47,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Joinery' | 'Paving' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Heating' | 'Joinery' | 'Paving' | 'Landscaping' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -61,7 +66,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Joinery', 'Paving', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Heating', 'Joinery', 'Paving', 'Landscaping', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -427,8 +432,8 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    // Gas bottles and rainwater tanks are counted below, by size.
-    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank') continue
+    // Gas bottles, rainwater tanks, air conditioners and wood burners are counted below, by size.
+    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank' || spec.id === 'aircon-indoor' || spec.id === 'aircon-outdoor' || spec.id === 'wood-burner') continue
     drafts.push({
       id: `fixture:${spec.id}`,
       group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : spec.trade === 'building' ? 'Masonry' : 'Plumbing',
@@ -645,6 +650,121 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'gas-coc', group: 'Gas', label: 'Gas certificate of conformity', note: 'Pressure test and certificate by a registered installer', unit: 'each', quantity: 1, rateKey: 'gas-coc' })
   }
 
+  const aircon = airconLayout(doc)
+  const indoorCounts = new Map<AirconBtu, number>()
+  const outdoorCounts = new Map<AirconBtu, number>()
+  for (const item of aircon.indoors) indoorCounts.set(item.btu, (indoorCounts.get(item.btu) ?? 0) + 1)
+  for (const item of aircon.outdoors) outdoorCounts.set(item.btu, (outdoorCounts.get(item.btu) ?? 0) + 1)
+
+  for (const btu of AIRCON_BTUS) {
+    const indoorCount = indoorCounts.get(btu)
+    if (indoorCount) {
+      drafts.push({
+        id: `aircon-indoor:${btu}`,
+        group: 'Air conditioning',
+        label: `Indoor aircon ${btu.toLocaleString('en-ZA')} BTU`,
+        note: `High-wall split unit (cools up to ${AIRCON_SIZES[btu].indoor.m2Max} m²)`,
+        unit: 'each',
+        quantity: indoorCount,
+        rateKey: `aircon-indoor:${btu}`,
+      })
+    }
+    const outdoorCount = outdoorCounts.get(btu)
+    if (outdoorCount) {
+      drafts.push({
+        id: `aircon-outdoor:${btu}`,
+        group: 'Air conditioning',
+        label: `Outdoor compressor ${btu.toLocaleString('en-ZA')} BTU`,
+        note: 'Outdoor condenser unit on wall brackets',
+        unit: 'each',
+        quantity: outdoorCount,
+        rateKey: `aircon-outdoor:${btu}`,
+      })
+    }
+  }
+
+  if (aircon.outdoors.length > 0) {
+    drafts.push({
+      id: 'aircon-isolator',
+      group: 'Air conditioning',
+      label: 'Weatherproof isolator switch 20 A',
+      note: 'Beside each outdoor compressor unit (SANS 10142-1)',
+      unit: 'each',
+      quantity: aircon.outdoors.length,
+      rateKey: 'aircon-isolator',
+    })
+  }
+
+  if (aircon.totalPipeLength > 0) {
+    drafts.push({
+      id: 'aircon-pipe',
+      group: 'Air conditioning',
+      label: 'Insulated refrigerant copper pipe pair',
+      note: 'Between indoor and outdoor units with interconnecting cable, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(aircon.totalPipeLength * 1.1),
+      rateKey: 'aircon-pipe',
+    })
+  }
+
+  if (aircon.totalCondensateLength > 0) {
+    drafts.push({
+      id: 'aircon-condensate-pipe',
+      group: 'Plumbing',
+      label: '20 mm uPVC condensate drain pipe',
+      note: 'Gravity condensate drain from indoor aircon units, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(aircon.totalCondensateLength * 1.1),
+      rateKey: 'aircon-condensate-pipe',
+    })
+  }
+
+  // Wood burners and chimneys: freestanding cast iron stoves by kW, flue pipe by length, and cowl kit.
+  const chimney = chimneyLayout(doc)
+  const burnerCounts = new Map<WoodBurnerKw, number>()
+  for (const item of chimney.woodBurners) {
+    burnerCounts.set(item.kw, (burnerCounts.get(item.kw) ?? 0) + 1)
+  }
+
+  for (const kw of WOOD_BURNER_KWS) {
+    const count = burnerCounts.get(kw)
+    if (count) {
+      drafts.push({
+        id: `wood-burner:${kw}`,
+        group: 'Heating',
+        label: `Closed-combustion wood burner ${kw} kW`,
+        note: `Freestanding cast iron stove (heats up to ${WOOD_BURNER_SIZES[kw].m2Max} m²)`,
+        unit: 'each',
+        quantity: count,
+        rateKey: `wood-burner:${kw}`,
+      })
+    }
+  }
+
+  if (chimney.totalFlueLength > 0) {
+    drafts.push({
+      id: 'wood-burner-flue',
+      group: 'Heating',
+      label: 'Flue pipe kit (vitreous & insulated stainless)',
+      note: 'Room flue pipe and insulated roof flue with brackets, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(chimney.totalFlueLength * 1.1),
+      rateKey: 'wood-burner-flue',
+    })
+  }
+
+  if (chimney.woodBurners.length > 0) {
+    drafts.push({
+      id: 'wood-burner-cowl',
+      group: 'Heating',
+      label: 'Chimney cowl and roof flashing kit',
+      note: 'Anti-downdraught cowl with rain hat, storm collar flashing and ceiling plate',
+      unit: 'each',
+      quantity: chimney.woodBurners.length,
+      rateKey: 'wood-burner-cowl',
+    })
+  }
+
   // Paving and the apron: the surface laid, by area; the layers under it, by volume; the edging, by length.
   const pieces = pavingPieces(doc)
   const layers = new Map<string, { name: string; volume: number }>()
@@ -677,11 +797,81 @@ export function takeoff(doc: Document): QuantityLine[] {
     drafts.push({ id: 'paving-edge', group: 'Paving', label: 'Paving kerb and edge restraint', note: 'Round pavers, blocks and gravel', unit: 'm', quantity: Math.ceil(edging), rateKey: 'paving-edge' })
   }
 
+  // Landscaping: flower beds and raised garden beds. Topsoil mix by volume, retaining edging by area, footings for brick/stone.
+  const beds = doc.beds ?? []
+  if (beds.length > 0) {
+    const field = siteField(doc)
+    const groundAt = (x: number, z: number) => bilinearHeight(field, x, z)
+    const totalSoil = beds.reduce((sum, bed) => sum + bedSoilVolume(bed, groundAt), 0)
+    if (totalSoil > 0) {
+      drafts.push({
+        id: 'landscaping:topsoil',
+        group: 'Landscaping',
+        label: 'Garden topsoil and compost',
+        note: 'Topsoil and compost mix for planting beds, plus 10%',
+        unit: 'm³',
+        quantity: round(totalSoil * 1.1, 2),
+        rateKey: 'topsoil',
+      })
+    }
+
+    // Concrete strip footings for brick and stone retaining walls
+    const masonryBeds = beds.filter((b) => b.height > 0.05 && (b.material === 'brick' || b.material === 'stone'))
+    const masonryLength = masonryBeds.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+    if (masonryLength > 0) {
+      const FOOTING_WIDTH_M = 0.3
+      const FOOTING_DEPTH_M = 0.15
+      drafts.push({
+        id: 'bed-footing',
+        group: 'Landscaping',
+        label: 'Concrete footing for masonry beds',
+        note: `${round(masonryLength, 1)} m at 300 × 150 mm under brick and stone raised beds`,
+        unit: 'm³',
+        quantity: round(masonryLength * FOOTING_WIDTH_M * FOOTING_DEPTH_M * waste, 2),
+        rateKey: 'concrete-m3',
+      })
+    }
+
+    for (const spec of BED_MATERIALS) {
+      const raised = beds.filter((b) => b.height > 0.05 && (b.material ?? DEFAULT_BED_MATERIAL) === spec.id)
+      const area = raised.reduce((sum, b) => sum + bedWallArea(b, groundAt), 0)
+      const length = raised.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+      if (area > 0) {
+        drafts.push({
+          id: `bed-edge:${spec.id}`,
+          group: 'Landscaping',
+          label: `${spec.name} raised bed edging`,
+          note: `${round(length, 1)} m perimeter, retaining wall face`,
+          unit: 'm²',
+          quantity: round(area * waste, 1),
+          rateKey: `bed-edge:${spec.id}`,
+        })
+      }
+      const flat = beds.filter((b) => b.height <= 0.05 && b.material === spec.id)
+      const flatLength = flat.reduce((sum, b) => sum + bedPerimeter(b.ring), 0)
+      if (flatLength > 0) {
+        drafts.push({
+          id: `bed-flat-edge:${spec.id}`,
+          group: 'Landscaping',
+          label: `${spec.name} flush bed edging`,
+          note: 'Lawn and flower bed edging set flush with the ground',
+          unit: 'm',
+          quantity: Math.ceil(flatLength),
+          rateKey: `bed-flat-edge:${spec.id}`,
+        })
+      }
+    }
+  }
+
   // Kitchen counters: cupboards by the metre, worktops by area, wall cupboards by the metre.
   const joinery = counterTotals(doc)
   for (const spec of COUNTER_KINDS) {
     const length = joinery.units[spec.id]
-    if (length > 0) drafts.push({ id: `counter:${spec.id}`, group: 'Joinery', label: spec.id === 'base' ? 'Base cupboards' : `${spec.name} cupboards`, note: `${spec.depth * 1000} mm deep, ${spec.height * 1000} mm high`, unit: 'm', quantity: round(length, 2), rateKey: `counter:${spec.id}` })
+    if (length > 0) {
+      const label = spec.id === 'base' ? 'Base cupboards' : spec.id === 'cupboard' ? 'Built-in cupboards' : `${spec.name} cupboards`
+      const note = spec.id === 'cupboard' ? `Full height (${Math.round(spec.height * 1000)} mm), ${Math.round(spec.depth * 1000)} mm deep` : `${spec.depth * 1000} mm deep, ${spec.height * 1000} mm high`
+      drafts.push({ id: `counter:${spec.id}`, group: 'Joinery', label, note, unit: 'm', quantity: round(length, 2), rateKey: `counter:${spec.id}` })
+    }
   }
   for (const spec of COUNTER_TOPS) {
     const area = joinery.tops[spec.id]

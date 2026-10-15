@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
-import { counterRing } from '../model/counters'
+import { counterRing, cupboardBays } from '../model/counters'
 import { addCorner, addCounter, addFixture, addOpening, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
@@ -168,7 +168,7 @@ describe('counters', () => {
     doc = addCounter(doc, fid, { ...base, wallUnits: true }).document
     doc = addCounter(doc, fid, { x: 6, z: 6, dx: 1, dz: 0, length: 2, depth: 0.9, kind: 'island', top: 'granite' }).document
     const totals = counterTotals(doc)
-    expect(totals.units).toEqual({ base: 3, island: 2, bar: 0 })
+    expect(totals.units).toEqual({ base: 3, island: 2, bar: 0, cupboard: 0 })
     expect(totals.wallUnits).toBe(3)
     expect(totals.tops.granite).toBeCloseTo(2 * 0.94, 6)
     const lines = takeoff(doc).filter((line) => line.group === 'Joinery')
@@ -344,5 +344,75 @@ describe('counters', () => {
     expect(Math.max(...counterRing({ ...counter, ...turned }).map((p) => p.x))).toBeGreaterThan(4.6)
     // In the middle of the room there is no wall to stand against.
     expect(counterCarried(floor, counter, { x: 7, z: 6.5 }, 0.5, 0.9)).toBeNull()
+  })
+
+  it('supports full-height built-in cupboards along a wall that stop clear of windows and doors', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const south = floorOf(doc).walls.find((wall) => {
+      const [a, b] = [wall.startCornerId, wall.endCornerId].map((id) => floorOf(doc).corners.find((corner) => corner.id === id)!)
+      return a.z === 4 && b.z === 4
+    })!
+    // Add a window on south wall at u = 3 (window sill at 1.05m, head at 2.1m)
+    doc = addOpening(doc, fid, south.id, 'window', 3).document
+
+    // Base counter face allows high window:
+    const baseFace = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45, { kind: 'base' })!
+    expect(baseFace.before + baseFace.after).toBeGreaterThan(4)
+
+    // Cupboard face stops at window:
+    const cupboardFace = counterFace(floorOf(doc), { x: 4.5, z: 4.3 }, 0.45, { kind: 'cupboard' })!
+    expect(cupboardFace.before + cupboardFace.after).toBeLessThanOrEqual(3 + 1e-6)
+
+    // Add built-in cupboard to document
+    const backZ = cupboardFace.point.z
+    const cupboardData: Omit<Counter, 'id'> = { x: 4 + HALF, z: backZ, dx: 1, dz: 0, length: 2, depth: 0.6, kind: 'cupboard', top: 'laminate' }
+    const added = addCounter(doc, fid, cupboardData)
+    expect(added.ok).toBe(true)
+    doc = added.document
+
+    // Check quantities: cupboard is priced per metre of joinery, but adds 0 worktop area
+    const totals = counterTotals(doc)
+    expect(totals.units.cupboard).toBe(2)
+    expect(totals.tops.laminate).toBe(0)
+
+    const lines = takeoff(doc).filter((line) => line.group === 'Joinery')
+    const cupboardLine = lines.find((line) => line.id === 'counter:cupboard')!
+    expect(cupboardLine).toBeDefined()
+    expect(cupboardLine.quantity).toBe(2)
+    expect(cupboardLine.label).toBe('Built-in cupboards')
+
+    // 3D rendering: plinth, carcass, and door handles
+    const parts = buildCounterParts(floorOf(doc).counters!, 0)
+    expect(parts.some((p) => p.colour === '#3f4448')).toBe(true)
+    expect(parts.some((p) => p.colour === '#ece8df')).toBe(true)
+    expect(parts.some((p) => p.colour === '#4a4a4f')).toBe(true)
+    expect(parts.some((p) => p.colour === '#c4beaf')).toBe(true)
+
+    // With finished floor 150 mm above slab datum, cupboard caps at ceiling (2.4 m) rather than poking through
+    const partsWithCeiling = buildCounterParts(floorOf(doc).counters!, 0.15, [], 2.4)
+    for (const part of partsWithCeiling) {
+      part.geometry.computeBoundingBox()
+      expect(part.geometry.boundingBox!.max.y).toBeLessThanOrEqual(2.4 + 1e-6)
+    }
+
+    // A 1.95 m cupboard has 3 bays (~600 mm) in both Plan and Review
+    const bays = cupboardBays({ x: 0, z: 0, dx: 1, dz: 0, length: 1.95, depth: 0.6 })
+    expect(bays.length).toBe(3)
+
+    // Found in countersOnWall
+    expect(countersOnWall(floorOf(doc), south.id, 1).length).toBe(1)
+
+    // Deep cupboards check clearance up to their full depth
+    // Add an island 0.8 m out from the south wall face
+    const islandData: Omit<Counter, 'id'> = { x: 5, z: backZ + 0.8, dx: 1, dz: 0, length: 1.5, depth: 0.6, kind: 'island', top: 'laminate' }
+    const docWithIsland = addCounter(doc, fid, islandData).document
+    // Standard 600 mm base counter face does not include the island in blocks:
+    const normalFace = counterFace(floorOf(docWithIsland), { x: 5.5, z: backZ + 0.1 }, 0.45, { kind: 'base', depth: 0.6 })!
+    expect(normalFace.before + normalFace.after).toBeGreaterThan(1.5)
+    // Deep 1.2 m pantry cupboard DOES include the island in blocks:
+    const deepFace = counterFace(floorOf(docWithIsland), { x: 5.5, z: backZ + 0.1 }, 0.45, { kind: 'cupboard', depth: 1.2 })
+    // The island standing at z = backZ + 0.8 intersects the 1.2m deep cupboard zone
+    expect(deepFace === null || deepFace.before + deepFace.after < normalFace.before + normalFace.after).toBe(true)
   })
 })

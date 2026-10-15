@@ -74,5 +74,7 @@ describe('door swings', () => {
     expect(defaultDoorSwing({ outside: false, roomType: 'bedroom' }, { outside: false, roomType: 'passage' })).toBe(1)
     // Living on side 1, Bathroom on side -1
     expect(defaultDoorSwing({ outside: false, roomType: 'living' }, { outside: false, roomType: 'bathroom' })).toBe(-1)
+    // Passage on side 1, Toilet on side -1 -> opens outward into passage
+    expect(defaultDoorSwing({ outside: false, roomType: 'passage' }, { outside: false, roomType: 'toilet' })).toBe(1)
   })
 })

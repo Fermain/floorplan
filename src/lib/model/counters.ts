@@ -1,3 +1,4 @@
+import { WALL_HEAD } from '../plot/fixture'
 import type { Counter, CounterKind, CounterTop } from './types'
 
 export type CounterKindSpec = { id: CounterKind; name: string; text: string; depth: number; height: number }
@@ -6,6 +7,7 @@ export const COUNTER_KINDS: readonly CounterKindSpec[] = [
   { id: 'base', name: 'Counter', text: 'Base cupboards under a worktop, against a wall. 600 mm deep and 900 mm high.', depth: 0.6, height: 0.9 },
   { id: 'island', name: 'Island', text: 'A counter standing free in the room, worked at from both sides. 900 mm deep.', depth: 0.9, height: 0.9 },
   { id: 'bar', name: 'Bar', text: 'A narrow, higher counter to sit at on stools. 400 mm deep and 1050 mm high.', depth: 0.4, height: 1.05 },
+  { id: 'cupboard', name: 'Built-in cupboard', text: 'Full-height cupboards along a wall for clothes, linen or storage. 600 mm deep and 2.4 m high.', depth: 0.6, height: WALL_HEAD },
 ]
 
 export type CounterTopSpec = { id: CounterTop; name: string; colour: string }
@@ -66,4 +68,29 @@ export function counterProblem(counter: Omit<Counter, 'id'>): string | null {
   if (counter.depth < COUNTER_MIN_DEPTH_M - 1e-9 || counter.depth > COUNTER_MAX_DEPTH_M + 1e-9) return 'counter depth out of range'
   if (counter.wallUnits && counter.kind !== 'base') return 'only a counter against a wall takes wall cupboards'
   return null
+}
+
+export type CupboardBay = {
+  p1: { x: number; z: number }
+  p2: { x: number; z: number }
+  p3: { x: number; z: number }
+  p4: { x: number; z: number }
+}
+
+// Subdivides a cupboard along its length into standard wardrobe bays (~600mm wide) with their four corners in plan.
+export function cupboardBays(counter: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'>): CupboardBay[] {
+  const numBays = Math.max(1, Math.round(counter.length / 0.6))
+  const bayLength = counter.length / numBays
+  const out = { x: -counter.dz, z: counter.dx }
+  const bays: CupboardBay[] = []
+  for (let i = 0; i < numBays; i++) {
+    const s0 = i * bayLength
+    const s1 = (i + 1) * bayLength
+    const p1 = { x: counter.x + counter.dx * s0, z: counter.z + counter.dz * s0 }
+    const p2 = { x: counter.x + counter.dx * s1, z: counter.z + counter.dz * s1 }
+    const p3 = { x: p2.x + out.x * counter.depth, z: p2.z + out.z * counter.depth }
+    const p4 = { x: p1.x + out.x * counter.depth, z: p1.z + out.z * counter.depth }
+    bays.push({ p1, p2, p3, p4 })
+  }
+  return bays
 }

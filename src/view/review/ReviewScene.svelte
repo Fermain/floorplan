@@ -35,6 +35,7 @@
   } from '../../lib/geometry/frames'
   import { buildCourseFaceGeometries, buildFinishSkin, buildLintelGeometry, buildWallGeometries } from '../../lib/geometry/walls'
   import { outsideFaces, resolveFinish } from '../../lib/geometry/finishes'
+  import { createDoorFaceResolver } from '../../lib/geometry/doors'
   import { buildRoofMeshes, masonryReach, roofInfills, WALL_HEAD_M, type RoofMeshes } from '../../lib/geometry/roof'
   import { coveringOf } from '../../lib/geometry/coverings'
   import { coveringTexture } from './roofTexture'
@@ -50,6 +51,7 @@
   import { buildPillarParts, type PillarPart } from '../../lib/geometry/pillars'
   import { buildRoadParts, type RoadPart } from '../../lib/geometry/roads'
   import { buildPavingParts, type PavingPart } from '../../lib/geometry/paving'
+  import { buildBedParts, type BedPart } from '../../lib/geometry/beds'
   import { buildCarportParts, type CarportPart } from '../../lib/geometry/carports'
   import { buildRetainingParts, pinchedGround, retainingDistance, RETAINING_GROUND_REACH_M, type RetainingPart } from '../../lib/geometry/retaining'
   import { buildCounterParts, type CounterPart } from '../../lib/geometry/counters'
@@ -60,6 +62,7 @@
   import FittingSetup from '../shared/FittingSetup.svelte'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
+  import { buildChimneyParts, type ChimneyPart } from '../../lib/geometry/chimney'
   import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { systemOf, wallSystem } from '../../lib/model/systems'
@@ -147,8 +150,10 @@
   let groundGeometry = $state<BufferGeometry | null>(null)
   let roadMeshes = $state<RoadPart[]>([])
   let pavingMeshes = $state<PavingPart[]>([])
+  let bedMeshes = $state<BedPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
   let retainingMeshes = $state<RetainingPart[]>([])
+  let chimneyMeshes = $state<ChimneyPart[]>([])
   let counterMeshes = $state<{ key: string; floorId: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
@@ -456,6 +461,7 @@
     const contours = buildContourLines(displayField, CONTOUR_LIFT_M)
     const roadParts = buildRoadParts(doc.plot, groundAt)
     const pavingParts = buildPavingParts(doc, groundAt)
+    const bedParts = buildBedParts(doc, groundAt)
     const carportParts = buildCarportParts(doc, groundAt)
     const retainingParts = buildRetainingParts(doc, lies)
     // A contour is left out where the ground under it has been drawn in to a wall.
@@ -482,6 +488,7 @@
         pillars.push({ key: `${floor.id}:${key}`, parts: buildPillarParts(group.type, group.spots, system, group.datum) })
       }
       const outside = outsideFaces(floor)
+      const doorResolver = createDoorFaceResolver(floor, outside)
       for (const wall of floor.walls) {
         if (wall.skin === 'logical') {
           const line = wall.fence ? fenceFrame(floor, wall) : null
@@ -500,7 +507,7 @@
         const geoms = buildWallGeometries(floor, wall, samples, head)
         const courses = buildCourseFaceGeometries(floor, wall, samples, head)
         const lintel = buildLintelGeometry(floor, wall)
-        const frame = buildOpeningFrameGeometry(floor, wall, samples)
+        const frame = buildOpeningFrameGeometry(floor, wall, samples, doorResolver)
         const glass = buildOpeningGlassGeometry(floor, wall, samples)
         const panels = buildOpeningPanelMeshes(floor, wall, samples)
         const skins: WallMeshes['skins'] = []
@@ -566,15 +573,18 @@
         key: level.key,
         floorId: level.floorId,
         datum: level.datum,
-        parts: buildCounterParts(level.items, level.datum + finishedFloor(floor), floor.fixtures ?? []),
+        parts: buildCounterParts(level.items, level.datum + finishedFloor(floor), floor.fixtures ?? [], level.datum + WALL_HEAD_M),
       })),
     )
     counterMeshes = counters
     groundGeometry = ground
     roadMeshes = roadParts
     pavingMeshes = pavingParts
+    bedMeshes = bedParts
     carportMeshes = carportParts
     retainingMeshes = retainingParts
+    const chimneyParts = buildChimneyParts(doc)
+    chimneyMeshes = chimneyParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -600,8 +610,10 @@
       ground.dispose()
       for (const part of roadParts) part.geometry.dispose()
       for (const part of pavingParts) part.geometry.dispose()
+      for (const part of bedParts) part.geometry.dispose()
       for (const part of carportParts) part.geometry.dispose()
       for (const part of retainingParts) part.geometry.dispose()
+      for (const part of chimneyParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -973,6 +985,11 @@
         <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
       </T.Mesh>
     {/each}
+    {#each bedMeshes as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow onclick={clearPick} userData={{ keepWhole: true }}>
+        <T.MeshStandardMaterial color={part.colour} roughness={0.9} side={DoubleSide} />
+      </T.Mesh>
+    {/each}
     {#if contourMinor}
       <T.LineSegments geometry={contourMinor}>
         <T.LineBasicMaterial color="#3f3428" />
@@ -1115,6 +1132,17 @@
           </T.Mesh>
         {/if}
       {/each}
+    {/each}
+
+    {#each chimneyMeshes.filter((part) => roofs && (!part.roofFloorId || shownFloor(part.roofFloorId))) as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.MeshStandardMaterial
+          color={part.colour}
+          roughness={part.roughness}
+          metalness={part.metalness}
+          side={DoubleSide}
+        />
+      </T.Mesh>
     {/each}
 
     {#each walls === 'hidden' ? [] : wallMeshes.filter((wall) => shownFloor(wall.floorId)) as wall (wall.key)}
