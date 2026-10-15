@@ -65,8 +65,17 @@ export type FocusHandle = {
   exit: (() => void) | null
 }
 
+export type BreadcrumbItem = {
+  label: string
+  href?: string
+  onclick?: () => void
+  current?: boolean
+}
+
 let plan = $state<PlanHandle | null>(null)
 let focus = $state<FocusHandle | null>(null)
+let breadcrumbs = $state<BreadcrumbItem[]>([])
+let stepOutHandler = $state<(() => boolean | void) | null>(null)
 // A tool asked for while the plan was not open: taken up when it opens.
 let wanted: string | null = null
 
@@ -95,6 +104,30 @@ export const workspace = {
       if (focus === handle) focus = null
     }
   },
+  // Spatial breadcrumbs for concentric navigation across Project > Storey > Room / Wall.
+  get breadcrumbs(): BreadcrumbItem[] {
+    return breadcrumbs
+  },
+  setBreadcrumbs(items: BreadcrumbItem[]) {
+    breadcrumbs = items
+  },
+  clearBreadcrumbs() {
+    breadcrumbs = []
+  },
+  // Register a handler to step out one resolution level (e.g. leave room focus, exit wall elevation).
+  registerStepOut(handler: () => boolean | void): () => void {
+    stepOutHandler = handler
+    return () => {
+      if (stepOutHandler === handler) stepOutHandler = null
+    }
+  },
+  stepOut(): boolean {
+    if (stepOutHandler) {
+      const result = stepOutHandler()
+      if (result !== false) return true
+    }
+    return false
+  },
   // Ask for a tool; if the plan is not open, it is taken up when it next opens.
   wantTool(tool: string): boolean {
     if (plan) {
@@ -105,3 +138,4 @@ export const workspace = {
     return false
   },
 }
+

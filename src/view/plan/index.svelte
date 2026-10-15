@@ -21,6 +21,9 @@
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import Sprout from '@lucide/svelte/icons/sprout'
+  import DoorClosed from '@lucide/svelte/icons/door-closed'
+  import Droplets from '@lucide/svelte/icons/droplets'
+  import Home from '@lucide/svelte/icons/home'
   import { BED_MATERIALS, DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedArea, bedMaterialSpec, bedPerimeter, bedSoilVolume } from '../../lib/model/beds'
   import { BED_SOIL_COLOUR, bedAt, insetRing } from '../../lib/geometry/beds'
   import FixtureSymbol from './FixtureSymbol.svelte'
@@ -66,7 +69,7 @@
   import { connectedCornerIds } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { doorSwings } from '../../lib/geometry/doors'
-  import { cornerById } from '../../lib/model/geom'
+  import { cornerById, wallLength } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
   import {
     cellAt,
@@ -84,11 +87,12 @@
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
   import { isHabitable } from '../../lib/geometry/spaces'
   import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { BedMaterial, Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair } from '../../lib/model/types'
+  import type { BedMaterial, Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair, WallSystemId } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
   import { cornerRemoval } from '../../lib/model/mutations'
-  import { systemOf, wallThickness } from '../../lib/model/systems'
+  import { systemOf, wallThickness, WALL_SYSTEMS } from '../../lib/model/systems'
+  import { storeyName } from '../../lib/routes/links'
   import { view as shown, workspace } from '../../lib/state/workspace.svelte'
   import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
   import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
@@ -1449,16 +1453,63 @@
     svgEl.setPointerCapture(event.pointerId)
   }
 
+  function hasSelection(): boolean {
+    return (
+      selectedWallId !== null ||
+      selectedCell !== null ||
+      selectedFixture !== null ||
+      selectedStair !== null ||
+      selectedCounter !== null ||
+      selectedRetaining !== null ||
+      selectedPaving !== null ||
+      selectedBed !== null ||
+      selectedCarport !== null ||
+      selectedService !== null ||
+      selectedBend !== null ||
+      selectedEdge !== null ||
+      selectedOutline !== null ||
+      selectedCornerId !== null ||
+      selectedPlateFloorId !== null
+    )
+  }
+
   $effect(() => {
     const drawing = pendingDraw
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !drawing) return
-      event.preventDefault()
-      cancelDraw()
+      if (typingTarget(event)) return
+      if (event.key !== 'Escape') return
+      if (drawing) {
+        event.preventDefault()
+        cancelDraw()
+        return
+      }
+      if (counterStart || pavingDraft.length > 0 || retainingDraft.length > 0) {
+        event.preventDefault()
+        counterStart = null
+        pavingDraft = []
+        retainingDraft = []
+        return
+      }
+      if (hasSelection()) {
+        event.preventDefault()
+        chooseSelection({})
+        return
+      }
+      if (focusedCells) {
+        event.preventDefault()
+        leaveRoom()
+        return
+      }
+      if (tool !== 'select') {
+        event.preventDefault()
+        setTool('select')
+        return
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
 
   function typingTarget(event: Event): boolean {
     const target = event.target
@@ -1912,6 +1963,45 @@
     if (!pick) return null
     return levelStairs.find((item) => item.stair.id === pick.id) ?? null
   })
+
+  const chosenWall = $derived.by(() => {
+    if (!selectedWallId || !activeFloor) return null
+    const wall = activeFloor.walls.find((item) => item.id === selectedWallId)
+    if (!wall) return null
+    return { floor: activeFloor, wall }
+  })
+
+  function removeChosenWall() {
+    if (!activeFloor || !selectedWallId) return
+    if (applyResult(documentStore.removeWall(activeFloor.id, selectedWallId))) chooseSelection({})
+  }
+
+  $effect(() => {
+    const storey = activeStoreyIndex
+    const room = focusedCells
+    if (roofFloor) {
+      workspace.setBreadcrumbs([{ label: 'Roof', current: true }])
+      return
+    }
+    if (room) {
+      workspace.setBreadcrumbs([
+        { label: storeyName(storey), onclick: leaveRoom },
+        { label: room.name, current: true },
+      ])
+      const unreg = workspace.registerStepOut(() => {
+        leaveRoom()
+        return true
+      })
+      return () => {
+        unreg()
+      }
+    } else {
+      workspace.setBreadcrumbs([
+        { label: storeyName(storey), current: true },
+      ])
+    }
+  })
+
 
   function stairAt(x: number, z: number): { floorId: string; id: string } | null {
     const hit = levelStairs.find((item) => pointInRing(item.layout.footprint, x, z))
@@ -4358,14 +4448,19 @@
     </g>
   </svg>
     {#if chosenStair && !roofFloor}
-      <ContextPanel label="Stair" title="Stair" onclose={() => chooseSelection({})}>
-        <p>
-          {chosenStair.layout.risers} risers of {Math.round(chosenStair.layout.riser * 1000)} mm and {chosenStair.layout
-            .treads} goings of {Math.round(chosenStair.layout.going * 1000)} mm, {checkFormat.format(
-            chosenStair.layout.length,
-          )} m long.
-        </p>
-        <p class="text-muted-foreground">
+      <ContextPanel
+        label="Stair"
+        tag="Stair"
+        icon={Footprints}
+        title="Stair flight"
+        subtitle={`${chosenStair.layout.risers} risers · ${Math.round(chosenStair.layout.riser * 1000)} mm riser · ${checkFormat.format(chosenStair.layout.length)} m long`}
+        onclose={() => chooseSelection({})}
+      >
+        {#snippet actions()}
+          <Button class="w-full" variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
+          <Button class="w-full" variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
+        {/snippet}
+        <p class="text-xs text-muted-foreground">
           Laid out to SANS 10400 Part M: risers at most {Math.round(MAX_RISER_M * 1000)} mm, goings at least {Math.round(
             MIN_GOING_M * 1000,
           )} mm.
@@ -4381,16 +4476,73 @@
             onchange={(event) => patchChosenStair({ width: Number(event.currentTarget.value) / 1000 })}
           />
         </div>
-        <div class="grid gap-2">
-          <Button variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
-          <Button variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
-        </div>
       </ContextPanel>
     {/if}
+    {#if chosenWall && !roofFloor}
+      {@const wall = chosenWall.wall}
+      {@const system = systemOf(wall)}
+      {@const len = wallLength(chosenWall.floor.corners, wall.startCornerId, wall.endCornerId)}
+      {@const openings = wall.openings.length}
+      <ContextPanel
+        label="Wall"
+        tag={wall.skin === 'logical' ? 'Logical wall' : 'Wall'}
+        title={wall.skin === 'logical' ? 'Logical wall' : system.name}
+        subtitle={`${len.toFixed(2)} m · ${openings === 0 ? 'no openings' : `${openings} ${openings === 1 ? 'opening' : 'openings'}`}`}
+        icon={wall.skin === 'logical' ? SquareDashed : BrickWall}
+        description={wall.skin === 'logical' ? 'Divides rooms or carries fences/posts without building masonry.' : system.unitName}
+        onclose={() => chooseSelection({})}
+      >
+        {#snippet actions()}
+          <Button class="w-full" onclick={() => onFocus?.(wall.id)}>
+            Open in Focus (Elevation)
+          </Button>
+          <Button class="w-full" variant="outline" onclick={squareToSelectedWall}>
+            Square to this wall
+          </Button>
+        {/snippet}
+        <div class="grid gap-2">
+          {#if wall.skin !== 'logical'}
+            <div class="grid gap-1.5">
+              <Label>Wall system</Label>
+              <Select.Root
+                type="single"
+                value={wall.systemId}
+                onValueChange={(next) => next && applyResult(documentStore.setWallSystem(chosenWall.floor.id, wall.id, next as WallSystemId))}
+              >
+                <Select.Trigger class="w-full">{system.name}</Select.Trigger>
+                <Select.Content>
+                  {#each WALL_SYSTEMS as opt (opt.id)}
+                    <Select.Item value={opt.id}>{opt.name}</Select.Item>
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          {/if}
+          <p class="text-xs text-muted-foreground">Double-click a wall to open it directly in Focus (Elevation).</p>
+          <Button variant="destructive" onclick={removeChosenWall}>
+            {wall.skin === 'logical' ? 'Delete logical wall' : 'Delete wall'}
+          </Button>
+        </div>
+      </ContextPanel>
+
+    {/if}
+
     {#if selectedService && showServices && !roofFloor}
-      <ContextPanel label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'} onclose={() => chooseSelection({})}>
+      <ContextPanel
+        label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}
+        tag="Services"
+        icon={Droplets}
+        title={selectedService === 'sewer' ? (plumbing.septic ? 'Drain to septic tank' : 'Drain to municipal sewer') : 'Water main'}
+        subtitle={selectedService === 'sewer'
+          ? (sewerProfile ? `${checkFormat.format(sewerProfile.length)} m of 110 mm drain` : 'Drainage connection')
+          : `${checkFormat.format(plumbing.waterMain)} m of 22 mm pipe`}
+        onclose={() => chooseSelection({})}
+      >
+        {#snippet actions()}
+          <Button class="w-full" variant="outline" onclick={straightenSelected}>Straighten the route</Button>
+        {/snippet}
+
         {#if selectedService === 'sewer'}
-          <h2 class="font-semibold">{plumbing.septic ? 'Drain to the septic tank' : 'Drain to the sewer'}</h2>
           <div class="grid gap-1.5">
             <Label>Connects to</Label>
             <Select.Root
@@ -4448,17 +4600,29 @@
             />
           </div>
         {:else}
-          <h2 class="font-semibold">Water main</h2>
           <p>{checkFormat.format(plumbing.waterMain)} m of 22 mm pipe from the meter to the house, in a 450 mm trench.</p>
         {/if}
         <p class="text-xs text-muted-foreground">
           Drag the {selectedService === 'sewer' ? 'connection' : 'meter'} along the boundary, drag a + to add a bend, and Delete removes a selected bend.
         </p>
-        <Button variant="outline" onclick={straightenSelected}>Straighten the route</Button>
       </ContextPanel>
     {/if}
     {#if chosenFixture && !roofFloor}
-      <ContextPanel label="Fitting" title={chosenFixture.spec.name} description={chosenFixture.spec.text} onclose={() => chooseSelection({})}>
+      <ContextPanel
+        label="Fitting"
+        tag={chosenFixture.spec.trade === 'electrical' ? 'Electrical' : chosenFixture.spec.trade === 'plumbing' ? 'Plumbing' : 'Fitting'}
+        icon={Plug}
+        title={chosenFixture.spec.name}
+        subtitle={chosenFixture.spec.text}
+        onclose={() => chooseSelection({})}
+      >
+        {#snippet actions()}
+          {#if chosenFixture.onWall}
+            <Button class="w-full" variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
+          {/if}
+          <Button class="w-full" variant="destructive" onclick={removeChosenFixture}>Remove fitting</Button>
+        {/snippet}
+
         {#if chosenFixture.fixture.kind === 'db-board'}
           <p>
             Feeds {wiring.circuits.length} {wiring.circuits.length === 1 ? 'circuit' : 'circuits'}{wiring.boardSize
@@ -4476,12 +4640,6 @@
           <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
         {/if}
         <FittingSetup floorId={chosenFixture.floorId} fixture={chosenFixture.fixture} onresult={applyResult} />
-        <div class="grid gap-2">
-          {#if chosenFixture.onWall}
-            <Button data-look variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
-          {/if}
-          <Button variant="destructive" onclick={removeChosenFixture}>Remove</Button>
-        </div>
       </ContextPanel>
     {/if}
     {#if selectedEdge !== null && !roofFloor}
@@ -4490,8 +4648,10 @@
         {@const onRoad = (document.plot.roads ?? []).includes(selectedEdge)}
         <ContextPanel
           label="Side of the plot"
+          tag="Boundary"
+          icon={SquareDashed}
           title="Side of the plot"
-          description="{checkFormat.format(side.length)} m along the boundary, facing {side.facing}."
+          subtitle="{checkFormat.format(side.length)} m along the boundary · facing {side.facing}"
           onclose={() => chooseSelection({})}
         >
           <div class="grid gap-1.5">
@@ -4520,10 +4680,32 @@
       {@const measure = chosenRetaining.measure}
       <ContextPanel
         label="Retaining wall"
+        tag="Site"
+        icon={Mountain}
         title={retainingSpec(chosenRetaining.wall.type).name}
-        description={retainingSpec(chosenRetaining.wall.type).text}
+        subtitle="{checkFormat.format(measure.length)} m long · holds back up to {checkFormat.format(measure.highest)} m"
         onclose={() => chooseSelection({})}
       >
+        {#snippet estimate()}
+          <table class="w-full text-xs">
+            <tbody>
+              <tr class="border-b border-border/40"><td class="py-1 text-muted-foreground">Length</td><td class="py-1 text-right font-medium tabular-nums">{checkFormat.format(measure.length)} m</td></tr>
+              <tr class="border-b border-border/40">
+                <td class="py-1 text-muted-foreground">Max height</td>
+                <td class="py-1 text-right font-medium tabular-nums" class:text-amber-700={measure.highest > RETAINING_ENGINEER_M}>{checkFormat.format(measure.highest)} m</td>
+              </tr>
+              <tr><td class="py-1 text-muted-foreground">Average height</td><td class="py-1 text-right font-medium tabular-nums">{checkFormat.format(measure.average)} m</td></tr>
+            </tbody>
+          </table>
+          {#if measure.highest > RETAINING_ENGINEER_M}
+            <p class="text-xs text-amber-700">Over {RETAINING_ENGINEER_M} m of retained ground needs an engineer's design.</p>
+          {/if}
+        {/snippet}
+
+        {#snippet actions()}
+          <Button class="w-full" variant="destructive" onclick={removeChosenRetaining}>Remove retaining wall</Button>
+        {/snippet}
+
         <div class="grid gap-1.5">
           <Label for="retaining-type">Built of</Label>
           <Select.Root
@@ -4539,29 +4721,23 @@
             </Select.Content>
           </Select.Root>
         </div>
-        <table class="sheet still rounded-md border">
-          <tbody>
-            <tr><td class="label">Length</td><td class="text-right font-medium tabular-nums">{checkFormat.format(measure.length)} m</td></tr>
-            <tr>
-              <td class="label">Holds back, at most</td>
-              <td class="text-right font-medium tabular-nums" class:warn={measure.highest > RETAINING_ENGINEER_M}>{checkFormat.format(measure.highest)} m</td>
-            </tr>
-            <tr><td class="label">On average</td><td class="text-right font-medium tabular-nums">{checkFormat.format(measure.average)} m</td></tr>
-          </tbody>
-        </table>
-        {#if measure.highest > RETAINING_ENGINEER_M}
-          <p class="text-amber-700">Over {RETAINING_ENGINEER_M} m of retained ground needs an engineer's design.</p>
-        {/if}
-        <Button variant="destructive" onclick={removeChosenRetaining}>Remove</Button>
       </ContextPanel>
     {/if}
     {#if chosenCounter && !roofFloor}
       <ContextPanel
         label={chosenCounter.kind === 'cupboard' ? 'Cupboard' : 'Counter'}
+        tag={chosenCounter.kind === 'cupboard' ? 'Cupboard' : 'Counter'}
+        icon={ChefHat}
         title={counterKindSpec(chosenCounter.kind).name}
-        description="{Math.round(chosenCounter.length * 1000)} × {Math.round(chosenCounter.depth * 1000)} mm, {counterKindSpec(chosenCounter.kind).height * 1000} mm high."
+        subtitle="{Math.round(chosenCounter.length * 1000)} × {Math.round(chosenCounter.depth * 1000)} mm · {counterKindSpec(chosenCounter.kind).height * 1000} mm high"
         onclose={() => chooseSelection({})}
       >
+        {#snippet actions()}
+          <Button class="w-full" variant="destructive" onclick={removeChosenCounter}>
+            {chosenCounter.kind === 'cupboard' ? 'Remove cupboard' : 'Remove counter'}
+          </Button>
+        {/snippet}
+
         {#if chosenCounter.kind !== 'cupboard'}
           <div class="grid gap-1.5">
             <Label>Worktop</Label>
@@ -4610,19 +4786,27 @@
           </label>
         {/if}
         {#each counterIssues(document).filter((issue) => issue.id.startsWith(`counter:${chosenCounter.id}:`)) as issue (issue.id)}
-          <p class="text-amber-700">{issue.text}</p>
+          <p class="text-xs text-amber-700">{issue.text}</p>
         {/each}
-        <Button variant="destructive" onclick={removeChosenCounter}>Remove</Button>
       </ContextPanel>
     {/if}
     {#if chosenCarport && !roofFloor}
       {@const size = carportSize(chosenCarport)}
       <ContextPanel
         label="Carport"
+        tag="Carport"
+        icon={CarFront}
         title={carportName(chosenCarport.bays)}
-        description="{size.wide.toFixed(2)} × {size.deep.toFixed(1)} m. {carportRoofSpec(chosenCarport.roof).text}"
+        subtitle="{size.wide.toFixed(2)} × {size.deep.toFixed(1)} m · {carportRoofSpec(chosenCarport.roof).text}"
         onclose={() => chooseSelection({})}
       >
+        {#snippet actions()}
+          <Button class="w-full" variant="outline" onclick={turnChosenCarport}>
+            <RotateCw class="mr-1.5 size-4" />Turn a quarter turn
+          </Button>
+          <Button class="w-full" variant="destructive" onclick={removeChosenCarport}>Remove carport</Button>
+        {/snippet}
+
         <div class="grid gap-1.5">
           <Label>Cars</Label>
           <ToggleGroup.Root
@@ -4653,21 +4837,25 @@
             </Select.Content>
           </Select.Root>
         </div>
-        <Button variant="outline" onclick={turnChosenCarport}><RotateCw />Turn a quarter turn</Button>
         {#each carportWarnings.filter((issue) => issue.carportId === chosenCarport?.id) as issue (issue.id)}
-          <p class="text-amber-700">{issue.text}</p>
+          <p class="text-xs text-amber-700">{issue.text}</p>
         {/each}
-        <Button variant="destructive" onclick={removeChosenCarport}>Remove</Button>
       </ContextPanel>
     {/if}
     {#if chosenPaving && !roofFloor}
       {@const surface = chosenPaving.apron ? projectDefaults(document).apronSurface : chosenPaving.item.surface}
       <ContextPanel
         label="Paving"
+        tag={chosenPaving.apron ? 'Apron' : 'Paving'}
+        icon={Grid2x2}
         title={chosenPaving.apron ? 'Apron round the house' : `${PAVING[surface].name} paving`}
-        description="{checkFormat.format(chosenPaving.area)} m². {PAVING[surface].text}"
+        subtitle="{checkFormat.format(chosenPaving.area)} m² · {PAVING[surface].text}"
         onclose={() => chooseSelection({})}
       >
+        {#snippet actions()}
+          <Button class="w-full" variant="destructive" onclick={removeChosenPaving}>{chosenPaving.apron ? 'No apron' : 'Remove paving'}</Button>
+        {/snippet}
+
         <div class="grid gap-1.5">
           <Label>Surface</Label>
           <SwatchPicker
@@ -4696,9 +4884,8 @@
               onchange={(event) => applyResult(documentStore.setProjectDefaults({ apronWidth: Number(event.currentTarget.value) / 1000 }))}
             />
           </div>
-          <p class="text-muted-foreground">Laid along every outside wall to carry rain clear of the foundations. It is set for the whole project.</p>
+          <p class="text-xs text-muted-foreground">Laid along every outside wall to carry rain clear of the foundations. It is set for the whole project.</p>
         {/if}
-        <Button variant="destructive" onclick={removeChosenPaving}>{chosenPaving.apron ? 'No apron' : 'Remove'}</Button>
       </ContextPanel>
     {/if}
     {#if chosenBed && !roofFloor}
@@ -4709,10 +4896,16 @@
       {@const mat = bedMaterialSpec(chosenBed.material)}
       <ContextPanel
         label="Garden bed"
+        tag="Garden"
+        icon={Sprout}
         title={isRaised ? `${mat.name} raised bed` : (chosenBed.material ? `Flower bed with ${mat.name.toLowerCase()} edging` : 'Flower bed')}
-        description="{checkFormat.format(area)} m² · {isRaised || chosenBed.material ? `${checkFormat.format(perim)} m ${isRaised ? 'perimeter' : 'edging'} · ` : ''}{checkFormat.format(volume)} m³ topsoil"
+        subtitle="{checkFormat.format(area)} m² · {isRaised || chosenBed.material ? `${checkFormat.format(perim)} m ${isRaised ? 'perimeter' : 'edging'} · ` : ''}{checkFormat.format(volume)} m³ topsoil"
         onclose={() => chooseSelection({})}
       >
+        {#snippet actions()}
+          <Button class="w-full" variant="destructive" onclick={removeChosenBed}>Delete bed</Button>
+        {/snippet}
+
         <div class="grid gap-1.5">
           <Label for="bed-height">Height (mm)</Label>
           <div class="flex items-center gap-2">
@@ -4808,13 +5001,58 @@
             {/if}
           </div>
         {/if}
-        <Button variant="destructive" onclick={removeChosenBed}>Delete bed</Button>
       </ContextPanel>
     {/if}
     {#if selectedRoom && !roofFloor}
-      <ContextPanel label="Room" onclose={() => chooseSelection({})}>
-        {#if selectedRoom.resolved}
-          {@const resolved = selectedRoom.resolved}
+      {@const resolved = selectedRoom.resolved}
+      <ContextPanel
+        label="Room"
+        tag="Room"
+        icon={DoorClosed}
+        title={resolved ? resolved.space.name : 'Unnamed space'}
+        subtitle={resolved ? `${areaFormat.format(resolved.area)} m² inside walls${resolved.cells.length > 1 ? ` · ${resolved.cells.length} parts` : ''}` : `${areaFormat.format(selectedRoom.cell.netArea)} m² inside walls`}
+        onclose={() => chooseSelection({})}
+      >
+        {#snippet estimate()}
+          {#if resolved}
+            {#if selectedChecks}
+              <div class="grid gap-1.5">
+                <span class="text-xs font-semibold tracking-wide uppercase text-muted-foreground">SANS 10400 Checks</span>
+                {#each selectedChecks.checks as item (item.id)}
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-muted-foreground">{item.label} (Part {item.part}):</span>
+                    <Badge
+                      variant={item.ok ? 'secondary' : 'outline'}
+                      class={item.ok ? 'text-[11px]' : 'border-amber-600/40 text-amber-700 text-[11px]'}
+                    >
+                      {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`} / min {checkFormat.format(item.required)}{item.unit === '%' ? '%' : ` ${item.unit}`}
+                    </Badge>
+                  </div>
+                {/each}
+              </div>
+            {:else if !isHabitable(resolved.space.type)}
+              <span class="text-xs text-muted-foreground">Not a habitable room; daylight and ventilation checks do not apply.</span>
+            {/if}
+          {/if}
+        {/snippet}
+
+        {#snippet actions()}
+          {#if resolved}
+            <Button
+              class="w-full"
+              variant="outline"
+              onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
+            >
+              <Maximize2 class="mr-1.5 size-4" />Lay out this room (Focus)
+            </Button>
+            <Button class="w-full" variant="outline" onclick={suggestForSelectedRoom}>
+              <Plug class="mr-1.5 size-4" />Suggest fittings
+            </Button>
+          {/if}
+        {/snippet}
+
+        {#if resolved}
+
           <div class="grid gap-1.5">
             <Label for="room-name">Name</Label>
             <Input
@@ -4851,35 +5089,6 @@
               compact
             />
           </div>
-          <p>
-            <span class="text-lg font-semibold">{areaFormat.format(resolved.area)} m²</span>
-            <span class="text-muted-foreground">inside the walls{resolved.cells.length > 1
-              ? `, in ${resolved.cells.length} parts`
-              : ''}</span>
-          </p>
-          {#if selectedChecks}
-            <section class="grid gap-2 border-t pt-3" aria-label="SANS 10400 checks">
-              <h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">SANS 10400</h3>
-              {#each selectedChecks.checks as item (item.id)}
-                <div class="flex items-start justify-between gap-2">
-                  <div>
-                    <div>{item.label}</div>
-                    <div class="text-xs text-muted-foreground">
-                      needs {checkFormat.format(item.required)}{item.unit === '%' ? '%' : ` ${item.unit}`} · Part {item.part}
-                    </div>
-                  </div>
-                  <Badge
-                    variant={item.ok ? 'secondary' : 'outline'}
-                    class={item.ok ? '' : 'border-amber-600/40 text-amber-700'}
-                  >
-                    {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`}
-                  </Badge>
-                </div>
-              {/each}
-            </section>
-          {:else if !isHabitable(resolved.space.type)}
-            <p class="text-muted-foreground">Not a habitable room, so the daylight and size checks do not apply.</p>
-          {/if}
           <label class="flex cursor-pointer items-start gap-2">
             <input
               type="checkbox"
@@ -4892,20 +5101,11 @@
               <span class="block text-muted-foreground">A deck or a yard: no roof, ceiling or storey over it.</span>
             </span>
           </label>
-          <div class="grid gap-1.5 border-t pt-3">
-            <Button
-              variant="outline"
-              onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
-            >
-              <Maximize2 />Lay out this room
-            </Button>
-            <Button variant="outline" onclick={suggestForSelectedRoom}><Plug />Suggest fittings</Button>
-            <p class="text-xs text-muted-foreground">
-              {selectedRoomFixtures > 0
-                ? `${selectedRoomFixtures} fittings in this room. Suggesting adds a fresh set.`
-                : `Lights, switches, sockets and plumbing for a ${roomTypeLabel(resolved.space.type).toLowerCase()}.`}
-            </p>
-          </div>
+          <p class="text-xs text-muted-foreground">
+            {selectedRoomFixtures > 0
+              ? `${selectedRoomFixtures} fittings in this room. Suggesting adds a fresh set.`
+              : `Lights, switches, sockets and plumbing for a ${roomTypeLabel(resolved.space.type).toLowerCase()}.`}
+          </p>
           <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
         {:else}
           <p>
@@ -4927,8 +5127,23 @@
         {/if}
       </ContextPanel>
     {/if}
+
     {#if roofFloor}
-      <ContextPanel label="Roof" title="Roof">
+      <ContextPanel
+        label="Roof"
+        tag="Roof"
+        icon={Home}
+        title="Roof structure"
+        subtitle={roofFloor.roof ? `${ROOF_FORMS[roofFloor.roof.form ?? 'hip']} · ${roofFloor.roof.pitchDeg}° pitch` : 'Roof configuration'}
+      >
+        {#snippet actions()}
+          {#if roofFloor.roof && (roofFloor.roof.form ?? 'hip') !== 'hip'}
+            <Button class="w-full" variant="outline" onclick={turnRoof}>
+              <RotateCw class="mr-1.5 size-4" />{roofFloor.roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
+            </Button>
+          {/if}
+        {/snippet}
+
         {#if roofFloor.roof}
           {@const roof = roofFloor.roof}
           <div class="grid gap-1.5">
@@ -4942,11 +5157,6 @@
               </Select.Content>
             </Select.Root>
           </div>
-          {#if (roof.form ?? 'hip') !== 'hip'}
-            <Button variant="outline" onclick={turnRoof}>
-              <RotateCw />{roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
-            </Button>
-          {/if}
           <div class="grid gap-1.5">
             <Label>Covering</Label>
             <Select.Root

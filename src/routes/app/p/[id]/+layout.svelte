@@ -16,9 +16,12 @@
   import { deleteProject, saveProject } from '$lib/state/projects'
   import { exampleOf, session } from '$lib/state/session.svelte'
   import Eye from '@lucide/svelte/icons/eye'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import ProjectMenubar from '$lib/components/app/ProjectMenubar.svelte'
   import SettingsDialog from '$lib/components/app/SettingsDialog.svelte'
+  import Breadcrumbs from '$lib/components/app/Breadcrumbs.svelte'
   import { statusLine } from '$lib/state/status.svelte'
+  import { workspace } from '$lib/state/workspace.svelte'
   import type { Document } from '$lib/model/types'
 
   let { children } = $props()
@@ -153,6 +156,12 @@
         const tag = target.tagName
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
       }
+      if (event.key === 'Escape') {
+        if (workspace.stepOut()) {
+          event.preventDefault()
+          return
+        }
+      }
       if (!(event.metaKey || event.ctrlKey)) return
       const key = event.key.toLowerCase()
       if (key === 'z') {
@@ -206,12 +215,19 @@
           {session.project?.name ?? '…'}
         </button>
       {/if}
+      {#if workspace.breadcrumbs.length > 0}
+        <ChevronRight class="size-3.5 shrink-0 text-muted-foreground/50 max-sm:hidden" aria-hidden="true" />
+        <div class="min-w-0 truncate max-sm:hidden">
+          <Breadcrumbs items={workspace.breadcrumbs} />
+        </div>
+      {/if}
       {#if saveLabel}
         <Badge variant={session.saveState === 'error' ? 'destructive' : 'secondary'} class="shrink-0 font-normal">
           {saveLabel}
         </Badge>
       {/if}
     </div>
+
     <div class="flex items-center justify-end gap-0.5 md:col-start-3">
       {#if viewing}
         <Button size="sm" disabled={copying} onclick={() => void openCopy()}>{copying ? 'Opening…' : 'Open a copy to edit'}</Button>

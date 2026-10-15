@@ -43,6 +43,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import AlignHorizontalJustifyCenter from '@lucide/svelte/icons/align-horizontal-justify-center'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
+  import DoorClosed from '@lucide/svelte/icons/door-closed'
+  import Plug from '@lucide/svelte/icons/plug'
+  import SquareDashed from '@lucide/svelte/icons/square-dashed'
   import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
   import Plus from '@lucide/svelte/icons/plus'
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
@@ -1624,16 +1627,34 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       </div>
       {#if selectedFitting && floor}
         {@const spec = fixtureSpec(selectedFitting.fixture.kind)}
-        <ContextPanel label="Fitting" title={spec.name} description={spec.text} onclose={() => chooseFitting(null)}>
+        <ContextPanel
+          label="Fitting"
+          tag={spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'plumbing' ? 'Plumbing' : 'Fitting'}
+          icon={Plug}
+          title={spec.name}
+          subtitle={spec.trade ? spec.trade.toUpperCase() : undefined}
+          description={spec.text}
+          onclose={() => chooseFitting(null)}
+        >
+          {#snippet actions()}
+            <Button class="w-full" variant="destructive" onclick={removeSelectedFitting}>Remove fitting</Button>
+          {/snippet}
           <FittingSetup floorId={floor.id} fixture={selectedFitting.fixture} />
-          <Button variant="destructive" onclick={removeSelectedFitting}>Remove</Button>
         </ContextPanel>
+
       {:else if editingOpening}
         <ContextPanel
           label="Opening"
+          tag="Opening"
+          icon={DoorClosed}
           title={insertChoices.find((choice) => choice.kind === editingOpening.kind)?.label ?? 'Opening'}
+          subtitle={`${Math.round(editingOpening.width * 1000)} mm wide × ${Math.round(editingOpening.height * 1000)} mm high`}
           onclose={() => onSelectOpening?.(null)}
         >
+          {#snippet actions()}
+            <Button class="w-full" variant="destructive" onclick={removeSelected}>Remove opening</Button>
+          {/snippet}
+
           {#if widthLimits && widthAllowed}
             <div class="grid gap-1.5">
               <Label for="opening-width">Width (mm)</Label>
@@ -1700,10 +1721,16 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
               {/if}
             </div>
           {/if}
-          <Button variant="destructive" onclick={removeSelected}>Remove opening</Button>
         </ContextPanel>
+
       {:else if logical && fence && (fenceGates.length > 0 || gateMessage)}
-        <ContextPanel label="Gates" title="Gates" description="Distances are from the left end of the fence as seen from here.">
+        <ContextPanel
+          label="Gates"
+          tag="Fence"
+          icon={SquareDashed}
+          title="Fence gates"
+          subtitle="Distances are from the left end of the fence as seen from here."
+        >
           {#if gateMessage}<p class="text-destructive">{gateMessage}</p>{/if}
           {#each fenceGates as item (item.gate.id)}
             <div class="grid gap-1.5 border-t pt-3">
