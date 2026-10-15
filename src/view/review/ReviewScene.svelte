@@ -951,10 +951,11 @@
 </script>
 
 <div class="scene">
-  <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
-    {locked ? 'Perspective' : 'Fixed view'}
-  </Button>
-  <Canvas shadows>
+  <div class="viewport">
+    <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
+      {locked ? 'Perspective' : 'Fixed view'}
+    </Button>
+    <Canvas shadows>
     <ReviewInteractivity>
     <T.PerspectiveCamera
       makeDefault
@@ -1261,6 +1262,7 @@
     </T.Group>
     </ReviewInteractivity>
   </Canvas>
+  </div>
   {#if chosenWall}
     {@const system = systemOf(chosenWall.wall)}
     {@const len = wallLength(chosenWall.floor.corners, chosenWall.wall.startCornerId, chosenWall.wall.endCornerId)}
@@ -1311,8 +1313,24 @@
 <style>
   .scene {
     position: relative;
+    display: flex;
     width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .viewport {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    width: auto;
     height: 100%;
   }
 
+  .viewport :global(canvas) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
 </style>

@@ -1839,7 +1839,9 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     background: var(--background);
     flex: 1;
     min-height: 0;
-    width: 100%;
+    min-width: 0;
+    width: auto;
+    height: 100%;
   }
 
   .viewport.elevation {

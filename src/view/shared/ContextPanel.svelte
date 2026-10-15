@@ -118,9 +118,12 @@
 
   @media (min-width: 768px) {
     .context-panel {
-      inset: 0 0 0 auto;
-      max-height: none;
+      position: relative;
+      inset: auto;
+      flex-shrink: 0;
       width: 18rem;
+      height: 100%;
+      max-height: none;
       border-top: none;
       border-left: 1px solid var(--border);
       padding-bottom: 1rem;
