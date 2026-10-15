@@ -18,8 +18,6 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import Check from '@lucide/svelte/icons/check'
   import Undo2 from '@lucide/svelte/icons/undo-2'
-  import Minus from '@lucide/svelte/icons/minus'
-  import Plus from '@lucide/svelte/icons/plus'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import type { Tool, PlanScope } from '../scope'
   import { COUNTER_KINDS, COUNTER_TOPS, counterTopSpec } from '../../../lib/model/counters'
@@ -28,9 +26,9 @@
   import { PAVING, PAVING_LIST } from '../../../lib/geometry/paving'
   import { pavingSwatch } from '$lib/components/project/swatches'
   import { BED_MATERIALS, DEFAULT_RAISED_HEIGHT, bedMaterialSpec } from '../../../lib/model/beds'
-  import { FIXTURES, fixtureSpec } from '../../../lib/model/fixtures'
   import { RETAINING_TYPES, retainingSpec } from '../../../lib/model/retaining'
   import { documentStore } from '../../../lib/state/document.svelte'
+  import FixturePickerPopover from './FixturePickerPopover.svelte'
 
   interface Props {
     planScope: PlanScope
@@ -424,42 +422,12 @@
     {/if}
   {/if}
   {#if tool === 'draw-fixture'}
-    <Select.Root type="single" value={fixtureKind} onValueChange={(next) => onFixtureKindChange(next as FixtureKind)}>
-      <Select.Trigger size="sm" class="w-44" aria-label="Fitting">{fixtureSpec(fixtureKind).name}</Select.Trigger>
-      <Select.Content>
-        <Select.Group>
-          <Select.Label>Electrical</Select.Label>
-          {#each FIXTURES.filter((item) => item.trade === 'electrical') as option (option.id)}
-            <Select.Item value={option.id} label={option.name} />
-          {/each}
-        </Select.Group>
-        <Select.Group>
-          <Select.Label>Plumbing</Select.Label>
-          {#each FIXTURES.filter((item) => item.trade === 'plumbing') as option (option.id)}
-            <Select.Item value={option.id} label={option.name} />
-          {/each}
-        </Select.Group>
-        <Select.Group>
-          <Select.Label>Gas</Select.Label>
-          {#each FIXTURES.filter((item) => item.trade === 'gas') as option (option.id)}
-            <Select.Item value={option.id} label={option.name} />
-          {/each}
-        </Select.Group>
-        <Select.Group>
-          <Select.Label>Building</Select.Label>
-          {#each FIXTURES.filter((item) => item.trade === 'building') as option (option.id)}
-            <Select.Item value={option.id} label={option.name} />
-          {/each}
-        </Select.Group>
-      </Select.Content>
-    </Select.Root>
-    {#if placeSize}
-      <div class="flex items-center gap-1" role="group" aria-label="Size">
-        <Button variant="outline" size="icon-sm" title="Smaller (−)" aria-label="Smaller" onclick={() => onStepPlaceSize(-1)}><Minus /></Button>
-        <span class="min-w-16 text-center text-sm tabular-nums">{placeSize.name}</span>
-        <Button variant="outline" size="icon-sm" title="Bigger (+)" aria-label="Bigger" onclick={() => onStepPlaceSize(1)}><Plus /></Button>
-      </div>
-    {/if}
+    <FixturePickerPopover
+      {fixtureKind}
+      {onFixtureKindChange}
+      {placeSize}
+      {onStepPlaceSize}
+    />
   {/if}
   {#if deletable}
     <Button
