@@ -58,8 +58,12 @@
   import { buildFixtureParts, finishedFloor, fixtureStandAboveDatum, fixtureWall, siteField, standsOnGrade, type FixturePart } from '../../lib/geometry/fixtures'
   import { fixtureFootprint, fixtureSize, fixtureSpec } from '../../lib/model/fixtures'
   import { wallLength } from '../../lib/model/geom'
+  import BrickWall from '@lucide/svelte/icons/brick-wall'
+  import SquareDashed from '@lucide/svelte/icons/square-dashed'
+  import Plug from '@lucide/svelte/icons/plug'
   import ContextPanel from '../shared/ContextPanel.svelte'
   import FittingSetup from '../shared/FittingSetup.svelte'
+  import { workspace } from '../../lib/state/workspace.svelte'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
   import { buildChimneyParts, type ChimneyPart } from '../../lib/geometry/chimney'
@@ -424,6 +428,37 @@
   })
 
   $effect(() => {
+    if (chosenWall) {
+      const floorIndex = chosenWall.floor.index
+      const wall = chosenWall.wall
+      const label = wall.skin === 'logical' ? 'Logical wall' : 'Wall'
+      workspace.setBreadcrumbs([
+        { label: 'Review (3D)', onclick: () => (selected = null) },
+        { label: `${storeyName(floorIndex)} · ${label}`, current: true },
+      ])
+      const unreg = workspace.registerStepOut(() => {
+        selected = null
+        return true
+      })
+      return () => unreg()
+    } else if (chosenFixture) {
+      const floorIndex = chosenFixture.floor.index
+      const spec = fixtureSpec(chosenFixture.fixture.kind)
+      workspace.setBreadcrumbs([
+        { label: 'Review (3D)', onclick: () => (selected = null) },
+        { label: `${storeyName(floorIndex)} · ${spec.name}`, current: true },
+      ])
+      const unreg = workspace.registerStepOut(() => {
+        selected = null
+        return true
+      })
+      return () => unreg()
+    } else {
+      workspace.setBreadcrumbs([{ label: 'Review (3D)', current: true }])
+    }
+  })
+
+  $effect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !selected) return
       event.preventDefault()
@@ -432,6 +467,7 @@
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
 
   $effect(() => {
     const floors = doc.building.floors
@@ -915,10 +951,11 @@
 </script>
 
 <div class="scene">
-  <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
-    {locked ? 'Perspective' : 'Fixed view'}
-  </Button>
-  <Canvas shadows>
+  <div class="viewport">
+    <Button variant="outline" size="sm" class="absolute top-3 left-3 z-10 shadow-xs" onclick={() => (locked = !locked)}>
+      {locked ? 'Perspective' : 'Fixed view'}
+    </Button>
+    <Canvas shadows>
     <ReviewInteractivity>
     <T.PerspectiveCamera
       makeDefault
@@ -1225,38 +1262,75 @@
     </T.Group>
     </ReviewInteractivity>
   </Canvas>
+  </div>
   {#if chosenWall}
     {@const system = systemOf(chosenWall.wall)}
+    {@const len = wallLength(chosenWall.floor.corners, chosenWall.wall.startCornerId, chosenWall.wall.endCornerId)}
     <ContextPanel
       label="Wall"
-      title="Wall"
-      description="{wallLength(chosenWall.floor.corners, chosenWall.wall.startCornerId, chosenWall.wall.endCornerId).toFixed(2)} m of {system.name.toLowerCase()}, {chosenWall.wall.openings.length === 0
-        ? 'no openings'
-        : `${chosenWall.wall.openings.length} ${chosenWall.wall.openings.length === 1 ? 'opening' : 'openings'}`}, on {storeyName(chosenWall.floor.index)}."
+      tag={chosenWall.wall.skin === 'logical' ? 'Logical wall' : 'Wall'}
+      title={chosenWall.wall.skin === 'logical' ? 'Logical wall' : system.name}
+      subtitle={`${len.toFixed(2)} m · ${chosenWall.wall.openings.length} ${chosenWall.wall.openings.length === 1 ? 'opening' : 'openings'} · ${storeyName(chosenWall.floor.index)}`}
+      icon={chosenWall.wall.skin === 'logical' ? SquareDashed : BrickWall}
+      description={chosenWall.wall.skin === 'logical' ? 'Divides rooms without masonry.' : system.unitName}
       onclose={() => (selected = null)}
+
     >
-      <Button data-look onclick={() => chosenWall && onSelectWall?.(chosenWall.wall.id)}>Open in Focus</Button>
-      <p class="text-muted-foreground">Double-click a wall to go straight to it in Focus.</p>
+      {#snippet actions()}
+        <Button class="w-full" data-look onclick={() => chosenWall && onSelectWall?.(chosenWall.wall.id)}>
+          Open in Focus (Elevation)
+        </Button>
+      {/snippet}
+      <p class="text-xs text-muted-foreground">Double-click a wall in Review to open it directly in Focus.</p>
     </ContextPanel>
   {:else if chosenFixture}
     {@const spec = fixtureSpec(chosenFixture.fixture.kind)}
-    <ContextPanel label="Fitting" title={spec.name} description={spec.text} onclose={() => (selected = null)}>
-      <FittingSetup floorId={chosenFixture.floor.id} fixture={chosenFixture.fixture} />
-      <div class="grid gap-2">
+    <ContextPanel
+      label="Fitting"
+      tag={spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'plumbing' ? 'Plumbing' : 'Fitting'}
+      title={spec.name}
+      subtitle={spec.trade ? `${spec.trade.toUpperCase()} · ${storeyName(chosenFixture.floor.index)}` : storeyName(chosenFixture.floor.index)}
+      icon={Plug}
+      description={spec.text}
+      onclose={() => (selected = null)}
+    >
+      {#snippet actions()}
         {#if chosenFixture.onWall}
-          <Button variant="outline" onclick={() => chosenFixture?.onWall && onSelectWall?.(chosenFixture.onWall.wall.id)}>Open its wall in Focus</Button>
+          <Button class="w-full" variant="outline" onclick={() => chosenFixture?.onWall && onSelectWall?.(chosenFixture.onWall.wall.id)}>
+            Open its wall in Focus
+          </Button>
         {/if}
-        <Button variant="destructive" onclick={() => chosenFixture && documentStore.removeFixture(chosenFixture.floor.id, chosenFixture.fixture.id)}>Remove</Button>
-      </div>
+        <Button class="w-full" variant="destructive" onclick={() => chosenFixture && documentStore.removeFixture(chosenFixture.floor.id, chosenFixture.fixture.id)}>
+          Remove fitting
+        </Button>
+      {/snippet}
+      <FittingSetup floorId={chosenFixture.floor.id} fixture={chosenFixture.fixture} />
     </ContextPanel>
   {/if}
+
 </div>
 
 <style>
   .scene {
     position: relative;
+    display: flex;
     width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .viewport {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    width: auto;
     height: 100%;
   }
 
+  .viewport :global(canvas) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
 </style>

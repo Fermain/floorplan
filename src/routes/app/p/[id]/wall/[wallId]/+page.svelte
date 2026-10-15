@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { planHref } from '$lib/routes/links'
+  import { planHref, storeyName } from '$lib/routes/links'
   import { documentStore } from '$lib/state/document.svelte'
   import { statusLine } from '$lib/state/status.svelte'
+  import { workspace } from '$lib/state/workspace.svelte'
   import ElevationView from '$view/elevation/index.svelte'
 
   const id = $derived(page.params.id ?? '')
@@ -11,11 +12,30 @@
   const floor = $derived(
     documentStore.document.building.floors.find((item) => item.walls.some((wall) => wall.id === wallId)),
   )
+  const wall = $derived(floor?.walls.find((item) => item.id === wallId))
 
   let selectedOpeningId = $state<string | null>(null)
 
   $effect(() => {
     if (!floor) void goto(planHref(id), { replaceState: true })
+  })
+
+  $effect(() => {
+    if (!floor) return
+    const floorIndex = floor.index
+    const label = wall?.skin === 'logical' ? 'Logical wall (Focus)' : 'Wall (Focus)'
+    workspace.setBreadcrumbs([
+      { label: storeyName(floorIndex), href: planHref(id, floorIndex) },
+      { label, current: true },
+    ])
+    const unreg = workspace.registerStepOut(() => {
+      void goto(planHref(id, floorIndex))
+      return true
+    })
+    return () => {
+      workspace.clearBreadcrumbs()
+      unreg()
+    }
   })
 
   $effect(() => {

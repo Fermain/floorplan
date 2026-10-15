@@ -30,3 +30,8 @@ export function sectionHref(id: string, section: ProjectSection): string {
   if (section === 'checks') return resolve('/app/p/[id]/checks', { id })
   return resolve('/app/p/[id]/project', { id })
 }
+
+export function storeyName(index: number): string {
+  return index === 0 ? 'Ground floor' : `Storey ${index + 1}`
+}
+
