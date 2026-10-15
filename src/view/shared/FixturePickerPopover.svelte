@@ -2,8 +2,8 @@
   import type { Component } from 'svelte'
   import { Popover } from 'bits-ui'
   import { Button } from '$lib/components/ui/button'
-  import { FIXTURES, fixtureSpec, type Trade } from '../../../lib/model/fixtures'
-  import type { FixtureKind } from '../../../lib/model/types'
+  import { FIXTURES, fixtureSpec, type Trade } from '../../lib/model/fixtures'
+  import type { FixtureKind } from '../../lib/model/types'
   import { cn } from '$lib/utils'
 
   // Lucide Icons for all fixtures
@@ -37,13 +37,15 @@
   let {
     fixtureKind,
     onFixtureKindChange,
+    allowedKinds,
     placeSize,
     onStepPlaceSize,
   }: {
     fixtureKind: FixtureKind
     onFixtureKindChange: (kind: FixtureKind) => void
-    placeSize: { name: string } | null
-    onStepPlaceSize: (delta: 1 | -1) => void
+    allowedKinds?: FixtureKind[]
+    placeSize?: { name: string } | null
+    onStepPlaceSize?: (delta: 1 | -1) => void
   } = $props()
 
   let open = $state(false)
@@ -86,16 +88,27 @@
 
   // Direct 1-click toolbar shortcuts for the most frequent fittings per trade
   const TRADE_SHORTCUTS: Record<Trade, FixtureKind[]> = {
-    plumbing: ['wc', 'basin', 'shower', 'sink'],
+    plumbing: ['wc', 'basin', 'shower', 'sink', 'outside-tap'],
     electrical: ['socket', 'switch', 'light', 'stove'],
     gas: ['gas-stove', 'gas-geyser', 'gas-cylinder'],
-    building: ['aircon-indoor', 'wood-burner', 'air-brick'],
+    building: ['aircon-indoor', 'wood-burner', 'air-brick', 'aircon-outdoor'],
   }
 
   const currentTrade = $derived(fixtureSpec(fixtureKind).trade)
   const ActiveIcon = $derived(ICONS[fixtureKind] ?? Plug)
   const activeSpec = $derived(fixtureSpec(fixtureKind))
-  const shortcuts = $derived(TRADE_SHORTCUTS[currentTrade] ?? [])
+
+  // Available trades based on allowedKinds (if specified)
+  const availableTrades = $derived(
+    TRADE_GROUPS.filter((group) =>
+      FIXTURES.some((f) => f.trade === group.id && (!allowedKinds || allowedKinds.includes(f.id))),
+    ),
+  )
+
+  // Direct shortcuts filtered by allowedKinds
+  const shortcuts = $derived(
+    (TRADE_SHORTCUTS[currentTrade] ?? []).filter((k) => !allowedKinds || allowedKinds.includes(k)),
+  )
 
   function selectFixture(id: FixtureKind) {
     onFixtureKindChange(id)
@@ -123,7 +136,7 @@
         class="z-50 w-[420px] max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-3 shadow-xl outline-none"
       >
         <!-- Trade Filter Tabs -->
-        <div class="flex items-center gap-1 border-b pb-2 mb-2">
+        <div class="flex items-center gap-1 border-b pb-2 mb-2 overflow-x-auto">
           <button
             type="button"
             class={cn(
@@ -136,12 +149,12 @@
           >
             All
           </button>
-          {#each TRADE_GROUPS as group (group.id)}
+          {#each availableTrades as group (group.id)}
             {@const GroupIcon = group.icon}
             <button
               type="button"
               class={cn(
-                'flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors shrink-0',
                 activeTradeFilter === group.id
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -156,45 +169,47 @@
 
         <!-- Scrollable Sections Grid -->
         <div class="max-h-[340px] overflow-y-auto space-y-3 pr-1">
-          {#each TRADE_GROUPS as group (group.id)}
+          {#each availableTrades as group (group.id)}
             {#if activeTradeFilter === 'all' || activeTradeFilter === group.id}
               {@const GroupIcon = group.icon}
-              {@const items = FIXTURES.filter((f) => f.trade === group.id)}
-              <div>
-                <div class="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">
-                  <GroupIcon class="size-3 text-muted-foreground/80" />
-                  <span>{group.name}</span>
-                  <span class="text-[10px] text-muted-foreground/60 font-normal">({items.length})</span>
-                </div>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                  {#each items as item (item.id)}
-                    {@const ItemIcon = ICONS[item.id] ?? Plug}
-                    {@const isSelected = item.id === fixtureKind}
-                    <button
-                      type="button"
-                      class={cn(
-                        'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors group',
-                        isSelected
-                          ? 'bg-primary/10 font-semibold text-primary ring-1 ring-primary/40'
-                          : 'text-foreground hover:bg-accent hover:text-accent-foreground',
-                      )}
-                      onclick={() => selectFixture(item.id)}
-                      title="{item.name}: {item.text}"
-                    >
-                      <ItemIcon
+              {@const items = FIXTURES.filter((f) => f.trade === group.id && (!allowedKinds || allowedKinds.includes(f.id)))}
+              {#if items.length > 0}
+                <div>
+                  <div class="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">
+                    <GroupIcon class="size-3 text-muted-foreground/80" />
+                    <span>{group.name}</span>
+                    <span class="text-[10px] text-muted-foreground/60 font-normal">({items.length})</span>
+                  </div>
+                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                    {#each items as item (item.id)}
+                      {@const ItemIcon = ICONS[item.id] ?? Plug}
+                      {@const isSelected = item.id === fixtureKind}
+                      <button
+                        type="button"
                         class={cn(
-                          'size-3.5 shrink-0 transition-colors',
-                          isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                          'flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors group',
+                          isSelected
+                            ? 'bg-primary/10 font-semibold text-primary ring-1 ring-primary/40'
+                            : 'text-foreground hover:bg-accent hover:text-accent-foreground',
                         )}
-                      />
-                      <span class="truncate flex-1">{item.name}</span>
-                      {#if isSelected}
-                        <Check class="size-3 text-primary shrink-0" />
-                      {/if}
-                    </button>
-                  {/each}
+                        onclick={() => selectFixture(item.id)}
+                        title="{item.name}: {item.text}"
+                      >
+                        <ItemIcon
+                          class={cn(
+                            'size-3.5 shrink-0 transition-colors',
+                            isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                          )}
+                        />
+                        <span class="truncate flex-1">{item.name}</span>
+                        {#if isSelected}
+                          <Check class="size-3 text-primary shrink-0" />
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
                 </div>
-              </div>
+              {/if}
             {/if}
           {/each}
         </div>
@@ -212,29 +227,31 @@
   </Popover.Root>
 
   <!-- Quick 1-click Toolbar Shortcuts for the active trade -->
-  <div class="hidden sm:flex items-center gap-0.5 border-l pl-1.5">
-    {#each shortcuts as kind (kind)}
-      {@const ShortcutIcon = ICONS[kind] ?? Plug}
-      {@const spec = fixtureSpec(kind)}
-      {@const isSelected = kind === fixtureKind}
-      <Button
-        variant={isSelected ? 'secondary' : 'ghost'}
-        size="icon-sm"
-        class={cn(
-          'size-8 transition-colors',
-          isSelected && 'bg-primary/15 text-primary font-semibold ring-1 ring-primary/30',
-        )}
-        title="Quick-select {spec.name}"
-        aria-label={spec.name}
-        onclick={() => onFixtureKindChange(kind)}
-      >
-        <ShortcutIcon class="size-3.5" />
-      </Button>
-    {/each}
-  </div>
+  {#if shortcuts.length > 0}
+    <div class="hidden sm:flex items-center gap-0.5 border-l pl-1.5">
+      {#each shortcuts as kind (kind)}
+        {@const ShortcutIcon = ICONS[kind] ?? Plug}
+        {@const spec = fixtureSpec(kind)}
+        {@const isSelected = kind === fixtureKind}
+        <Button
+          variant={isSelected ? 'secondary' : 'ghost'}
+          size="icon-sm"
+          class={cn(
+            'size-8 transition-colors',
+            isSelected && 'bg-primary/15 text-primary font-semibold ring-1 ring-primary/30',
+          )}
+          title="Quick-select {spec.name}"
+          aria-label={spec.name}
+          onclick={() => onFixtureKindChange(kind)}
+        >
+          <ShortcutIcon class="size-3.5" />
+        </Button>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Size Stepper (if applicable to chosen fixture) -->
-  {#if placeSize}
+  {#if placeSize && onStepPlaceSize}
     <div class="flex items-center gap-1 border-l pl-1.5" role="group" aria-label="Size">
       <Button variant="outline" size="icon-sm" title="Smaller (−)" aria-label="Smaller" onclick={() => onStepPlaceSize(-1)}>
         <Minus />

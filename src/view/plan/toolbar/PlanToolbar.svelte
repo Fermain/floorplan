@@ -28,7 +28,7 @@
   import { BED_MATERIALS, DEFAULT_RAISED_HEIGHT, bedMaterialSpec } from '../../../lib/model/beds'
   import { RETAINING_TYPES, retainingSpec } from '../../../lib/model/retaining'
   import { documentStore } from '../../../lib/state/document.svelte'
-  import FixturePickerPopover from './FixturePickerPopover.svelte'
+  import FixturePickerPopover from '../../shared/FixturePickerPopover.svelte'
 
   interface Props {
     planScope: PlanScope

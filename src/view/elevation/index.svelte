@@ -29,6 +29,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import ElevationScene from './ElevationScene.svelte'
   import ElevationDimensions from './ElevationDimensions.svelte'
   import ContextPanel from '../shared/ContextPanel.svelte'
+  import FixturePickerPopover from '../shared/FixturePickerPopover.svelte'
   import FittingSetup from '../shared/FittingSetup.svelte'
   import { Label } from '$lib/components/ui/label'
   import { SURFACE_BED_TOP_ABOVE_DATUM_M } from '../../lib/geometry/pad'
@@ -266,6 +267,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   const fittingChoices = $derived(
     FIXTURES.filter((spec) => spec.mount !== 'ceiling' && (spec.outside === (viewFace?.outside ?? false) || EITHER_SIDE.includes(spec.id))),
   )
+  const allowedFittingKinds = $derived(fittingChoices.map((f) => f.id))
 
   // Where each fitting on this wall is drawn, with a fitting being dragged shown where it is going.
   const shownFittings = $derived.by(() => {
@@ -1441,28 +1443,11 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       {/if}
 
       {#if focusTool === 'fitting'}
-        <Select.Root
-          type="single"
-          value={insertFixture ?? ''}
-          onValueChange={(next) => next && (insertFixture = next as FixtureKind)}
-        >
-          <Select.Trigger size="sm" class="w-44 sm:w-56" aria-label="Fitting">
-            {insertFixture ? fixtureSpec(insertFixture).name : 'Choose fitting'}
-          </Select.Trigger>
-          <Select.Content>
-            {#each (['electrical', 'plumbing', 'gas', 'building'] as const) as trade (trade)}
-              {@const options = fittingChoices.filter((item) => item.trade === trade)}
-              {#if options.length > 0}
-                <Select.Group>
-                  <Select.Label class="capitalize">{trade}</Select.Label>
-                  {#each options as option (option.id)}
-                    <Select.Item value={option.id} label={option.name} />
-                  {/each}
-                </Select.Group>
-              {/if}
-            {/each}
-          </Select.Content>
-        </Select.Root>
+        <FixturePickerPopover
+          fixtureKind={insertFixture ?? fittingChoices[0]?.id ?? 'socket'}
+          onFixtureKindChange={(next) => (insertFixture = next)}
+          allowedKinds={allowedFittingKinds}
+        />
       {/if}
     </div>
     {/if}
