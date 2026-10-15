@@ -119,7 +119,7 @@
 <div class="flex items-center gap-1.5">
   <Popover.Root bind:open>
     <Popover.Trigger
-      class="flex h-8 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+      class="flex h-7 items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5 text-xs font-medium transition-colors select-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       aria-label="Choose fitting"
       title="Choose fitting: {activeSpec.name}"
     >
@@ -228,7 +228,8 @@
 
   <!-- Quick 1-click Toolbar Shortcuts for the active trade -->
   {#if shortcuts.length > 0}
-    <div class="hidden sm:flex items-center gap-0.5 border-l pl-1.5">
+    <div class="hidden sm:block h-4 w-px bg-border shrink-0"></div>
+    <div class="hidden sm:flex items-center gap-0.5">
       {#each shortcuts as kind (kind)}
         {@const ShortcutIcon = ICONS[kind] ?? Plug}
         {@const spec = fixtureSpec(kind)}
@@ -237,7 +238,7 @@
           variant={isSelected ? 'secondary' : 'ghost'}
           size="icon-sm"
           class={cn(
-            'size-8 transition-colors',
+            'transition-colors',
             isSelected && 'bg-primary/15 text-primary font-semibold ring-1 ring-primary/30',
           )}
           title="Quick-select {spec.name}"
@@ -252,13 +253,14 @@
 
   <!-- Size Stepper (if applicable to chosen fixture) -->
   {#if placeSize && onStepPlaceSize}
-    <div class="flex items-center gap-1 border-l pl-1.5" role="group" aria-label="Size">
+    <div class="h-4 w-px bg-border shrink-0"></div>
+    <div class="flex items-center gap-1" role="group" aria-label="Size">
       <Button variant="outline" size="icon-sm" title="Smaller (−)" aria-label="Smaller" onclick={() => onStepPlaceSize(-1)}>
-        <Minus />
+        <Minus class="size-3.5" />
       </Button>
-      <span class="min-w-16 text-center text-xs tabular-nums">{placeSize.name}</span>
+      <span class="min-w-16 text-center text-xs tabular-nums leading-none">{placeSize.name}</span>
       <Button variant="outline" size="icon-sm" title="Bigger (+)" aria-label="Bigger" onclick={() => onStepPlaceSize(1)}>
-        <Plus />
+        <Plus class="size-3.5" />
       </Button>
     </div>
   {/if}
