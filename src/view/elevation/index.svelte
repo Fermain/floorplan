@@ -47,7 +47,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   import Plug from '@lucide/svelte/icons/plug'
   import SquareDashed from '@lucide/svelte/icons/square-dashed'
   import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
-  import Plus from '@lucide/svelte/icons/plus'
+  import BrickWall from '@lucide/svelte/icons/brick-wall'
   import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { buildFenceParts, fenceFrame, type FencePart } from '../../lib/geometry/fence'
   import { resolvedGate, sideToward } from '../../lib/geometry/gates'
@@ -117,10 +117,34 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   let drag = $state<Drag | null>(null)
 
-  // Like the plan: clicks select by default; a click places something only in Place mode.
+  // Like the plan: tools are Select, Openings and Fittings.
+  let focusTool = $state<'select' | 'opening' | 'fitting'>('select')
   let mode = $state<'select' | 'place'>('select')
   let insertFixture = $state<FixtureKind | null>(null)
   let selectedFixtureId = $state<string | null>(null)
+  let selectedWallFace = $state(true)
+
+  function setFocusTool(next: 'select' | 'opening' | 'fitting') {
+    focusTool = next
+    if (next === 'select') {
+      mode = 'select'
+      insertFixture = null
+    } else if (next === 'opening') {
+      mode = 'place'
+      insertFixture = null
+    } else if (next === 'fitting') {
+      mode = 'place'
+      if (!insertFixture || !fittingChoices.some((choice) => choice.id === insertFixture)) {
+        insertFixture = fittingChoices[0]?.id ?? 'socket'
+      }
+    }
+  }
+
+  $effect(() => {
+    if (wallId) {
+      selectedWallFace = true
+    }
+  })
   type FixtureDrag = { id: string; grabU: number; grabV: number; u: number; y: number; moved: boolean }
   let fixtureDrag = $state<FixtureDrag | null>(null)
   type GateDrag = { id: string; grabU: number; u: number; originU: number; moved: boolean }
@@ -194,7 +218,15 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   $effect(() =>
     workspace.openFocus({
       mode: () => mode,
-      setMode: (next) => (mode = next),
+      setMode: (next) => {
+        if (next === 'select') {
+          setFocusTool('select')
+        } else if (focusTool === 'select') {
+          setFocusTool(insertFixture ? 'fitting' : 'opening')
+        } else {
+          mode = next
+        }
+      },
       square: () => locked,
       setSquare: (next) => (locked = next),
       flip: viewFace && farFace ? flipSide : null,
@@ -515,13 +547,15 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
       if ((event.key === 'c' || event.key === 'C') && !event.metaKey && !event.ctrlKey && centring?.exact !== null && centring?.exact !== undefined) centreOpening(centring.exact)
-      else if (event.key === 'v' || event.key === 'V') mode = 'select'
-      else if (event.key === 'p' || event.key === 'P') mode = 'place'
+      else if (event.key === 'v' || event.key === 'V') setFocusTool('select')
+      else if (event.key === 'o' || event.key === 'O') setFocusTool('opening')
+      else if (event.key === 'p' || event.key === 'P') setFocusTool('fitting')
       else if (event.key === 'Escape') {
-        if (mode === 'place') mode = 'select'
+        if (mode === 'place') setFocusTool('select')
         else if (selectedOpeningId || selectedFixtureId) {
           onSelectOpening?.(null)
           selectedFixtureId = null
+          selectedWallFace = true
         } else return
         event.preventDefault()
       }
@@ -959,6 +993,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     if (mode === 'select') {
       onSelectOpening?.(null)
       selectedFixtureId = null
+      selectedWallFace = true
       return
     }
 
@@ -971,7 +1006,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
       const result = documentStore.addFixture(floor.id, draft)
       const added = result.ok ? result.document.building.floors.find((item) => item.id === floor.id)?.fixtures?.at(-1) : undefined
       if (added) chooseFitting(added.id)
-      if (!event.shiftKey) mode = 'select'
+      if (!event.shiftKey) setFocusTool('select')
       return
     }
 
@@ -981,7 +1016,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     if (placed === null) return
     selectAdded(documentStore.addOpening(floor.id, wall.id, insertTool, placed.u, placed.width))
     // One placement, then back to selecting; hold Shift to keep placing.
-    if (!event.shiftKey) mode = 'select'
+    if (!event.shiftKey) setFocusTool('select')
   }
 
   function onWidthInput(value: number) {
@@ -1065,15 +1100,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     onSelectOpening?.(null)
   }
 
-  function chooseInsert(value: string) {
-    if (value.startsWith('fitting:')) {
-      insertFixture = value.slice('fitting:'.length) as FixtureKind
-      return
-    }
-    insertFixture = null
-    insertTool = value as OpeningKind
-  }
-
   const insertChoices: { kind: OpeningKind; label: string }[] = [
     { kind: 'window', label: 'Window' },
     { kind: 'door', label: 'Sliding door' },
@@ -1082,10 +1108,6 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     { kind: 'garage', label: 'Garage door' },
     { kind: 'portal', label: 'Portal' },
   ]
-  const insertValue = $derived(insertFixture ? `fitting:${insertFixture}` : insertTool)
-  const insertLabel = $derived(
-    insertFixture ? fixtureSpec(insertFixture).name : (insertChoices.find((choice) => choice.kind === insertTool)?.label ?? ''),
-  )
 
   $effect(() => {
     onStatus?.(focusStatus())
@@ -1166,7 +1188,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     }
     if (mode === 'place') return { text: `${insertHint(insertTool)} Hold Shift to place more than one; Esc goes back to selecting.`, error: false }
     if (wall.openings.length > 0 && scheduleLine) return { text: `${scheduleLine}. Click a window, door or fitting to select it.`, error: false }
-    return { text: 'Click a window, door or fitting to select it, or choose Place to add one.', error: false }
+    return { text: 'Click a window, door or fitting to select it, or choose Openings or Fittings to add one.', error: false }
   }
 
   function insertHint(kind: OpeningKind): string {
@@ -1394,161 +1416,54 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
         type="single"
         variant="outline"
         size="sm"
-        value={mode}
+        value={focusTool}
         onValueChange={(next) => {
-          if (next) mode = next as 'select' | 'place'
+          if (next) setFocusTool(next as 'select' | 'opening' | 'fitting')
         }}
         aria-label="Focus tool"
       >
-        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)"><MousePointer2 />Select</ToggleGroup.Item>
-        <ToggleGroup.Item value="place" aria-label="Place" title="Place a window, door or fitting (P)"><Plus />Place</ToggleGroup.Item>
+        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)"><MousePointer2 /><span class="hidden sm:inline">Select</span></ToggleGroup.Item>
+        <ToggleGroup.Item value="opening" aria-label="Openings" title="Place a window, door or portal (O)"><DoorClosed /><span class="hidden sm:inline">Openings</span></ToggleGroup.Item>
+        <ToggleGroup.Item value="fitting" aria-label="Fittings" title="Place sockets, switches, lights and plumbing (P)"><Plug /><span class="hidden sm:inline">Fittings</span></ToggleGroup.Item>
       </ToggleGroup.Root>
-      <div class="flex items-center gap-2" hidden={mode !== 'place'}>
-        <Select.Root type="single" value={insertValue} onValueChange={chooseInsert}>
-          <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="What to place">
-            {insertLabel}
+
+      {#if focusTool === 'opening'}
+        <Select.Root type="single" value={insertTool} onValueChange={(next) => next && (insertTool = next as OpeningKind)}>
+          <Select.Trigger size="sm" class="w-36 sm:w-44" aria-label="Opening type">
+            {insertChoices.find((choice) => choice.kind === insertTool)?.label ?? 'Window'}
           </Select.Trigger>
           <Select.Content>
-            <Select.Group>
-              <Select.Label>Openings</Select.Label>
-              {#each insertChoices as choice (choice.kind)}
-                <Select.Item value={choice.kind}>{choice.label}</Select.Item>
-              {/each}
-            </Select.Group>
-            <Select.Group>
-              <Select.Label>Fittings {viewFace?.outside ? 'outside' : 'inside'}</Select.Label>
-              {#each fittingChoices as spec (spec.id)}
-                <Select.Item value={`fitting:${spec.id}`} label={spec.name} />
-              {/each}
-            </Select.Group>
-          </Select.Content>
-        </Select.Root>
-      </div>
-      {#if !selectedFitting && widthLimits && widthAllowed && mode === 'place' && !insertFixture}
-        <Separator orientation="vertical" class="hidden h-5 sm:block" />
-        <label class="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-          <span class="shrink-0 text-muted-foreground">New width</span>
-          <input
-            class="min-w-0 flex-1 accent-primary sm:w-32 sm:flex-none"
-            type="range"
-            min={widthLimits.min}
-            max={widthLimits.max}
-            step="0.01"
-            value={shownWidth}
-            oninput={(event) => onWidthInput(Number(event.currentTarget.value))}
-            onchange={(event) => commitWidth(Number(event.currentTarget.value))}
-          />
-          <Input
-            class="h-7 w-20"
-            type="number"
-            min={mm(widthLimits.min)}
-            max={mm(widthLimits.max)}
-            step="10"
-            value={mm(shownWidth)}
-            onchange={(event) => {
-              const next = Number(event.currentTarget.value) / 1000
-              onWidthInput(next)
-              commitWidth(next)
-            }}
-          />
-          <span class="text-muted-foreground">mm</span>
-        </label>
-      {/if}
-      {#if faceFinishNow}
-        <div class="flex items-center gap-2 sm:ml-auto">
-          <span class="text-muted-foreground">Finish</span>
-          <Select.Root
-            type="single"
-            value={faceFinishNow.ownFinish ? faceFinishNow.finish : 'project'}
-            onValueChange={(next) => next && chooseFinish({ finish: next === 'project' ? null : (next as WallFinish) })}
-          >
-            <Select.Trigger size="sm" class="w-28" aria-label="Finish on this face">{finishSpec(faceFinishNow.finish).name}</Select.Trigger>
-            <Select.Content>
-              <Select.Item value="project" label="As the project" />
-              {#each WALL_FINISHES as spec (spec.id)}
-                <Select.Item value={spec.id} label={spec.name} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-          {#if faceFinishNow.finish !== 'exposed'}
-            <Select.Root
-              type="single"
-              value={faceFinishNow.ownPaint ? faceFinishNow.paint : 'project'}
-              onValueChange={(next) => next && chooseFinish({ paint: next === 'project' ? null : next })}
-            >
-              <Select.Trigger size="sm" class="w-32" aria-label="Paint on this face">
-                <span class="inline-block size-3 rounded-full border" style:background={faceFinishNow.colour}></span>
-                {paintSpec(faceFinishNow.paint)?.name ?? 'Unpainted'}
-              </Select.Trigger>
-              <Select.Content>
-                <Select.Item value="project" label="As the project" />
-                {#each PAINTS as paint (paint.id)}
-                  <Select.Item value={paint.id} label={paint.name}>
-                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={paint.colour}></span>
-                    {paint.name}
-                  </Select.Item>
-                {/each}
-                <Select.Item value={NO_PAINT} label="Unpainted" />
-              </Select.Content>
-            </Select.Root>
-          {/if}
-        </div>
-      {/if}
-      {#if faceTrimNow}
-        <div class="flex items-center gap-2">
-          <span class="text-muted-foreground">Skirting</span>
-          <Select.Root type="single" value={faceTrimNow.skirting} onValueChange={(next) => chooseTrim({ skirting: next as SkirtingType | 'none' })}>
-            <Select.Trigger size="sm" class="w-28" aria-label="Skirting on this face">
-              {faceTrimNow.skirting === 'none' ? 'None' : skirtingSpec(faceTrimNow.skirting).name}
-            </Select.Trigger>
-            <Select.Content>
-              {#each SKIRTINGS as spec (spec.id)}
-                <Select.Item value={spec.id} label={spec.name} />
-              {/each}
-              <Select.Item value="none" label="None" />
-            </Select.Content>
-          </Select.Root>
-          <span class="text-muted-foreground">Cornice</span>
-          <Select.Root type="single" value={faceTrimNow.cornice} onValueChange={(next) => chooseTrim({ cornice: next as CorniceType | 'none' })}>
-            <Select.Trigger size="sm" class="w-28" aria-label="Cornice on this face">
-              {faceTrimNow.cornice === 'none' ? 'None' : corniceSpec(faceTrimNow.cornice).name}
-            </Select.Trigger>
-            <Select.Content>
-              {#each CORNICES as spec (spec.id)}
-                <Select.Item value={spec.id} label={spec.name} />
-              {/each}
-              <Select.Item value="none" label="None" />
-            </Select.Content>
-          </Select.Root>
-        </div>
-      {/if}
-      {#if gutterValue}
-        <div class="flex items-center gap-2 {faceFinishNow ? '' : 'sm:ml-auto'}">
-          <span class="text-muted-foreground">Gutter</span>
-          <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
-            <Select.Trigger size="sm" class="w-36" aria-label="Gutter above this wall">
-              {gutterValue === 'none' ? 'None here' : GUTTERS[gutterValue].name}
-            </Select.Trigger>
-            <Select.Content>
-              {#each Object.entries(GUTTERS) as [id, spec] (id)}
-                <Select.Item value={id} label={spec.name} />
-              {/each}
-              <Select.Item value="none" label="None above this wall" />
-            </Select.Content>
-          </Select.Root>
-        </div>
-      {/if}
-      <div class="flex w-full min-w-0 items-center gap-2 sm:w-auto {gutterValue || faceFinishNow ? '' : 'sm:ml-auto'}">
-        <span class="text-muted-foreground">Wall</span>
-        <Select.Root type="single" value={system.id} onValueChange={(next) => chooseSystem(next as WallSystemId)}>
-          <Select.Trigger size="sm" class="w-full sm:w-48" aria-label="Wall system">{system.name}</Select.Trigger>
-          <Select.Content>
-            {#each WALL_SYSTEMS as choice (choice.id)}
-              <Select.Item value={choice.id}>{choice.name}</Select.Item>
+            {#each insertChoices as choice (choice.kind)}
+              <Select.Item value={choice.kind}>{choice.label}</Select.Item>
             {/each}
           </Select.Content>
         </Select.Root>
-      </div>
+      {/if}
+
+      {#if focusTool === 'fitting'}
+        <Select.Root
+          type="single"
+          value={insertFixture ?? ''}
+          onValueChange={(next) => next && (insertFixture = next as FixtureKind)}
+        >
+          <Select.Trigger size="sm" class="w-44 sm:w-56" aria-label="Fitting">
+            {insertFixture ? fixtureSpec(insertFixture).name : 'Choose fitting'}
+          </Select.Trigger>
+          <Select.Content>
+            {#each (['electrical', 'plumbing', 'gas', 'building'] as const) as trade (trade)}
+              {@const options = fittingChoices.filter((item) => item.trade === trade)}
+              {#if options.length > 0}
+                <Select.Group>
+                  <Select.Label class="capitalize">{trade}</Select.Label>
+                  {#each options as option (option.id)}
+                    <Select.Item value={option.id} label={option.name} />
+                  {/each}
+                </Select.Group>
+              {/if}
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {/if}
     </div>
     {/if}
     <div class="scene">
@@ -1803,6 +1718,141 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
               </Button>
             </div>
           {/each}
+        </ContextPanel>
+      {:else if wall && floor && !logical && selectedWallFace}
+        {@const wallLen = frame.length}
+        {@const wallHt = frame.height}
+        {@const faceArea = wallLen * wallHt}
+        <ContextPanel
+          label="Wall Face"
+          tag="Wall"
+          icon={BrickWall}
+          title={system.name}
+          subtitle={`${viewFace?.outside ? 'External face' : (viewFace?.label ?? 'Internal face')} · ${Math.round(wallLen * 1000)} mm long × ${Math.round(wallHt * 1000)} mm high (${faceArea.toFixed(1)} m²)`}
+          description="Finish, paint, trims and system for this wall and face."
+          onclose={() => (selectedWallFace = false)}
+        >
+          {#snippet actions()}
+            {#if viewFace && farFace}
+              <Button class="w-full" variant="outline" onclick={flipSide}>
+                <ArrowLeftRight class="mr-1.5 size-4" />
+                Flip face: view from {farFace.label} (F)
+              </Button>
+            {/if}
+            {#if onExit}
+              <Button class="w-full" variant="outline" onclick={onExit}>
+                <ArrowLeft class="mr-1.5 size-4" />
+                Whole plan (Esc)
+              </Button>
+            {/if}
+          {/snippet}
+
+          <div class="grid gap-1.5">
+            <Label for="wall-system-select">Wall system</Label>
+            <Select.Root type="single" value={system.id} onValueChange={(next) => next && chooseSystem(next as WallSystemId)}>
+              <Select.Trigger id="wall-system-select" size="sm" class="w-full" aria-label="Wall system">{system.name}</Select.Trigger>
+              <Select.Content>
+                {#each WALL_SYSTEMS as choice (choice.id)}
+                  <Select.Item value={choice.id}>{choice.name}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+
+          {#if faceFinishNow}
+            <div class="grid gap-1.5 border-t pt-3">
+              <Label for="wall-finish-select">Finish</Label>
+              <Select.Root
+                type="single"
+                value={faceFinishNow.ownFinish ? faceFinishNow.finish : 'project'}
+                onValueChange={(next) => next && chooseFinish({ finish: next === 'project' ? null : (next as WallFinish) })}
+              >
+                <Select.Trigger id="wall-finish-select" size="sm" class="w-full" aria-label="Finish on this face">
+                  {finishSpec(faceFinishNow.finish).name}
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="project" label="As the project" />
+                  {#each WALL_FINISHES as spec (spec.id)}
+                    <Select.Item value={spec.id} label={spec.name} />
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+
+              {#if faceFinishNow.finish !== 'exposed'}
+                <Label for="wall-paint-select">Paint</Label>
+                <Select.Root
+                  type="single"
+                  value={faceFinishNow.ownPaint ? faceFinishNow.paint : 'project'}
+                  onValueChange={(next) => next && chooseFinish({ paint: next === 'project' ? null : next })}
+                >
+                  <Select.Trigger id="wall-paint-select" size="sm" class="w-full" aria-label="Paint on this face">
+                    <span class="mr-1.5 inline-block size-3 rounded-full border" style:background={faceFinishNow.colour}></span>
+                    {paintSpec(faceFinishNow.paint)?.name ?? 'Unpainted'}
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value="project" label="As the project" />
+                    {#each PAINTS as paint (paint.id)}
+                      <Select.Item value={paint.id} label={paint.name}>
+                        <span class="mr-1.5 inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={paint.colour}></span>
+                        {paint.name}
+                      </Select.Item>
+                    {/each}
+                    <Select.Item value={NO_PAINT} label="Unpainted" />
+                  </Select.Content>
+                </Select.Root>
+              {/if}
+            </div>
+          {/if}
+
+          {#if faceTrimNow}
+            <div class="grid gap-2 border-t pt-3">
+              <div class="grid gap-1.5">
+                <Label for="wall-skirting-select">Skirting</Label>
+                <Select.Root type="single" value={faceTrimNow.skirting} onValueChange={(next) => next && chooseTrim({ skirting: next as SkirtingType | 'none' })}>
+                  <Select.Trigger id="wall-skirting-select" size="sm" class="w-full" aria-label="Skirting on this face">
+                    {faceTrimNow.skirting === 'none' ? 'None' : skirtingSpec(faceTrimNow.skirting).name}
+                  </Select.Trigger>
+                  <Select.Content>
+                    {#each SKIRTINGS as spec (spec.id)}
+                      <Select.Item value={spec.id} label={spec.name} />
+                    {/each}
+                    <Select.Item value="none" label="None" />
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <div class="grid gap-1.5">
+                <Label for="wall-cornice-select">Cornice</Label>
+                <Select.Root type="single" value={faceTrimNow.cornice} onValueChange={(next) => next && chooseTrim({ cornice: next as CorniceType | 'none' })}>
+                  <Select.Trigger id="wall-cornice-select" size="sm" class="w-full" aria-label="Cornice on this face">
+                    {faceTrimNow.cornice === 'none' ? 'None' : corniceSpec(faceTrimNow.cornice).name}
+                  </Select.Trigger>
+                  <Select.Content>
+                    {#each CORNICES as spec (spec.id)}
+                      <Select.Item value={spec.id} label={spec.name} />
+                    {/each}
+                    <Select.Item value="none" label="None" />
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            </div>
+          {/if}
+
+          {#if gutterValue}
+            <div class="grid gap-1.5 border-t pt-3">
+              <Label for="wall-gutter-select">Gutter</Label>
+              <Select.Root type="single" value={gutterValue} onValueChange={chooseGutter}>
+                <Select.Trigger id="wall-gutter-select" size="sm" class="w-full" aria-label="Gutter above this wall">
+                  {gutterValue === 'none' ? 'None here' : GUTTERS[gutterValue].name}
+                </Select.Trigger>
+                <Select.Content>
+                  {#each Object.entries(GUTTERS) as [id, spec] (id)}
+                    <Select.Item value={id} label={spec.name} />
+                  {/each}
+                  <Select.Item value="none" label="None above this wall" />
+                </Select.Content>
+              </Select.Root>
+            </div>
+          {/if}
         </ContextPanel>
       {/if}
     </div>

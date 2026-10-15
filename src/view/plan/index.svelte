@@ -364,9 +364,37 @@
     return byRoom
   })
 
+  const hasItemSelection = $derived(
+    selectedWallId !== null ||
+    selectedFixture !== null ||
+    selectedStair !== null ||
+    selectedCounter !== null ||
+    selectedRetaining !== null ||
+    selectedPaving !== null ||
+    selectedBed !== null ||
+    selectedCarport !== null ||
+    selectedService !== null ||
+    selectedBend !== null ||
+    selectedEdge !== null ||
+    selectedOutline !== null ||
+    selectedCornerId !== null ||
+    selectedPlateFloorId !== null,
+  )
+
   const selectedRoom = $derived.by(() => {
     const pick = selectedCell
-    if (!pick) return null
+    if (!pick) {
+      if (focusedRoom && !hasItemSelection) {
+        for (const entry of levelLayouts) {
+          const resolved = entry.layout.spaces.find((item) => item.space.id === focusedRoom)
+          if (resolved && resolved.cells.length > 0) {
+            const cell = largestCell(resolved.cells)
+            return { floorId: entry.floorId, cell, resolved }
+          }
+        }
+      }
+      return null
+    }
     const entry = levelLayouts.find((item) => item.floorId === pick.floorId)
     if (!entry) return null
     const cells = [...entry.layout.spaces.flatMap((resolved) => resolved.cells), ...entry.layout.loose]
@@ -951,13 +979,22 @@
     if (!plan) return
     if (focusedCells) {
       const id = pickWall(activeFloor, plan.x, plan.z)
-      const wall = id && activeFloor ? activeFloor.walls.find((w) => w.id === id) : null
-      const isRoomWall = wall && focusedCells.cornerIds.has(wall.startCornerId) && focusedCells.cornerIds.has(wall.endCornerId)
-      if (isRoomWall && id) {
+      if (id) {
         if (planScope !== 'building') switchScope('building')
         chooseSelection({ wallId: id })
         onFocus?.(id)
         return
+      }
+      const room = roomAtPoint(activeFloor, plan.x, plan.z)
+      if (room) {
+        if (planScope !== 'building') switchScope('building')
+        const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
+        const entry = levelLayouts.find((item) => item.floorId === floorId)
+        const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
+        if (resolved) {
+          layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))
+          return
+        }
       }
       const inside = pointInsideRings(focusedCells.rings, plan.x, plan.z)
       if (!inside) {
@@ -1201,6 +1238,14 @@
               : documentStore.joinCell(floorId, current.space.id, plan.x, plan.z),
           )
           return
+        }
+        if (focusedRoom) {
+          const entry = levelLayouts.find((item) => item.floorId === floorId)
+          const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
+          if (resolved && resolved.space.id !== focusedRoom) {
+            armPan(event, () => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring)))
+            return
+          }
         }
         armPan(event, () => chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } }))
         return
@@ -2647,23 +2692,20 @@
     zoom = Math.min(baseW / (w * 1.4 + 1.5), baseW / aspect / (h * 1.4 + 1.5))
   }
 
-  // A kitchen is laid out with the counter tool in hand, a bedroom or store with cupboards,
-  // a bathroom or WC with fittings, and other spaces with select.
+  // A room starts with select so the inspector panel is open and walls/fittings can be clicked.
+  // Kitchen starts with base counter primed; bedroom/store with cupboards; bathroom with fittings.
   function layOutRoom(space: Space, rings: { x: number; z: number }[][]) {
     focusRoom(space.id, rings)
     chooseSelection({})
+    setTool('select')
     const nameLower = space.name.toLowerCase()
     if (space.type === 'kitchen') {
       counterKind = 'base'
-      setTool('draw-counter')
     } else if (space.type === 'bedroom' || space.type === 'store' || nameLower.includes('scullery') || nameLower.includes('pantry')) {
       counterKind = 'cupboard'
-      setTool('draw-counter')
-    } else if (space.type === 'bathroom' || space.type === 'toilet' || nameLower.includes('ensuite') || nameLower.includes('wc')) {
+    }
+    if (space.type === 'bathroom' || space.type === 'toilet' || nameLower.includes('ensuite') || nameLower.includes('wc')) {
       fixtureKind = space.type === 'toilet' || nameLower.includes('wc') || nameLower.includes('toilet') ? 'wc' : 'basin'
-      setTool('draw-fixture')
-    } else {
-      setTool('select')
     }
   }
 
@@ -4320,38 +4362,44 @@
       <g class="room-labels" pointer-events="none" class:hidden={planScope === 'site'}>
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
-            {#if !focusedRoom || resolved.space.id === focusedRoom}
-              {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
-              <text
-                transform={upright(at.x, at.z)}
-                y={-labelSize * 0.35}
-                font-size={labelSize}
-                text-anchor="middle"
-                class="room-name"
-                class:short={shortSpaceIds.has(resolved.space.id)}
-              >
-                {resolved.space.name}
-              </text>
-              <text
-                transform={upright(at.x, at.z)}
-                y={labelSize * 0.8}
-                font-size={labelSize * 0.8}
-                text-anchor="middle"
-                class="room-area"
-                class:short={shortSpaceIds.has(resolved.space.id)}
-              >
-                {areaFormat.format(resolved.area)} m²{shortSpaceIds.has(resolved.space.id) ? ' · check' : ''}
-              </text>
-            {/if}
+            {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
+            {@const isMuted = Boolean(focusedRoom && resolved.space.id !== focusedRoom)}
+            <text
+              transform={upright(at.x, at.z)}
+              y={-labelSize * 0.35}
+              font-size={labelSize}
+              text-anchor="middle"
+              class="room-name"
+              class:short={shortSpaceIds.has(resolved.space.id)}
+              opacity={isMuted ? 0.35 : 1}
+            >
+              {resolved.space.name}
+            </text>
+            <text
+              transform={upright(at.x, at.z)}
+              y={labelSize * 0.8}
+              font-size={labelSize * 0.8}
+              text-anchor="middle"
+              class="room-area"
+              class:short={shortSpaceIds.has(resolved.space.id)}
+              opacity={isMuted ? 0.35 : 1}
+            >
+              {areaFormat.format(resolved.area)} m²{shortSpaceIds.has(resolved.space.id) ? ' · check' : ''}
+            </text>
           {/each}
-          {#if !focusedRoom}
-            {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
-              {@const at = ringLabelPoint(cell.net)}
-              <text transform={upright(at.x, at.z)} y={labelSize * 0.3} font-size={labelSize * 0.8} text-anchor="middle" class="room-area">
-                {areaFormat.format(cell.netArea)} m²
-              </text>
-            {/each}
-          {/if}
+          {#each entry.layout.loose as cell (roomKey(cell.room.cornerIds))}
+            {@const at = ringLabelPoint(cell.net)}
+            <text
+              transform={upright(at.x, at.z)}
+              y={labelSize * 0.3}
+              font-size={labelSize * 0.8}
+              text-anchor="middle"
+              class="room-area"
+              opacity={focusedRoom ? 0.35 : 1}
+            >
+              {areaFormat.format(cell.netArea)} m²
+            </text>
+          {/each}
         {/each}
       </g>
       {#each logicalWalls as wall (wall.id)}
@@ -5231,13 +5279,23 @@
 
         {#snippet actions()}
           {#if resolved}
-            <Button
-              class="w-full"
-              variant="outline"
-              onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
-            >
-              <Maximize2 class="mr-1.5 size-4" />Lay out this room (Focus)
-            </Button>
+            {#if focusedRoom !== resolved.space.id}
+              <Button
+                class="w-full"
+                variant="outline"
+                onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
+              >
+                <Maximize2 class="mr-1.5 size-4" />Lay out this room (Focus)
+              </Button>
+            {:else}
+              <Button
+                class="w-full"
+                variant="outline"
+                onclick={leaveRoom}
+              >
+                <Maximize2 class="mr-1.5 size-4" />Whole plan (Esc)
+              </Button>
+            {/if}
             <Button class="w-full" variant="outline" onclick={suggestForSelectedRoom}>
               <Plug class="mr-1.5 size-4" />Suggest fittings
             </Button>
