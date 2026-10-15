@@ -3,35 +3,13 @@
   import { fencePlan } from '../../lib/geometry/gates'
   import { floorSupports, pierSide, supportSpec } from '../../lib/model/supports'
   import { untrack } from 'svelte'
-  import BrickWall from '@lucide/svelte/icons/brick-wall'
-  import Footprints from '@lucide/svelte/icons/footprints'
   import Layers from '@lucide/svelte/icons/layers'
   import Minus from '@lucide/svelte/icons/minus'
-  import MousePointer2 from '@lucide/svelte/icons/mouse-pointer-2'
   import Plus from '@lucide/svelte/icons/plus'
-  import RotateCw from '@lucide/svelte/icons/rotate-cw'
-  import SquareDashed from '@lucide/svelte/icons/square-dashed'
-  import Trash2 from '@lucide/svelte/icons/trash-2'
-  import Plug from '@lucide/svelte/icons/plug'
-  import Grid2x2 from '@lucide/svelte/icons/grid-2x2'
-  import CarFront from '@lucide/svelte/icons/car-front'
-  import ChefHat from '@lucide/svelte/icons/chef-hat'
-  import Mountain from '@lucide/svelte/icons/mountain'
-  import Maximize2 from '@lucide/svelte/icons/maximize-2'
-  import Check from '@lucide/svelte/icons/check'
-  import Undo2 from '@lucide/svelte/icons/undo-2'
-  import Sprout from '@lucide/svelte/icons/sprout'
-  import DoorClosed from '@lucide/svelte/icons/door-closed'
-  import Droplets from '@lucide/svelte/icons/droplets'
-  import Home from '@lucide/svelte/icons/home'
-  import Trees from '@lucide/svelte/icons/trees'
-  import { BED_MATERIALS, DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedArea, bedMaterialSpec, bedPerimeter, bedSoilVolume } from '../../lib/model/beds'
-  import { BED_SOIL_COLOUR, bedAt, insetRing } from '../../lib/geometry/beds'
+  import { DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedMaterialSpec } from '../../lib/model/beds'
+  import { bedAt } from '../../lib/geometry/beds'
   import FixtureSymbol from './FixtureSymbol.svelte'
-  import ContextPanel from '../shared/ContextPanel.svelte'
-  import FittingSetup from '../shared/FittingSetup.svelte'
   import {
-    FIXTURES,
     fixtureFootprint,
     sizeName,
     stepSize,
@@ -43,25 +21,14 @@
   import { suggestRoomFixtures } from '../../lib/geometry/suggest'
   import { electricalIssues, electricalLayout, type Circuit } from '../../lib/geometry/electrical'
   import { gasLayout } from '../../lib/geometry/gas'
-  import { centreDashes, plotSide, roadReach, roadStrips } from '../../lib/geometry/roads'
-  import { apronPolygons, guidePavingPoint, PAVING, PAVING_LIST, pavingAt, pavingPieces, pavingRectangle, pavingSnapTargets } from '../../lib/geometry/paving'
+  import { roadReach, roadStrips } from '../../lib/geometry/roads'
+  import { guidePavingPoint, PAVING, PAVING_LIST, pavingAt, pavingPieces, pavingRectangle, pavingSnapTargets } from '../../lib/geometry/paving'
   import {
-    DEFAULT_SEWER_DEPTH_M,
-    DRAIN_FALL,
     plumbingLayout,
-    SEPTIC_CLEAR_BUILDING_M,
-    SEPTIC_INLET_DEPTH_M,
-    SOAKAWAY_CLEAR_BOUNDARY_M,
-    SOAKAWAY_CLEAR_BUILDING_M,
     soakawayPoint,
   } from '../../lib/geometry/plumbing'
   import Triangle from '@lucide/svelte/icons/triangle'
-  import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
-  import { Input } from '$lib/components/ui/input'
-  import { Label } from '$lib/components/ui/label'
-  import * as Select from '$lib/components/ui/select'
-  import * as ToggleGroup from '$lib/components/ui/toggle-group'
   import { SvelteSet } from 'svelte/reactivity'
   import { contourPlanPaths } from '../../lib/geometry/contours'
   import { masonryReach, roofPlan } from '../../lib/geometry/roof'
@@ -70,7 +37,7 @@
   import { connectedCornerIds } from '../../lib/geometry/pad'
   import { solidWallPolygonsForFloor, type SvgPoint } from '../../lib/export/svg'
   import { doorSwings } from '../../lib/geometry/doors'
-  import { cornerById, wallLength } from '../../lib/model/geom'
+  import { cornerById } from '../../lib/model/geom'
   import { deriveRooms, roomKey } from '../../lib/model/rooms'
   import {
     cellAt,
@@ -78,30 +45,27 @@
     layAngle,
     layoutSpaces,
     ringLabelPoint,
-    ROOM_TYPES,
     roomTypeLabel,
     type Cell,
   } from '../../lib/geometry/spaces'
-  import SwatchPicker from '$lib/components/project/SwatchPicker.svelte'
   import { floorSwatch, pavingSwatch } from '$lib/components/project/swatches'
-  import { FLOOR_FINISHES, floorFinishSpec } from '../../lib/model/floorFinishes'
+  import { FLOOR_FINISHES } from '../../lib/model/floorFinishes'
   import { buildingChecks, checksForSpace, FENESTRATION_MAX_RATIO } from '../../lib/geometry/sans'
-  import { isHabitable } from '../../lib/geometry/spaces'
-  import { MAX_RISER_M, MIN_GOING_M, placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
-  import type { BedMaterial, Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, SewerType, Stair, WallSystemId } from '../../lib/model/types'
+  import { placeStair, stairLayout, stairVoids } from '../../lib/geometry/stairs'
+  import type { BedMaterial, Carport, CarportRoof, Fixture, FixtureKind, PavingSurface, ServiceKind, Stair } from '../../lib/model/types'
   import { carportAt, carportIssues, snapCarport } from '../../lib/geometry/carports'
   import { alterations } from '../../lib/geometry/alterations'
   import { cornerRemoval } from '../../lib/model/mutations'
-  import { systemOf, wallThickness, WALL_SYSTEMS } from '../../lib/model/systems'
+  import { systemOf, wallThickness } from '../../lib/model/systems'
   import { storeyName } from '../../lib/routes/links'
   import { view as shown, workspace } from '../../lib/state/workspace.svelte'
-  import { groundOf, measureRetaining, retainingAt, retainingSamples } from '../../lib/geometry/retaining'
-  import { RETAINING_ENGINEER_M, RETAINING_TYPES, retainingSpec } from '../../lib/model/retaining'
+  import { groundOf, measureRetaining, retainingAt } from '../../lib/geometry/retaining'
+  import { retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
-  import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, type CounterFace } from '../../lib/geometry/counters'
-  import { COUNTER_KINDS, COUNTER_TOPS, counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder, cupboardBays } from '../../lib/model/counters'
+  import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, type CounterFace } from '../../lib/geometry/counters'
+  import { counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder, cupboardBays } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
-  import { CARPORT_BAYS, CARPORT_ROOFS, carportName, carportPosts, carportProblem, carportRing, carportRoofSpec, carportSize } from '../../lib/model/carports'
+  import { carportName, carportProblem, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
   import {
     pointInsideRings,
@@ -112,9 +76,9 @@
     supportingFloor,
     roomsUnder,
   } from '../../lib/model/stories'
-  import { COVERINGS, coveringOf, DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
-  import { GUTTERS, gutterLayout, gutterOf, linkTanks } from '../../lib/geometry/gutters'
-  import type { GutterType, Roof, RoofCovering } from '../../lib/model/types'
+  import { DEFAULT_COVERING, fitPitch } from '../../lib/geometry/coverings'
+  import { gutterLayout, linkTanks } from '../../lib/geometry/gutters'
+  import type { Roof, RoofCovering } from '../../lib/model/types'
   import type { Floor, RoofForm, RoomType, Space, WallSkin } from '../../lib/model/types'
   import { DEFAULT_WALL_SYSTEM_ID, wallSystem } from '../../lib/model/systems'
   import { pointInPlot, segmentAllowedInPlot } from '../../lib/model/plot-check'
@@ -153,6 +117,12 @@
   import { roofableFloor, storeyAddTarget } from './storey'
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
+  import PlanToolbar from './toolbar/PlanToolbar.svelte'
+  import PlanContextPanels from './panels/PlanContextPanels.svelte'
+  import PlanBackground from './canvas/PlanBackground.svelte'
+  import PlanGrid from './canvas/PlanGrid.svelte'
+  import RoomFocusLayer from './layers/RoomFocusLayer.svelte'
+  import SiteLayer from './layers/SiteLayer.svelte'
 
   import {
     type Tool,
@@ -165,7 +135,6 @@
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
   const PLOT_MARGIN_M = 2.4
-  const ROOF_FORMS: Record<RoofForm, string> = { hip: 'Hip', gable: 'Gable', mono: 'Mono-pitch' }
   const MONO_ROOF_PITCH_DEG = 10
 
   type PendingDraw = {
@@ -3215,366 +3184,59 @@
 </script>
 
 <div class="root" oncontextmenu={onPlanContextMenu}>
-  <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3" class:hidden={documentStore.readOnly}>
-    {#if focusedCells}
-      <div class="flex items-center gap-1.5 text-xs font-medium px-1">
-        <span class="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Room</span>
-        <span class="font-semibold text-foreground truncate max-w-[120px] sm:max-w-none">{focusedCells.name}</span>
-      </div>
-      <div class="h-4 w-px bg-border shrink-0"></div>
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={tool}
-        onValueChange={(next) => {
-          if (next) setTool(next as Tool)
-        }}
-        aria-label="Room interior tools"
-      >
-        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-          <MousePointer2 /><span class="hidden sm:inline">Select</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
-          <ChefHat /><span class="hidden sm:inline">Counters</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
-          <Plug /><span class="hidden sm:inline">Fittings</span>
-        </ToggleGroup.Item>
-      </ToggleGroup.Root>
-      <div class="h-4 w-px bg-border shrink-0"></div>
-      <Button size="sm" variant="outline" title="Back to the whole plan (Esc)" onclick={leaveRoom} class="max-sm:px-2">
-        <Maximize2 /><span class="hidden sm:inline">Whole Plan (Esc)</span><span class="sm:hidden">Whole Plan</span>
-      </Button>
-    {:else}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={planScope}
-        onValueChange={(next) => {
-          if (next) switchScope(next as PlanScope)
-        }}
-        aria-label="Scope"
-      >
-        <ToggleGroup.Item value="building" aria-label="Building Mode" title="Building Mode: walls, rooms, stairs, counters, fittings" class="max-sm:px-2">
-          <Home /><span class="hidden sm:inline">Building</span>
-        </ToggleGroup.Item>
-        <ToggleGroup.Item value="site" aria-label="Site Mode" title="Site Mode: paving, beds, carports, retaining walls" class="max-sm:px-2">
-          <Trees /><span class="hidden sm:inline">Site</span>
-        </ToggleGroup.Item>
-      </ToggleGroup.Root>
-      <div class="h-4 w-px bg-border shrink-0"></div>
-      {#if planScope === 'building'}
-        <ToggleGroup.Root
-          type="single"
-          variant="outline"
-          size="sm"
-          value={tool === 'draw-rect' ? 'draw-double' : tool}
-          onValueChange={(next) => {
-            if (next) setTool(next as Tool)
-          }}
-          aria-label="Building tools"
-        >
-          <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-            <MousePointer2 /><span class="hidden sm:inline">Select</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
-            <BrickWall /><span class="hidden sm:inline">Wall</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
-            <SquareDashed /><span class="hidden sm:inline">Logical</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
-            <Footprints /><span class="hidden sm:inline">Stair</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
-            <ChefHat /><span class="hidden sm:inline">Counters</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
-            <Plug /><span class="hidden sm:inline">Fittings</span>
-          </ToggleGroup.Item>
-        </ToggleGroup.Root>
-      {:else}
-        <ToggleGroup.Root
-          type="single"
-          variant="outline"
-          size="sm"
-          value={tool}
-          onValueChange={(next) => {
-            if (next) setTool(next as Tool)
-          }}
-          aria-label="Site tools"
-        >
-          <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-            <MousePointer2 /><span class="hidden sm:inline">Select</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
-            <Grid2x2 /><span class="hidden sm:inline">Paving</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
-            <Sprout /><span class="hidden sm:inline">Beds</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
-            <CarFront /><span class="hidden sm:inline">Carport</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
-            <Mountain /><span class="hidden sm:inline">Retaining</span>
-          </ToggleGroup.Item>
-        </ToggleGroup.Root>
-      {/if}
-    {/if}
-    {#if tool === 'draw-retaining'}
-      <Select.Root type="single" value={retainingType} onValueChange={(next) => next && (retainingType = next as RetainingType)}>
-        <Select.Trigger size="sm" class="w-44" aria-label="Kind of retaining wall">{retainingSpec(retainingType).name}</Select.Trigger>
-        <Select.Content>
-          {#each RETAINING_TYPES as spec (spec.id)}
-            <Select.Item value={spec.id} label={spec.name} />
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      {#if retainingDraft.length > 0}
-        <Button size="sm" disabled={retainingDraft.length < 2} title="Build the wall (Enter)" onclick={finishRetaining}>
-          <Check />Finish
-        </Button>
-      {/if}
-    {/if}
-    {#if tool === 'draw-counter'}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={counterKind}
-        onValueChange={(next) => {
-          if (next) {
-            counterKind = next as CounterKind
-            counterStart = null
-          }
-        }}
-        aria-label="Kind of counter"
-      >
-        {#each COUNTER_KINDS as spec (spec.id)}
-          <ToggleGroup.Item value={spec.id} title={spec.text}>{spec.name}</ToggleGroup.Item>
-        {/each}
-      </ToggleGroup.Root>
-      {#if counterKind !== 'cupboard'}
-        <Select.Root type="single" value={counterTop} onValueChange={(next) => next && (counterTop = next as CounterTop)}>
-          <Select.Trigger size="sm" class="w-36" aria-label="Worktop">
-            <span class="flex items-center gap-2">
-              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={counterTopSpec(counterTop).colour}></span>
-              {counterTopSpec(counterTop).name}
-            </span>
-          </Select.Trigger>
-          <Select.Content>
-            {#each COUNTER_TOPS as spec (spec.id)}
-              <Select.Item value={spec.id} label={spec.name}>
-                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-                {spec.name}
-              </Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      {/if}
-    {/if}
-    {#if tool === 'draw-carport'}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={String(carportBays)}
-        onValueChange={(next) => next && (carportBays = Number(next) as Carport['bays'])}
-        aria-label="How many cars"
-      >
-        {#each CARPORT_BAYS as bays (bays)}
-          <ToggleGroup.Item value={String(bays)} title={carportName(bays)}>{bays === 1 ? 'Single' : bays === 2 ? 'Double' : 'Triple'}</ToggleGroup.Item>
-        {/each}
-      </ToggleGroup.Root>
-      <Select.Root type="single" value={carportRoof} onValueChange={(next) => next && (carportRoof = next as CarportRoof)}>
-        <Select.Trigger size="sm" class="w-40" aria-label="Carport roof">{carportRoofSpec(carportRoof).name}</Select.Trigger>
-        <Select.Content>
-          {#each CARPORT_ROOFS as spec (spec.id)}
-            <Select.Item value={spec.id} label={spec.name} />
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      <Button size="sm" variant="outline" title="Turn it a quarter turn (R)" onclick={() => (carportTurn += 1)}>
-        <RotateCw /><span class="hidden sm:inline">Turn</span>
-      </Button>
-    {/if}
-    {#if tool === 'draw-paving'}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={pavingShape}
-        onValueChange={(next) => {
-          if (next) {
-            pavingShape = next as 'rect' | 'outline'
-            pavingDraft = []
-          }
-        }}
-        aria-label="Paving shape"
-      >
-        <ToggleGroup.Item value="rect" title="Two opposite corners">Rectangle</ToggleGroup.Item>
-        <ToggleGroup.Item value="outline" title="Each corner in turn">Outline</ToggleGroup.Item>
-      </ToggleGroup.Root>
-      <Select.Root type="single" value={pavingSurface} onValueChange={(next) => next && (pavingSurface = next as PavingSurface)}>
-        <Select.Trigger size="sm" class="w-40" aria-label="Paving surface">
-          <span class="flex items-center gap-2">
-            <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={pavingSwatch(pavingSurface)}></span>
-            {PAVING[pavingSurface].name}
-          </span>
-        </Select.Trigger>
-        <Select.Content>
-          {#each PAVING_LIST as spec (spec.id)}
-            <Select.Item value={spec.id} label={spec.name}>
-              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={pavingSwatch(spec.id)}></span>
-              {spec.name}
-            </Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-      {#if pavingShape === 'outline' && pavingDraft.length > 0}
-        <Button size="sm" disabled={pavingDraft.length < 3} title="Lay the paving (Enter)" onclick={finishPavingOutline}>
-          <Check />Finish
-        </Button>
-        <Button size="sm" variant="outline" title="Take back the last corner (Backspace)" onclick={undoPavingCorner}>
-          <Undo2 /><span class="hidden sm:inline">Corner</span>
-        </Button>
-      {/if}
-    {/if}
-    {#if tool === 'draw-bed'}
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={bedShape}
-        onValueChange={(next) => {
-          if (next) {
-            bedShape = next as 'rect' | 'outline'
-            bedDraft = []
-          }
-        }}
-        aria-label="Bed shape"
-      >
-        <ToggleGroup.Item value="rect" title="Two opposite corners">Rectangle</ToggleGroup.Item>
-        <ToggleGroup.Item value="outline" title="Each corner in turn">Outline</ToggleGroup.Item>
-      </ToggleGroup.Root>
-      <ToggleGroup.Root
-        type="single"
-        variant="outline"
-        size="sm"
-        value={bedHeight <= 0.05 ? 'ground' : 'raised'}
-        onValueChange={(val) => {
-          if (val === 'ground') bedHeight = 0
-          else if (val === 'raised') bedHeight = DEFAULT_RAISED_HEIGHT
-        }}
-        aria-label="Bed height"
-      >
-        <ToggleGroup.Item value="ground" title="In-ground flower bed">Flat</ToggleGroup.Item>
-        <ToggleGroup.Item value="raised" title="Raised planter bed">Raised</ToggleGroup.Item>
-      </ToggleGroup.Root>
-      {#if bedHeight > 0.05}
-        <Select.Root type="single" value={bedMaterial} onValueChange={(next) => next && (bedMaterial = next as BedMaterial)}>
-          <Select.Trigger size="sm" class="w-40" aria-label="Raised bed wall material">
-            <span class="flex items-center gap-2">
-              <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={bedMaterialSpec(bedMaterial).colour}></span>
-              {bedMaterialSpec(bedMaterial).name}
-            </span>
-          </Select.Trigger>
-          <Select.Content>
-            {#each BED_MATERIALS as spec (spec.id)}
-              <Select.Item value={spec.id} label={spec.name}>
-                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-                {spec.name}
-              </Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      {:else}
-        <Select.Root type="single" value={bedFlatEdging} onValueChange={(next) => next && (bedFlatEdging = next as BedMaterial | 'none')}>
-          <Select.Trigger size="sm" class="w-40" aria-label="Flush edging">
-            <span class="flex items-center gap-2">
-              {#if bedFlatEdging !== 'none'}
-                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={bedMaterialSpec(bedFlatEdging).colour}></span>
-                {bedMaterialSpec(bedFlatEdging).name}
-              {:else}
-                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15 bg-transparent"></span>
-                No edging
-              {/if}
-            </span>
-          </Select.Trigger>
-          <Select.Content>
-            <Select.Item value="none" label="No edging">No edging</Select.Item>
-            {#each BED_MATERIALS as spec (spec.id)}
-              <Select.Item value={spec.id} label={spec.name}>
-                <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-                {spec.name}
-              </Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      {/if}
-      {#if bedShape === 'outline' && bedDraft.length > 0}
-        <Button size="sm" disabled={bedDraft.length < 3} title="Build the bed (Enter)" onclick={finishBedOutline}>
-          <Check />Finish
-        </Button>
-        <Button size="sm" variant="outline" title="Take back the last corner (Backspace)" onclick={undoBedCorner}>
-          <Undo2 /><span class="hidden sm:inline">Corner</span>
-        </Button>
-      {/if}
-    {/if}
-    {#if tool === 'draw-fixture'}
-      <Select.Root type="single" value={fixtureKind} onValueChange={(next) => (fixtureKind = next as FixtureKind)}>
-        <Select.Trigger size="sm" class="w-44" aria-label="Fitting">{fixtureSpec(fixtureKind).name}</Select.Trigger>
-        <Select.Content>
-          <Select.Group>
-            <Select.Label>Electrical</Select.Label>
-            {#each FIXTURES.filter((item) => item.trade === 'electrical') as option (option.id)}
-              <Select.Item value={option.id} label={option.name} />
-            {/each}
-          </Select.Group>
-          <Select.Group>
-            <Select.Label>Plumbing</Select.Label>
-            {#each FIXTURES.filter((item) => item.trade === 'plumbing') as option (option.id)}
-              <Select.Item value={option.id} label={option.name} />
-            {/each}
-          </Select.Group>
-          <Select.Group>
-            <Select.Label>Gas</Select.Label>
-            {#each FIXTURES.filter((item) => item.trade === 'gas') as option (option.id)}
-              <Select.Item value={option.id} label={option.name} />
-            {/each}
-          </Select.Group>
-          <Select.Group>
-            <Select.Label>Building</Select.Label>
-            {#each FIXTURES.filter((item) => item.trade === 'building') as option (option.id)}
-              <Select.Item value={option.id} label={option.name} />
-            {/each}
-          </Select.Group>
-        </Select.Content>
-      </Select.Root>
-      {#if placeSize}
-        <div class="flex items-center gap-1" role="group" aria-label="Size">
-          <Button variant="outline" size="icon-sm" title="Smaller (−)" aria-label="Smaller" onclick={() => stepPlaceSize(-1)}><Minus /></Button>
-          <span class="min-w-16 text-center text-sm tabular-nums">{placeSize.name}</span>
-          <Button variant="outline" size="icon-sm" title="Bigger (+)" aria-label="Bigger" onclick={() => stepPlaceSize(1)}><Plus /></Button>
-        </div>
-      {/if}
-    {/if}
-    {#if deletable}
-      <Button
-        variant="ghost"
-        size="sm"
-        class="ml-auto text-destructive hover:text-destructive"
-        title="{deletable.label} (Delete or Backspace)"
-        onclick={deletable.run}
-      >
-        <Trash2 />{deletable.label}
-        <kbd class="ml-1 hidden rounded border px-1 font-sans text-[10px] text-muted-foreground sm:inline">⌫</kbd>
-      </Button>
-    {/if}
-  </div>
+  <PlanToolbar
+    {planScope}
+    onSwitchScope={switchScope}
+    {focusedCells}
+    onLeaveRoom={leaveRoom}
+    {tool}
+    onSetTool={setTool}
+    {counterKind}
+    onCounterKindChange={(kind) => {
+      counterKind = kind
+      counterStart = null
+    }}
+    {counterTop}
+    onCounterTopChange={(top) => (counterTop = top)}
+    {carportBays}
+    onCarportBaysChange={(bays) => (carportBays = bays)}
+    {carportRoof}
+    onCarportRoofChange={(roof) => (carportRoof = roof)}
+    onCarportTurn={() => (carportTurn += 1)}
+    {pavingShape}
+    onPavingShapeChange={(shape) => {
+      pavingShape = shape
+      pavingDraft = []
+    }}
+    {pavingSurface}
+    onPavingSurfaceChange={(surface) => (pavingSurface = surface)}
+    pavingDraftLength={pavingDraft.length}
+    onFinishPaving={finishPavingOutline}
+    onUndoPaving={undoPavingCorner}
+    {bedShape}
+    onBedShapeChange={(shape) => {
+      bedShape = shape
+      bedDraft = []
+    }}
+    {bedHeight}
+    onBedHeightChange={(height) => (bedHeight = height)}
+    {bedMaterial}
+    onBedMaterialChange={(material) => (bedMaterial = material)}
+    {bedFlatEdging}
+    onBedFlatEdgingChange={(edging) => (bedFlatEdging = edging)}
+    bedDraftLength={bedDraft.length}
+    onFinishBed={finishBedOutline}
+    onUndoBed={undoBedCorner}
+    {fixtureKind}
+    onFixtureKindChange={(kind) => (fixtureKind = kind)}
+    {placeSize}
+    onStepPlaceSize={stepPlaceSize}
+    {retainingType}
+    onRetainingTypeChange={(type) => (retainingType = type)}
+    retainingDraftLength={retainingDraft.length}
+    onFinishRetaining={finishRetaining}
+    {deletable}
+  />
   <div class="stage">
     <nav class="key" aria-label="Storeys">
       <Button
@@ -3702,275 +3364,50 @@
       fill="transparent"
       pointer-events="all"
     />
-    <g class="roads" pointer-events="none">
-      <!-- In layers, so where roads meet each one's tar covers the other's verge. -->
-      {#each roads as strip (strip.edge)}
-        <polygon points={pointsAttr(strip.verge.map((p) => [p.x, p.z] as SvgPoint))} class="verge" />
-      {/each}
-      {#each roads as strip (strip.edge)}
-        <polygon points={pointsAttr(strip.road.map((p) => [p.x, p.z] as SvgPoint))} class="carriageway" />
-      {/each}
-      {#each centreDashes(roads) as [a, b], i (i)}
-        <line x1={a.x} y1={a.z} x2={b.x} y2={b.z} class="centre-line" stroke-width={0.12} />
-      {/each}
-    </g>
-    <polygon
-      points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
-      fill="#e7e5e4"
-      stroke="#18181b"
-      stroke-width={s(planScope === 'site' ? 0.08 : 0.06)}
+    <PlanBackground
+      {roads}
+      {plotRing}
+      {selectedEdge}
+      {planScope}
+      {contours}
+      {s}
     />
-    {#if selectedEdge !== null}
-      {@const a = plotRing[selectedEdge]}
-      {@const b = plotRing[(selectedEdge + 1) % plotRing.length]}
-      {#if a && b}
-        <line
-          x1={a[0]}
-          y1={a[1]}
-          x2={b[0]}
-          y2={b[1]}
-          stroke="#2563eb"
-          stroke-width={s(0.08)}
-          pointer-events="none"
-        />
-      {/if}
-    {/if}
-    {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
-      {@const ring = carportRing(carport)}
-      {@const colour = state === 'refused' ? '#dc2626' : state === 'placed' ? '#57534e' : '#2563eb'}
-      <polygon
-        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
-        fill={carportRoofSpec(carport.roof).colour}
-        fill-opacity={state === 'ghost' || state === 'refused' ? 0.3 : 0.38}
-        stroke={colour}
-        stroke-width={s(state === 'placed' ? 0.03 : 0.06)}
-        stroke-dasharray={dash(0.3, 0.16)}
-      />
-      <!-- A diagonal each way marks it as a roof with nothing under it; the way in is the open side. -->
-      <path
-        d="M {ring[0].x} {ring[0].z} L {ring[2].x} {ring[2].z} M {ring[1].x} {ring[1].z} L {ring[3].x} {ring[3].z}"
-        stroke={colour}
-        stroke-opacity="0.35"
-        stroke-width={s(0.02)}
-        fill="none"
-      />
-      {#each carportPosts(carport) as post, i (i)}
-        <rect x={post.x - 0.06} y={post.z - 0.06} width="0.12" height="0.12" fill={colour} />
-      {/each}
-    {/snippet}
     {#if activeStoreyIndex === 0}
-      <g class="site-layer" class:site-subdued={planScope === 'building'}>
-        <g class="retaining" pointer-events="none">
-        {#each document.retaining ?? [] as wall (wall.id)}
-          {@const picked = selectedRetaining === wall.id}
-          <polyline
-            points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))}
-            fill="none"
-            stroke={picked ? '#2563eb' : retainingSpec(wall.type).colour}
-            stroke-width={retainingSpec(wall.type).thickness}
-            stroke-linejoin="round"
-          />
-          <polyline points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))} fill="none" stroke={picked ? '#1d4ed8' : '#44403c'} stroke-width={s(0.02)} />
-          <!-- Ticks on the downhill side, the way the ground falls away from the wall. -->
-          {#if planGround}
-            {#each retainingSamples(wall, planGround).filter((_, i) => i % 2 === 0) as sample, i (i)}
-              <line
-                x1={sample.x}
-                y1={sample.z}
-                x2={sample.x + sample.down.x * 0.45}
-                y2={sample.z + sample.down.z * 0.45}
-                stroke={picked ? '#1d4ed8' : '#44403c'}
-                stroke-width={s(0.02)}
-              />
-            {/each}
-          {/if}
-        {/each}
-        {#if retainingPreview.length >= 2}
-          <polyline
-            points={pointsAttr(retainingPreview.map(([x, z]) => [x, z] as SvgPoint))}
-            fill="none"
-            stroke="#2563eb"
-            stroke-width={s(0.05)}
-            stroke-dasharray={dash(0.2, 0.12)}
-          />
-        {/if}
-        {#if tool === 'draw-retaining'}
-          {#each retainingDraft as point, i (i)}
-            <circle cx={point.x} cy={point.z} r={s(0.1)} fill="#ffffff" stroke="#2563eb" stroke-width={s(0.04)} />
-          {/each}
-          {#if retainingGuide}
-            <circle cx={retainingGuide.point.x} cy={retainingGuide.point.z} r={s(0.12)} fill="#2563eb" />
-          {/if}
-        {/if}
-      </g>
-      <g class="carports" pointer-events="none">
-        {#each document.carports ?? [] as carport (carport.id)}
-          {#if carportMove?.id === carport.id && carportMove.preview}
-            {@render carportShape(carportMove.preview, carportMove.problem ? 'refused' : 'picked')}
-          {:else}
-            {@render carportShape(carport, selectedCarport === carport.id ? 'picked' : 'placed')}
-          {/if}
-        {/each}
-        {#if carportGhost}
-          {@render carportShape(carportGhost.carport, carportGhost.problem ? 'refused' : 'ghost')}
-        {/if}
-      </g>
-      <g class="paving" pointer-events="none">
-        {#each apronPolygons(document) as polygon, i (i)}
-          <path
-            d={[polygon.outer, ...polygon.holes].map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}
-            fill-rule="evenodd"
-            fill={PAVING[projectDefaults(document).apronSurface].colour}
-            fill-opacity="0.55"
-            stroke={selectedPaving === 'apron' ? '#2563eb' : 'none'}
-            stroke-width={s(0.05)}
-          />
-        {/each}
-        {#each document.paving ?? [] as area (area.id)}
-          <polygon
-            points={pointsAttr(area.ring.map(([x, z]) => [x, z] as SvgPoint))}
-            fill={PAVING[area.surface].colour}
-            fill-opacity="0.7"
-            stroke={selectedPaving === area.id ? '#2563eb' : '#57534e'}
-            stroke-width={s(selectedPaving === area.id ? 0.06 : 0.02)}
-          />
-        {/each}
-        {#if pavingPreview.length >= 2}
-          <polygon
-            points={pointsAttr(pavingPreview.map(([x, z]) => [x, z] as SvgPoint))}
-            fill={PAVING[pavingSurface].colour}
-            fill-opacity="0.45"
-            stroke="#2563eb"
-            stroke-width={s(0.04)}
-            stroke-dasharray="{s(0.2)} {s(0.12)}"
-          />
-        {/if}
-        {#if tool === 'draw-paving'}
-          {#each pavingDraft as corner, i (i)}
-            <circle
-              cx={corner.x}
-              cy={corner.z}
-              r={s(i === 0 && pavingShape === 'outline' && pavingDraft.length >= 3 ? (pavingCloses ? 0.28 : 0.2) : 0.1)}
-              fill={i === 0 && pavingCloses ? '#2563eb' : '#ffffff'}
-              stroke="#2563eb"
-              stroke-width={s(0.04)}
-            />
-          {/each}
-          {#if pavingPoint && !pavingCloses}
-            <circle cx={pavingPoint.x} cy={pavingPoint.z} r={s(0.12)} fill="#2563eb" />
-          {/if}
-        {/if}
-      </g>
-      <g class="beds" pointer-events="none">
-        {#each document.beds ?? [] as bed (bed.id)}
-          {@const isRaised = bed.height > 0.05}
-          {@const mat = bedMaterialSpec(bed.material)}
-          {@const isSelected = selectedBed === bed.id}
-          {#if isRaised}
-            {@const inner = insetRing(bed.ring, mat.thickness)}
-            <!-- Retaining wall band sitting inside the outline -->
-            <polygon
-              points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
-              fill={mat.colour}
-              stroke={isSelected ? '#2563eb' : '#44403c'}
-              stroke-width={s(isSelected ? 0.05 : 0.015)}
-            />
-            <!-- Elevated soil inside the inner face -->
-            <polygon
-              points={pointsAttr(inner.map(([x, z]) => [x, z] as SvgPoint))}
-              fill={BED_SOIL_COLOUR}
-              fill-opacity="0.85"
-              stroke="#44403c"
-              stroke-width={s(0.015)}
-            />
-          {:else}
-            <!-- In-ground bed: soil fill with optional edging border or dashed boundary -->
-            <polygon
-              points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
-              fill={BED_SOIL_COLOUR}
-              fill-opacity="0.5"
-              stroke={isSelected ? '#2563eb' : (bed.material ? mat.colour : '#57534e')}
-              stroke-width={s(isSelected ? 0.05 : (bed.material ? 0.025 : 0.02))}
-              stroke-dasharray={!bed.material && !isSelected ? `${s(0.12)} ${s(0.08)}` : undefined}
-            />
-          {/if}
-        {/each}
-        {#if tool === 'draw-bed' && bedPreview.length >= 2}
-          <polygon
-            points={pointsAttr(bedPreview.map(([x, z]) => [x, z] as SvgPoint))}
-            fill={BED_SOIL_COLOUR}
-            fill-opacity="0.45"
-            stroke="#2563eb"
-            stroke-width={s(0.04)}
-            stroke-dasharray="{s(0.2)} {s(0.12)}"
-          />
-        {/if}
-        {#if tool === 'draw-bed'}
-          {#each bedDraft as corner, i (i)}
-            <circle
-              cx={corner.x}
-              cy={corner.z}
-              r={s(i === 0 && bedShape === 'outline' && bedDraft.length >= 3 ? (bedCloses ? 0.28 : 0.2) : 0.1)}
-              fill={i === 0 && bedCloses ? '#2563eb' : '#ffffff'}
-              stroke="#2563eb"
-              stroke-width={s(0.04)}
-            />
-          {/each}
-          {#if bedPoint && !bedCloses}
-            <circle cx={bedPoint.x} cy={bedPoint.z} r={s(0.12)} fill="#2563eb" />
-          {/if}
-        {/if}
-      </g>
-      </g>
+      <SiteLayer
+        {planScope}
+        {document}
+        {planGround}
+        {selectedRetaining}
+        {retainingPreview}
+        {retainingDraft}
+        {retainingGuide}
+        {tool}
+        {selectedCarport}
+        {carportMove}
+        {carportGhost}
+        {selectedPaving}
+        {pavingPreview}
+        {pavingDraft}
+        {pavingShape}
+        {pavingSurface}
+        {pavingCloses}
+        {pavingPoint}
+        {selectedBed}
+        {bedPreview}
+        {bedDraft}
+        {bedShape}
+        {bedCloses}
+        {bedPoint}
+        {s}
+      />
     {/if}
-    {#if localGrid.length > 0 && !outlineReference}
-      <g clip-path="url(#plan-plot-clip)" pointer-events="none">
-        {#each localGrid as line, i (i)}
-          <line
-            x1={line.x1}
-            y1={line.z1}
-            x2={line.x2}
-            y2={line.z2}
-            stroke="#93c5fd"
-            stroke-width={s(0.012)}
-          />
-        {/each}
-      </g>
-    {/if}
-    {#if guideTraces.length > 0}
-      {#each guideTraces as trace, i (i)}
-        <line
-          x1={trace.x1}
-          y1={trace.z1}
-          x2={trace.x2}
-          y2={trace.z2}
-          stroke="#0891b2"
-          stroke-width={s(0.03)}
-          stroke-dasharray={dash(0.12, 0.08)}
-          pointer-events="none"
-        />
-      {/each}
-    {/if}
-    <g clip-path="url(#plan-plot-clip)" pointer-events="none" class="contours" class:opacity-50={planScope === 'building'}>
-      {#if contours.minor}
-        <path
-          d={contours.minor}
-          fill="none"
-          stroke="#7c6a58"
-          stroke-width={s(0.016)}
-          stroke-linecap="round"
-        />
-      {/if}
-      {#if contours.major}
-        <path
-          d={contours.major}
-          fill="none"
-          stroke="#3f3428"
-          stroke-width={s(0.032)}
-          stroke-linecap="round"
-        />
-      {/if}
-    </g>
+    <PlanGrid
+      {localGrid}
+      {outlineReference}
+      {guideTraces}
+      {s}
+      {dash}
+    />
     {#if displayFloor}
       {#each underlay as ring, i (i)}
         {#if ring.length >= 3}
@@ -4339,26 +3776,7 @@
         {/each}
       </g>
     {/if}
-    {#if focusedCells}
-      <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
-      <path
-        d="M -10000 -10000 H 20000 V 20000 H -10000 Z {focusedCells.rings.map((ring) => `M ${ring.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}"
-        fill="var(--background)"
-        fill-opacity="0.88"
-        fill-rule="evenodd"
-        pointer-events="none"
-      />
-      {#each focusedCells.rings as ring, i (i)}
-        <polygon
-          points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
-          fill="none"
-          stroke="#2563eb"
-          stroke-width={s(0.03)}
-          stroke-linejoin="round"
-          pointer-events="none"
-        />
-      {/each}
-    {/if}
+    <RoomFocusLayer {focusedCells} {s} />
       <g class="room-labels" pointer-events="none" class:hidden={planScope === 'site'}>
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
@@ -4688,815 +4106,65 @@
     {/if}
     </g>
   </svg>
-    {#if chosenStair && !roofFloor}
-      <ContextPanel
-        label="Stair"
-        tag="Stair"
-        icon={Footprints}
-        title="Stair flight"
-        subtitle={`${chosenStair.layout.risers} risers · ${Math.round(chosenStair.layout.riser * 1000)} mm riser · ${checkFormat.format(chosenStair.layout.length)} m long`}
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="outline" onclick={turnChosenStair}><RotateCw />Turn around</Button>
-          <Button class="w-full" variant="destructive" onclick={removeChosenStair}>Remove stair</Button>
-        {/snippet}
-        <p class="text-xs text-muted-foreground">
-          Laid out to SANS 10400 Part M: risers at most {Math.round(MAX_RISER_M * 1000)} mm, goings at least {Math.round(
-            MIN_GOING_M * 1000,
-          )} mm.
-        </p>
-        <div class="grid gap-1.5">
-          <Label for="stair-width">Width (mm)</Label>
-          <Input
-            id="stair-width"
-            type="number"
-            min="600"
-            step="50"
-            value={Math.round(chosenStair.stair.width * 1000)}
-            onchange={(event) => patchChosenStair({ width: Number(event.currentTarget.value) / 1000 })}
-          />
-        </div>
-      </ContextPanel>
-    {/if}
-    {#if chosenWall && !roofFloor}
-      {@const wall = chosenWall.wall}
-      {@const system = systemOf(wall)}
-      {@const len = wallLength(chosenWall.floor.corners, wall.startCornerId, wall.endCornerId)}
-      {@const openings = wall.openings.length}
-      <ContextPanel
-        label="Wall"
-        tag={wall.skin === 'logical' ? 'Logical wall' : 'Wall'}
-        title={wall.skin === 'logical' ? 'Logical wall' : system.name}
-        subtitle={`${len.toFixed(2)} m · ${openings === 0 ? 'no openings' : `${openings} ${openings === 1 ? 'opening' : 'openings'}`}`}
-        icon={wall.skin === 'logical' ? SquareDashed : BrickWall}
-        description={wall.skin === 'logical' ? 'Divides rooms or carries fences/posts without building masonry.' : system.unitName}
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" onclick={() => onFocus?.(wall.id)}>
-            Open in Focus (Elevation)
-          </Button>
-          <Button class="w-full" variant="outline" onclick={squareToSelectedWall}>
-            Square to this wall
-          </Button>
-        {/snippet}
-        <div class="grid gap-2">
-          {#if wall.skin !== 'logical'}
-            <div class="grid gap-1.5">
-              <Label>Wall system</Label>
-              <Select.Root
-                type="single"
-                value={wall.systemId}
-                onValueChange={(next) => next && applyResult(documentStore.setWallSystem(chosenWall.floor.id, wall.id, next as WallSystemId))}
-              >
-                <Select.Trigger class="w-full">{system.name}</Select.Trigger>
-                <Select.Content>
-                  {#each WALL_SYSTEMS as opt (opt.id)}
-                    <Select.Item value={opt.id}>{opt.name}</Select.Item>
-                  {/each}
-                </Select.Content>
-              </Select.Root>
-            </div>
-          {/if}
-          <p class="text-xs text-muted-foreground">Double-click a wall to open it directly in Focus (Elevation).</p>
-          <Button variant="destructive" onclick={removeChosenWall}>
-            {wall.skin === 'logical' ? 'Delete logical wall' : 'Delete wall'}
-          </Button>
-        </div>
-      </ContextPanel>
-
-    {/if}
-
-    {#if selectedService && showServices && !roofFloor}
-      <ContextPanel
-        label={selectedService === 'sewer' ? 'Drain to the sewer' : 'Water main'}
-        tag="Services"
-        icon={Droplets}
-        title={selectedService === 'sewer' ? (plumbing.septic ? 'Drain to septic tank' : 'Drain to municipal sewer') : 'Water main'}
-        subtitle={selectedService === 'sewer'
-          ? (sewerProfile ? `${checkFormat.format(sewerProfile.length)} m of 110 mm drain` : 'Drainage connection')
-          : `${checkFormat.format(plumbing.waterMain)} m of 22 mm pipe`}
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="outline" onclick={straightenSelected}>Straighten the route</Button>
-        {/snippet}
-
-        {#if selectedService === 'sewer'}
-          <div class="grid gap-1.5">
-            <Label>Connects to</Label>
-            <Select.Root
-              type="single"
-              value={document.services?.sewerType ?? 'municipal'}
-              onValueChange={(next) => applyResult(documentStore.setSewerType(next as SewerType))}
-            >
-              <Select.Trigger class="w-full">{plumbing.septic ? 'Septic tank and soakaway' : 'Municipal sewer'}</Select.Trigger>
-              <Select.Content>
-                <Select.Item value="municipal" label="Municipal sewer" />
-                <Select.Item value="septic" label="Septic tank and soakaway" />
-              </Select.Content>
-            </Select.Root>
-          </div>
-          {#if plumbing.septic}
-            <p>
-              A {plumbing.septic.litres.toLocaleString('en-ZA')} litre tank for {plumbing.septic.bedrooms}
-              {plumbing.septic.bedrooms === 1 ? 'bedroom' : 'bedrooms'}, overflowing to a soakaway downhill. Drag either to move it.
-            </p>
-            <p class="text-xs text-muted-foreground">
-              Rules of thumb: the tank {SEPTIC_CLEAR_BUILDING_M} m from buildings, the soakaway {SOAKAWAY_CLEAR_BUILDING_M} m from
-              buildings and {SOAKAWAY_CLEAR_BOUNDARY_M} m from the boundary. Your municipality sets the real figures.
-            </p>
-          {/if}
-          {#if sewerProfile}
-            {@const last = sewerProfile.points.at(-1)!}
-            <p>
-              {checkFormat.format(sewerProfile.length)} m of 110 mm drain at 1 in {DRAIN_FALL[110]} or steeper, down to
-              {checkFormat.format(sewerProfile.deepest)} m at its deepest.
-            </p>
-            {#if sewerProfile.shortBy > 0.005}
-              <p class="text-amber-700">
-                It reaches the connection {Math.round(sewerProfile.shortBy * 1000)} mm too low. Drag the connection to lower
-                ground, bend the route over lower ground, or plan for a pump.
-              </p>
-            {:else}
-              <p class="text-muted-foreground">
-                It arrives {Math.round((last.ground - last.invert) * 1000)} mm below the ground, above the
-                {plumbing.septic ? 'tank inlet' : 'sewer'} at
-                {Math.round((plumbing.septic ? SEPTIC_INLET_DEPTH_M : (document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M)) * 1000)} mm.
-              </p>
-            {/if}
-          {:else}
-            <p class="text-muted-foreground">Place a toilet, basin, shower, bath or sink and the drain appears.</p>
-          {/if}
-          <div class="grid gap-1.5" hidden={plumbing.septic !== null}>
-            <Label for="sewer-depth">Sewer depth at the connection (mm)</Label>
-            <Input
-              id="sewer-depth"
-              type="number"
-              min="300"
-              step="50"
-              value={Math.round((document.services?.sewerDepth ?? DEFAULT_SEWER_DEPTH_M) * 1000)}
-              onchange={(event) => applyResult(documentStore.setSewerDepth(Number(event.currentTarget.value) / 1000))}
-            />
-          </div>
-        {:else}
-          <p>{checkFormat.format(plumbing.waterMain)} m of 22 mm pipe from the meter to the house, in a 450 mm trench.</p>
-        {/if}
-        <p class="text-xs text-muted-foreground">
-          Drag the {selectedService === 'sewer' ? 'connection' : 'meter'} along the boundary, drag a + to add a bend, and Delete removes a selected bend.
-        </p>
-      </ContextPanel>
-    {/if}
-    {#if chosenFixture && !roofFloor}
-      <ContextPanel
-        label="Fitting"
-        tag={chosenFixture.spec.trade === 'electrical' ? 'Electrical' : chosenFixture.spec.trade === 'plumbing' ? 'Plumbing' : 'Fitting'}
-        icon={Plug}
-        title={chosenFixture.spec.name}
-        subtitle={chosenFixture.spec.text}
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          {#if chosenFixture.onWall}
-            <Button class="w-full" variant="outline" onclick={() => chosenFixture?.onWall && onFocus?.(chosenFixture.onWall.wall.id)}>Show the wall in Focus</Button>
-          {/if}
-          <Button class="w-full" variant="destructive" onclick={removeChosenFixture}>Remove fitting</Button>
-        {/snippet}
-
-        {#if chosenFixture.fixture.kind === 'db-board'}
-          <p>
-            Feeds {wiring.circuits.length} {wiring.circuits.length === 1 ? 'circuit' : 'circuits'}{wiring.boardSize
-              ? `; a ${wiring.boardSize}-way board.`
-              : '.'}
-          </p>
-        {:else if shownCircuits[0]}
-          {@const circuit = shownCircuits[0]}
-          <p>
-            On <span class="font-medium">{circuit.id}</span>, {circuit.name.toLowerCase()}: {circuit.breaker} A breaker,
-            {circuit.cable} mm² cable, {circuit.points.length}
-            {circuit.points.length === 1 ? 'point' : 'points'}, about {checkFormat.format(circuit.length)} m of cable.
-          </p>
-        {:else if chosenFixture.spec.trade === 'electrical' && chosenFixture.fixture.kind !== 'stove'}
-          <p class="text-amber-700">Not on a circuit yet: place a distribution board.</p>
-        {/if}
-        <FittingSetup floorId={chosenFixture.floorId} fixture={chosenFixture.fixture} onresult={applyResult} />
-      </ContextPanel>
-    {/if}
-    {#if selectedEdge !== null && !roofFloor}
-      {@const side = plotSide(document.plot, selectedEdge)}
-      {#if side}
-        {@const onRoad = (document.plot.roads ?? []).includes(selectedEdge)}
-        <ContextPanel
-          label="Side of the plot"
-          tag="Boundary"
-          icon={SquareDashed}
-          title="Side of the plot"
-          subtitle="{checkFormat.format(side.length)} m along the boundary · facing {side.facing}"
-          onclose={() => chooseSelection({})}
-        >
-          <div class="grid gap-1.5">
-            <Label for="plot-road">Road access</Label>
-            <Select.Root
-              type="single"
-              value={onRoad ? 'road' : 'none'}
-              onValueChange={(next) => next && selectedEdge !== null && applyResult(documentStore.setPlotRoad(selectedEdge, next === 'road'))}
-            >
-              <Select.Trigger id="plot-road" size="sm" class="w-full">{onRoad ? 'On a road' : 'No road'}</Select.Trigger>
-              <Select.Content>
-                <Select.Item value="road" label="On a road" />
-                <Select.Item value="none" label="No road" />
-              </Select.Content>
-            </Select.Root>
-          </div>
-          <p class="text-muted-foreground">
-            {onRoad
-              ? 'A street runs along this side: a grass verge, then the road. It is drawn for context; it is not costed.'
-              : 'Mark the sides of the plot that are on a street. A corner plot has two.'}
-          </p>
-        </ContextPanel>
-      {/if}
-    {/if}
-    {#if chosenRetaining && !roofFloor}
-      {@const measure = chosenRetaining.measure}
-      <ContextPanel
-        label="Retaining wall"
-        tag="Site"
-        icon={Mountain}
-        title={retainingSpec(chosenRetaining.wall.type).name}
-        subtitle="{checkFormat.format(measure.length)} m long · holds back up to {checkFormat.format(measure.highest)} m"
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet estimate()}
-          <table class="w-full text-xs">
-            <tbody>
-              <tr class="border-b border-border/40"><td class="py-1 text-muted-foreground">Length</td><td class="py-1 text-right font-medium tabular-nums">{checkFormat.format(measure.length)} m</td></tr>
-              <tr class="border-b border-border/40">
-                <td class="py-1 text-muted-foreground">Max height</td>
-                <td class="py-1 text-right font-medium tabular-nums" class:text-amber-700={measure.highest > RETAINING_ENGINEER_M}>{checkFormat.format(measure.highest)} m</td>
-              </tr>
-              <tr><td class="py-1 text-muted-foreground">Average height</td><td class="py-1 text-right font-medium tabular-nums">{checkFormat.format(measure.average)} m</td></tr>
-            </tbody>
-          </table>
-          {#if measure.highest > RETAINING_ENGINEER_M}
-            <p class="text-xs text-amber-700">Over {RETAINING_ENGINEER_M} m of retained ground needs an engineer's design.</p>
-          {/if}
-        {/snippet}
-
-        {#snippet actions()}
-          <Button class="w-full" variant="destructive" onclick={removeChosenRetaining}>Remove retaining wall</Button>
-        {/snippet}
-
-        <div class="grid gap-1.5">
-          <Label for="retaining-type">Built of</Label>
-          <Select.Root
-            type="single"
-            value={chosenRetaining.wall.type}
-            onValueChange={(next) => next && chosenRetaining && applyResult(documentStore.updateRetainingWall(chosenRetaining.wall.id, { type: next as RetainingType }))}
-          >
-            <Select.Trigger id="retaining-type" size="sm" class="w-full">{retainingSpec(chosenRetaining.wall.type).name}</Select.Trigger>
-            <Select.Content>
-              {#each RETAINING_TYPES as spec (spec.id)}
-                <Select.Item value={spec.id} label={spec.name} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-      </ContextPanel>
-    {/if}
-    {#if chosenCounter && !roofFloor}
-      <ContextPanel
-        label={chosenCounter.kind === 'cupboard' ? 'Cupboard' : 'Counter'}
-        tag={chosenCounter.kind === 'cupboard' ? 'Cupboard' : 'Counter'}
-        icon={ChefHat}
-        title={counterKindSpec(chosenCounter.kind).name}
-        subtitle="{Math.round(chosenCounter.length * 1000)} × {Math.round(chosenCounter.depth * 1000)} mm · {counterKindSpec(chosenCounter.kind).height * 1000} mm high"
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="destructive" onclick={removeChosenCounter}>
-            {chosenCounter.kind === 'cupboard' ? 'Remove cupboard' : 'Remove counter'}
-          </Button>
-        {/snippet}
-
-        {#if chosenCounter.kind !== 'cupboard'}
-          <div class="grid gap-1.5">
-            <Label>Worktop</Label>
-            <SwatchPicker
-              label="Worktop"
-              options={COUNTER_TOPS.map((spec) => ({ id: spec.id, name: spec.name, swatch: spec.colour }))}
-              value={chosenCounter.top}
-              onchange={(next) => patchChosenCounter({ top: next })}
-            />
-          </div>
-        {/if}
-        <div class="grid grid-cols-2 gap-2">
-          <div class="grid gap-1.5">
-            <Label for="counter-length">Length (mm)</Label>
-            <Input
-              id="counter-length"
-              type="number"
-              min="300"
-              step="50"
-              value={Math.round(chosenCounter.length * 1000)}
-              onchange={(event) => patchChosenCounter({ length: Number(event.currentTarget.value) / 1000 })}
-            />
-          </div>
-          <div class="grid gap-1.5">
-            <Label for="counter-depth">Depth (mm)</Label>
-            <Input
-              id="counter-depth"
-              type="number"
-              min="300"
-              max="1500"
-              step="50"
-              value={Math.round(chosenCounter.depth * 1000)}
-              onchange={(event) => patchChosenCounter({ depth: Number(event.currentTarget.value) / 1000 })}
-            />
-          </div>
-        </div>
-        {#if chosenCounter.kind === 'base'}
-          <label class="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              class="size-4 accent-primary"
-              checked={chosenCounter.wallUnits ?? false}
-              onchange={(event) => patchChosenCounter({ wallUnits: event.currentTarget.checked })}
-            />
-            Cupboards on the wall above
-          </label>
-        {/if}
-        {#each counterIssues(document).filter((issue) => issue.id.startsWith(`counter:${chosenCounter.id}:`)) as issue (issue.id)}
-          <p class="text-xs text-amber-700">{issue.text}</p>
-        {/each}
-      </ContextPanel>
-    {/if}
-    {#if chosenCarport && !roofFloor}
-      {@const size = carportSize(chosenCarport)}
-      <ContextPanel
-        label="Carport"
-        tag="Carport"
-        icon={CarFront}
-        title={carportName(chosenCarport.bays)}
-        subtitle="{size.wide.toFixed(2)} × {size.deep.toFixed(1)} m · {carportRoofSpec(chosenCarport.roof).text}"
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="outline" onclick={turnChosenCarport}>
-            <RotateCw class="mr-1.5 size-4" />Turn a quarter turn
-          </Button>
-          <Button class="w-full" variant="destructive" onclick={removeChosenCarport}>Remove carport</Button>
-        {/snippet}
-
-        <div class="grid gap-1.5">
-          <Label>Cars</Label>
-          <ToggleGroup.Root
-            type="single"
-            variant="outline"
-            size="sm"
-            value={String(chosenCarport.bays)}
-            onValueChange={(next) => next && chosenCarport && applyResult(documentStore.updateCarport(chosenCarport.id, { bays: Number(next) as Carport['bays'] }))}
-            aria-label="How many cars"
-          >
-            {#each CARPORT_BAYS as bays (bays)}
-              <ToggleGroup.Item value={String(bays)} class="flex-1">{bays === 1 ? 'Single' : bays === 2 ? 'Double' : 'Triple'}</ToggleGroup.Item>
-            {/each}
-          </ToggleGroup.Root>
-        </div>
-        <div class="grid gap-1.5">
-          <Label for="carport-roof">Roof</Label>
-          <Select.Root
-            type="single"
-            value={chosenCarport.roof}
-            onValueChange={(next) => next && chosenCarport && applyResult(documentStore.updateCarport(chosenCarport.id, { roof: next as CarportRoof }))}
-          >
-            <Select.Trigger id="carport-roof" size="sm" class="w-full">{carportRoofSpec(chosenCarport.roof).name}</Select.Trigger>
-            <Select.Content>
-              {#each CARPORT_ROOFS as spec (spec.id)}
-                <Select.Item value={spec.id} label={spec.name} />
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-        {#each carportWarnings.filter((issue) => issue.carportId === chosenCarport?.id) as issue (issue.id)}
-          <p class="text-xs text-amber-700">{issue.text}</p>
-        {/each}
-      </ContextPanel>
-    {/if}
-    {#if chosenPaving && !roofFloor}
-      {@const surface = chosenPaving.apron ? projectDefaults(document).apronSurface : chosenPaving.item.surface}
-      <ContextPanel
-        label="Paving"
-        tag={chosenPaving.apron ? 'Apron' : 'Paving'}
-        icon={Grid2x2}
-        title={chosenPaving.apron ? 'Apron round the house' : `${PAVING[surface].name} paving`}
-        subtitle="{checkFormat.format(chosenPaving.area)} m² · {PAVING[surface].text}"
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="destructive" onclick={removeChosenPaving}>{chosenPaving.apron ? 'No apron' : 'Remove paving'}</Button>
-        {/snippet}
-
-        <div class="grid gap-1.5">
-          <Label>Surface</Label>
-          <SwatchPicker
-            label="Paving surface"
-            options={pavingOptions}
-            value={surface}
-            onchange={(next) =>
-              chosenPaving &&
-              applyResult(
-                chosenPaving.apron
-                  ? documentStore.setProjectDefaults({ apronSurface: next })
-                  : documentStore.updatePaving(chosenPaving.item.id, { surface: next }),
-              )}
-          />
-        </div>
-        {#if chosenPaving.apron}
-          <div class="grid gap-1.5">
-            <Label for="apron-width">Width (mm)</Label>
-            <Input
-              id="apron-width"
-              type="number"
-              min="0"
-              max="3000"
-              step="100"
-              value={Math.round(projectDefaults(document).apronWidth * 1000)}
-              onchange={(event) => applyResult(documentStore.setProjectDefaults({ apronWidth: Number(event.currentTarget.value) / 1000 }))}
-            />
-          </div>
-          <p class="text-xs text-muted-foreground">Laid along every outside wall to carry rain clear of the foundations. It is set for the whole project.</p>
-        {/if}
-      </ContextPanel>
-    {/if}
-    {#if chosenBed && !roofFloor}
-      {@const area = bedArea(chosenBed.ring)}
-      {@const perim = bedPerimeter(chosenBed.ring)}
-      {@const volume = bedSoilVolume(chosenBed)}
-      {@const isRaised = chosenBed.height > 0.05}
-      {@const mat = bedMaterialSpec(chosenBed.material)}
-      <ContextPanel
-        label="Garden bed"
-        tag="Garden"
-        icon={Sprout}
-        title={isRaised ? `${mat.name} raised bed` : (chosenBed.material ? `Flower bed with ${mat.name.toLowerCase()} edging` : 'Flower bed')}
-        subtitle="{checkFormat.format(area)} m² · {isRaised || chosenBed.material ? `${checkFormat.format(perim)} m ${isRaised ? 'perimeter' : 'edging'} · ` : ''}{checkFormat.format(volume)} m³ topsoil"
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet actions()}
-          <Button class="w-full" variant="destructive" onclick={removeChosenBed}>Delete bed</Button>
-        {/snippet}
-
-        <div class="grid gap-1.5">
-          <Label for="bed-height">Height (mm)</Label>
-          <div class="flex items-center gap-2">
-            <Input
-              id="bed-height"
-              type="number"
-              min="0"
-              max="1200"
-              step="50"
-              value={Math.round(chosenBed.height * 1000)}
-              onchange={(event) => {
-                const h = Math.max(0, Math.min(1.2, Number(event.currentTarget.value) / 1000))
-                applyResult(
-                  documentStore.updateBed(chosenBed.id, {
-                    height: h,
-                    ...(h > 0.05 && !chosenBed.material ? { material: DEFAULT_BED_MATERIAL } : {}),
-                    ...(h <= 0.05 && chosenBed.height > 0.05 ? { material: undefined } : {}),
-                  }),
-                )
-              }}
-            />
-            <ToggleGroup.Root
-              type="single"
-              variant="outline"
-              size="sm"
-              value={chosenBed.height <= 0.05 ? 'ground' : 'raised'}
-              onValueChange={(val) => {
-                if (val === 'ground') applyResult(documentStore.updateBed(chosenBed.id, { height: 0, material: undefined }))
-                else if (val === 'raised') applyResult(documentStore.updateBed(chosenBed.id, { height: DEFAULT_RAISED_HEIGHT, material: chosenBed.material ?? DEFAULT_BED_MATERIAL }))
-              }}
-            >
-              <ToggleGroup.Item value="ground" title="In-ground flower bed">Flat</ToggleGroup.Item>
-              <ToggleGroup.Item value="raised" title="Raised planter bed">Raised</ToggleGroup.Item>
-            </ToggleGroup.Root>
-          </div>
-        </div>
-        {#if chosenBed.height > 0.05}
-          <div class="grid gap-1.5">
-            <Label>Retaining wall material</Label>
-            <Select.Root
-              type="single"
-              value={chosenBed.material ?? DEFAULT_BED_MATERIAL}
-              onValueChange={(next) => next && applyResult(documentStore.updateBed(chosenBed.id, { material: next as BedMaterial }))}
-            >
-              <Select.Trigger size="sm" class="w-full" aria-label="Retaining wall material">
-                <span class="flex items-center gap-2">
-                  <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={mat.colour}></span>
-                  {mat.name}
-                </span>
-              </Select.Trigger>
-              <Select.Content>
-                {#each BED_MATERIALS as spec (spec.id)}
-                  <Select.Item value={spec.id} label={spec.name}>
-                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-                    {spec.name}
-                  </Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-            <p class="text-xs text-muted-foreground">{mat.text}</p>
-          </div>
-        {:else}
-          <div class="grid gap-1.5">
-            <Label>Flush edging</Label>
-            <Select.Root
-              type="single"
-              value={chosenBed.material ?? 'none'}
-              onValueChange={(next) => applyResult(documentStore.updateBed(chosenBed.id, { material: next === 'none' ? undefined : (next as BedMaterial) }))}
-            >
-              <Select.Trigger size="sm" class="w-full" aria-label="Flush edging">
-                <span class="flex items-center gap-2">
-                  {#if chosenBed.material}
-                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={mat.colour}></span>
-                    {mat.name}
-                  {:else}
-                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15 bg-transparent"></span>
-                    No edging (lawn / earth edge)
-                  {/if}
-                </span>
-              </Select.Trigger>
-              <Select.Content>
-                <Select.Item value="none" label="No edging">No edging (lawn / earth edge)</Select.Item>
-                {#each BED_MATERIALS as spec (spec.id)}
-                  <Select.Item value={spec.id} label={spec.name}>
-                    <span class="inline-block size-4 shrink-0 rounded-sm border border-black/15" style:background={spec.colour}></span>
-                    {spec.name}
-                  </Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-            {#if chosenBed.material}
-              <p class="text-xs text-muted-foreground">{mat.text}</p>
-            {/if}
-          </div>
-        {/if}
-      </ContextPanel>
-    {/if}
-    {#if selectedRoom && !roofFloor}
-      {@const resolved = selectedRoom.resolved}
-      <ContextPanel
-        label="Room"
-        tag="Room"
-        icon={DoorClosed}
-        title={resolved ? resolved.space.name : 'Unnamed space'}
-        subtitle={resolved ? `${areaFormat.format(resolved.area)} m² inside walls${resolved.cells.length > 1 ? ` · ${resolved.cells.length} parts` : ''}` : `${areaFormat.format(selectedRoom.cell.netArea)} m² inside walls`}
-        onclose={() => chooseSelection({})}
-      >
-        {#snippet estimate()}
-          {#if resolved}
-            {#if selectedChecks}
-              <div class="grid gap-1.5">
-                <span class="text-xs font-semibold tracking-wide uppercase text-muted-foreground">SANS 10400 Checks</span>
-                {#each selectedChecks.checks as item (item.id)}
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-muted-foreground">{item.label} (Part {item.part}):</span>
-                    <Badge
-                      variant={item.ok ? 'secondary' : 'outline'}
-                      class={item.ok ? 'text-[11px]' : 'border-amber-600/40 text-amber-700 text-[11px]'}
-                    >
-                      {checkFormat.format(item.measured)}{item.unit === '%' ? '%' : ` ${item.unit}`} / min {checkFormat.format(item.required)}{item.unit === '%' ? '%' : ` ${item.unit}`}
-                    </Badge>
-                  </div>
-                {/each}
-              </div>
-            {:else if !isHabitable(resolved.space.type)}
-              <span class="text-xs text-muted-foreground">Not a habitable room; daylight and ventilation checks do not apply.</span>
-            {/if}
-          {/if}
-        {/snippet}
-
-        {#snippet actions()}
-          {#if resolved}
-            {#if focusedRoom !== resolved.space.id}
-              <Button
-                class="w-full"
-                variant="outline"
-                onclick={() => layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))}
-              >
-                <Maximize2 class="mr-1.5 size-4" />Lay out this room (Focus)
-              </Button>
-            {:else}
-              <Button
-                class="w-full"
-                variant="outline"
-                onclick={leaveRoom}
-              >
-                <Maximize2 class="mr-1.5 size-4" />Whole plan (Esc)
-              </Button>
-            {/if}
-            <Button class="w-full" variant="outline" onclick={suggestForSelectedRoom}>
-              <Plug class="mr-1.5 size-4" />Suggest fittings
-            </Button>
-          {/if}
-        {/snippet}
-
-        {#if resolved}
-
-          <div class="grid gap-1.5">
-            <Label for="room-name">Name</Label>
-            <Input
-              id="room-name"
-              value={resolved.space.name}
-              onchange={(event) => patchSelectedSpace({ name: event.currentTarget.value })}
-            />
-          </div>
-          <div class="grid gap-1.5">
-            <Label>Use</Label>
-            <Select.Root
-              type="single"
-              value={resolved.space.type}
-              onValueChange={(next) => patchSelectedSpace({ type: next as RoomType })}
-            >
-              <Select.Trigger class="w-full">{roomTypeLabel(resolved.space.type)}</Select.Trigger>
-              <Select.Content>
-                {#each ROOM_TYPES as option (option.type)}
-                  <Select.Item value={option.type}>{option.label}</Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-          <div class="grid gap-1.5">
-            <div class="flex items-baseline justify-between gap-2">
-              <Label>Floor finish</Label>
-              <span class="text-muted-foreground">{floorFinishSpec(resolved.space.finish).name}</span>
-            </div>
-            <SwatchPicker
-              label="Floor finish"
-              options={floorOptions}
-              value={resolved.space.finish}
-              onchange={(next) => patchSelectedSpace({ finish: next })}
-              compact
-            />
-          </div>
-          <label class="flex cursor-pointer items-start gap-2">
-            <input
-              type="checkbox"
-              class="mt-0.5 size-4 accent-primary"
-              checked={resolved.space.open ?? false}
-              onchange={(event) => patchSelectedSpace({ open: event.currentTarget.checked })}
-            />
-            <span>
-              Open to the sky
-              <span class="block text-muted-foreground">A deck or a yard: no roof, ceiling or storey over it.</span>
-            </span>
-          </label>
-          <p class="text-xs text-muted-foreground">
-            {selectedRoomFixtures > 0
-              ? `${selectedRoomFixtures} fittings in this room. Suggesting adds a fresh set.`
-              : `Lights, switches, sockets and plumbing for a ${roomTypeLabel(resolved.space.type).toLowerCase()}.`}
-          </p>
-          <p class="text-xs text-muted-foreground">Shift-click a neighbouring part to join it, or one of its parts to split it off.</p>
-        {:else}
-          <p>
-            <span class="text-lg font-semibold">{areaFormat.format(selectedRoom.cell.netArea)} m²</span>
-            <span class="text-muted-foreground">inside the walls</span>
-          </p>
-          <div class="grid gap-1.5">
-            <Label>Use</Label>
-            <Select.Root type="single" bind:value={newRoomType}>
-              <Select.Trigger class="w-full">{roomTypeLabel(newRoomType)}</Select.Trigger>
-              <Select.Content>
-                {#each ROOM_TYPES as option (option.type)}
-                  <Select.Item value={option.type}>{option.label}</Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-          <Button onclick={nameSelectedRoom}>Name this room</Button>
-        {/if}
-      </ContextPanel>
-    {/if}
-
-    {#if roofFloor}
-      <ContextPanel
-        label="Roof"
-        tag="Roof"
-        icon={Home}
-        title="Roof structure"
-        subtitle={roofFloor.roof ? `${ROOF_FORMS[roofFloor.roof.form ?? 'hip']} · ${roofFloor.roof.pitchDeg}° pitch` : 'Roof configuration'}
-      >
-        {#snippet actions()}
-          {#if roofFloor.roof && (roofFloor.roof.form ?? 'hip') !== 'hip'}
-            <Button class="w-full" variant="outline" onclick={turnRoof}>
-              <RotateCw class="mr-1.5 size-4" />{roofFloor.roof.form === 'gable' ? 'Turn the ridge' : 'Turn the fall'}
-            </Button>
-          {/if}
-        {/snippet}
-
-        {#if roofFloor.roof}
-          {@const roof = roofFloor.roof}
-          <div class="grid gap-1.5">
-            <Label>Form</Label>
-            <Select.Root type="single" value={roof.form ?? 'hip'} onValueChange={(next) => setRoofForm(next as RoofForm)}>
-              <Select.Trigger class="w-full">{ROOF_FORMS[roof.form ?? 'hip']}</Select.Trigger>
-              <Select.Content>
-                {#each Object.entries(ROOF_FORMS) as [form, label] (form)}
-                  <Select.Item value={form}>{label}</Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-          <div class="grid gap-1.5">
-            <Label>Covering</Label>
-            <Select.Root
-              type="single"
-              value={roof.covering ?? DEFAULT_COVERING}
-              onValueChange={(next) => setRoofCovering(next as RoofCovering)}
-            >
-              <Select.Trigger class="w-full">{coveringOf(roof).name}</Select.Trigger>
-              <Select.Content>
-                {#each COVERINGS as option (option.id)}
-                  <Select.Item value={option.id}>{option.name}</Select.Item>
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-          <div class="grid gap-1.5">
-            <Label>Gutters</Label>
-            <Select.Root
-              type="single"
-              value={gutterOf(roof)}
-              onValueChange={(next) => roofFloor && floorRoof(roofFloor.id, { ...roof, gutter: next as GutterType })}
-            >
-              <Select.Trigger class="w-full">{GUTTERS[gutterOf(roof)].name}</Select.Trigger>
-              <Select.Content>
-                {#each Object.entries(GUTTERS) as [id, spec] (id)}
-                  <Select.Item value={id} label={spec.name} />
-                {/each}
-              </Select.Content>
-            </Select.Root>
-            <p class="text-xs text-muted-foreground">
-              Every eave gets one{roof.noGutter?.length ? `, except above ${roof.noGutter.length} ${roof.noGutter.length === 1 ? 'wall' : 'walls'}` : ''}. Take it off a wall in Focus.
-            </p>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="grid gap-1.5">
-              <Label for="roof-pitch">Pitch (°)</Label>
-              <Input
-                id="roof-pitch"
-                type="number"
-                min="1"
-                max="89"
-                step="1"
-                value={roof.pitchDeg}
-                onchange={(event) => setRoofPitch(Number(event.currentTarget.value))}
-              />
-            </div>
-            <div class="grid gap-1.5">
-              <Label for="roof-eaves">Eaves (mm)</Label>
-              <Input
-                id="roof-eaves"
-                type="number"
-                min="0"
-                step="10"
-                value={Math.round(roof.eaves * 1000)}
-                onchange={(event) => setRoofEavesMm(Number(event.currentTarget.value))}
-              />
-            </div>
-          </div>
-          {#if roof.pitchDeg < coveringOf(roof).minPitchDeg}
-            <p class="text-amber-700">
-              {coveringOf(roof).name} usually need at least {coveringOf(roof).minPitchDeg}°. Check the manufacturer's
-              minimum.
-            </p>
-          {/if}
-          {#if roofRooms.length > 0}
-            <!-- Which of the rooms below this roof are left out from under it. -->
-            <div class="grid gap-1.5 border-t pt-3">
-              <span class="font-medium">Open to the sky</span>
-              <span class="text-muted-foreground">Tick a deck or a yard to leave it out from under the roof.</span>
-              {#each roofRooms as room (room.space.id)}
-                <label class="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    class="size-4 accent-primary"
-                    checked={room.space.open ?? false}
-                    onchange={(event) => applyResult(documentStore.updateSpace(room.floorId, room.space.id, { open: event.currentTarget.checked }))}
-                  />
-                  {room.space.name}
-                </label>
-              {/each}
-            </div>
-          {/if}
-          <Button variant="destructive" onclick={removeRoof}>Remove roof</Button>
-        {:else}
-          <p class="text-muted-foreground">This storey is an empty plate on the walls below.</p>
-          <Button onclick={addRoof}>Add roof</Button>
-        {/if}
-      </ContextPanel>
-    {/if}
+    <PlanContextPanels
+      {document}
+      {roofFloor}
+      {chosenStair}
+      {turnChosenStair}
+      {removeChosenStair}
+      {patchChosenStair}
+      {chosenWall}
+      {onFocus}
+      {squareToSelectedWall}
+      {removeChosenWall}
+      {selectedService}
+      {showServices}
+      {plumbing}
+      {sewerProfile}
+      {straightenSelected}
+      {chosenFixture}
+      {shownCircuits}
+      {wiring}
+      {removeChosenFixture}
+      {selectedEdge}
+      {chosenRetaining}
+      {removeChosenRetaining}
+      {chosenCounter}
+      {patchChosenCounter}
+      {removeChosenCounter}
+      {chosenCarport}
+      {turnChosenCarport}
+      {removeChosenCarport}
+      {carportWarnings}
+      {chosenPaving}
+      {pavingOptions}
+      {removeChosenPaving}
+      {chosenBed}
+      {removeChosenBed}
+      {selectedRoom}
+      {selectedChecks}
+      {focusedRoom}
+      {layOutRoom}
+      {leaveRoom}
+      {suggestForSelectedRoom}
+      {patchSelectedSpace}
+      {floorOptions}
+      {selectedRoomFixtures}
+      {newRoomType}
+      onNewRoomTypeChange={(type) => (newRoomType = type)}
+      {nameSelectedRoom}
+      {roofRooms}
+      {turnRoof}
+      {setRoofForm}
+      {setRoofCovering}
+      {floorRoof}
+      {setRoofPitch}
+      {setRoofEavesMm}
+      {removeRoof}
+      {addRoof}
+      {chooseSelection}
+      {applyResult}
+    />
   </div>
 </div>
 
@@ -5583,15 +4251,6 @@
   }
   .service-line.sewer {
     stroke: #7c4a1e;
-  }
-  .verge {
-    fill: #d6e2c4;
-  }
-  .carriageway {
-    fill: #6b6b70;
-  }
-  .centre-line {
-    stroke: #f5f5f4;
   }
   .downpipe {
     fill: #ffffff;
