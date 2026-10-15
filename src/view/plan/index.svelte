@@ -24,6 +24,7 @@
   import DoorClosed from '@lucide/svelte/icons/door-closed'
   import Droplets from '@lucide/svelte/icons/droplets'
   import Home from '@lucide/svelte/icons/home'
+  import Trees from '@lucide/svelte/icons/trees'
   import { BED_MATERIALS, DEFAULT_BED_MATERIAL, DEFAULT_RAISED_HEIGHT, bedArea, bedMaterialSpec, bedPerimeter, bedSoilVolume } from '../../lib/model/beds'
   import { BED_SOIL_COLOUR, bedAt, insetRing } from '../../lib/geometry/beds'
   import FixtureSymbol from './FixtureSymbol.svelte'
@@ -153,7 +154,12 @@
   import { plotBounds, pointsAttr, ringPath } from './svg'
   import PlanNavigator from './PlanNavigator.svelte'
 
-  type Tool = 'draw-double' | 'draw-logical' | 'draw-rect' | 'draw-stair' | 'draw-fixture' | 'draw-paving' | 'draw-bed' | 'draw-carport' | 'draw-counter' | 'draw-retaining' | 'select'
+  import {
+    type Tool,
+    type PlanScope,
+    isToolInScope,
+    scopeForTool,
+  } from './scope'
 
   const drawSystem = $derived(wallSystem(documentStore.document.building.wallSystemId ?? DEFAULT_WALL_SYSTEM_ID))
 
@@ -172,6 +178,7 @@
     storey: activeStoreyIndex = $bindable(0),
     focusSpace = null,
     viewKey = '',
+    planScope = $bindable<PlanScope>('building'),
     onStatus,
     onFocus,
   }: {
@@ -180,6 +187,7 @@
     storey?: number
     focusSpace?: string | null
     viewKey?: string
+    planScope?: PlanScope
     onStatus?: (status: { text: string; error: boolean }) => void
     onFocus?: (wallId: string) => void
   } = $props()
@@ -942,17 +950,25 @@
     if (!plan) return
     const id = pickWall(activeFloor, plan.x, plan.z)
     if (id) {
+      if (planScope !== 'building') switchScope('building')
       chooseSelection({ wallId: id })
       onFocus?.(id)
       return
     }
     // A double-click on a room's floor lays that room out on its own, seen from above.
     const room = roomAtPoint(activeFloor, plan.x, plan.z)
-    if (!room) return
-    const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
-    const entry = levelLayouts.find((item) => item.floorId === floorId)
-    const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
-    if (resolved) layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))
+    if (room) {
+      if (planScope !== 'building') switchScope('building')
+      const floorId = floorIdFor(room.cornerIds[0]) ?? activeFloorId
+      const entry = levelLayouts.find((item) => item.floorId === floorId)
+      const resolved = entry?.layout.spaces.find((item) => item.cells.some((cell) => roomKey(cell.room.cornerIds) === roomKey(room.cornerIds)))
+      if (resolved) layOutRoom(resolved.space, resolved.cells.map((cell) => cell.ring))
+      return
+    }
+    // Double-clicking the grounds outside the building switches to Site & Grounds mode
+    if (planScope === 'building' && pointInPlot(document.plot, plan.x, plan.z)) {
+      switchScope('site')
+    }
   }
 
 
@@ -1081,6 +1097,40 @@
     }
 
     if (tool === 'select') {
+      if (planScope === 'site') {
+        const held = activeStoreyIndex === 0 ? retainingAt(document, plan, s(0.3)) : null
+        if (held) {
+          armPan(event, () => chooseSelection({ retaining: held.id }))
+          return
+        }
+        const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
+        if (parked) {
+          chooseSelection({ carport: parked.id })
+          carportMove = { id: parked.id, grabX: plan.x - parked.x, grabZ: plan.z - parked.z, preview: null, problem: null }
+          svgEl?.setPointerCapture(event.pointerId)
+          return
+        }
+        const bed = activeStoreyIndex === 0 ? bedAt(document, plan) : null
+        if (bed) {
+          armPan(event, () => chooseSelection({ bed: bed.id }))
+          return
+        }
+        const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
+        if (paved) {
+          armPan(event, () => chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id }))
+          return
+        }
+        if (beginServiceDrag(plan, event)) return
+        const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
+        if (edge !== undefined) {
+          armPan(event, () => chooseSelection({ edge: edge ?? null }))
+          return
+        }
+        if (pickOutline(plan.x, plan.z)) return
+        armPan(event, () => chooseSelection({}))
+        return
+      }
+
       if (beginServiceDrag(plan, event)) return
       if (beginNodeDrag(activeFloor, plan, event)) return
       // A fitting set into a counter is picked before the counter it stands in.
@@ -1138,30 +1188,7 @@
         armPan(event, () => chooseSelection({ cell: { floorId, x: plan.x, z: plan.z } }))
         return
       }
-      const held = activeStoreyIndex === 0 ? retainingAt(document, plan, s(0.3)) : null
-      if (held) {
-        armPan(event, () => chooseSelection({ retaining: held.id }))
-        return
-      }
-      const parked = activeStoreyIndex === 0 ? carportAt(document, plan) : null
-      if (parked) {
-        chooseSelection({ carport: parked.id })
-        carportMove = { id: parked.id, grabX: plan.x - parked.x, grabZ: plan.z - parked.z, preview: null, problem: null }
-        svgEl?.setPointerCapture(event.pointerId)
-        return
-      }
-      const bed = activeStoreyIndex === 0 ? bedAt(document, plan) : null
-      if (bed) {
-        armPan(event, () => chooseSelection({ bed: bed.id }))
-        return
-      }
-      const paved = activeStoreyIndex === 0 ? pavingAt(document, plan) : null
-      if (paved) {
-        armPan(event, () => chooseSelection({ paving: paved.kind === 'apron' ? 'apron' : paved.id }))
-        return
-      }
-      const edge = nearestPlotEdge(plotRing, plan.x, plan.z)
-      armPan(event, () => chooseSelection({ edge: edge ?? null }))
+      armPan(event, () => chooseSelection({}))
       return
     }
 
@@ -1421,7 +1448,7 @@
   }
 
   function trackNodeHover(floor: Floor, plan: { x: number; z: number }) {
-    if (tool !== 'select') {
+    if (tool !== 'select' || planScope !== 'building') {
       hoverNodeId = null
       return
     }
@@ -1505,6 +1532,11 @@
         setTool('select')
         return
       }
+      if (planScope === 'site') {
+        event.preventDefault()
+        switchScope('building')
+        return
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1545,6 +1577,13 @@
   function setTool(chosen: Tool) {
     // An example being previewed can be picked over but not drawn on.
     const next = documentStore.readOnly ? 'select' : chosen
+    const reqScope = scopeForTool(next)
+    if (reqScope && reqScope !== planScope) {
+      planScope = reqScope
+      if (reqScope === 'site' && activeStoreyIndex !== 0) {
+        selectStorey(0)
+      }
+    }
     tool = next
     pavingDraft = []
     bedDraft = []
@@ -1556,7 +1595,35 @@
     selectedCornerId = null
   }
 
+  function switchScope(next: PlanScope) {
+    if (planScope === next) return
+    planScope = next
+    if (next === 'site') {
+      if (focusedCells) leaveRoom()
+      if (activeStoreyIndex !== 0) {
+        selectStorey(0)
+      }
+      if (!isToolInScope(tool, 'site')) {
+        setTool('select')
+      }
+      if (selectedWallId || selectedCornerId || selectedCell || selectedCounter || selectedFixture || selectedStair) {
+        chooseSelection({})
+      }
+    } else {
+      if (!isToolInScope(tool, 'building')) {
+        setTool('select')
+      }
+      if (selectedPaving || selectedBed || selectedCarport || selectedRetaining || selectedEdge) {
+        chooseSelection({})
+      }
+    }
+  }
+
   function selectStorey(index: number) {
+    if (index !== 0 && planScope === 'site') {
+      planScope = 'building'
+      if (!isToolInScope(tool, 'building')) setTool('select')
+    }
     activeStoreyIndex = index
     const next = floors.find((floor) => floor.index === index)
     if (next) activeFloorId = next.id
@@ -1859,7 +1926,7 @@
   const turnRadius = $derived(ROTATE_HIT_M * turnScale)
 
   const rotateHandle = $derived.by(() => {
-    if (tool !== 'select' || !activeFloor || moveDrag) return null
+    if (tool !== 'select' || planScope !== 'building' || !activeFloor || moveDrag) return null
     const id = rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
     if (!id || connectedCornerIds(activeFloor, id).length < 2) return null
     const corner = cornerById(activeFloor.corners, id)
@@ -1889,7 +1956,7 @@
   })
 
   const hoveredCorner = $derived.by(() => {
-    if (!activeFloor) return undefined
+    if (!activeFloor || planScope !== 'building') return undefined
     if (tool === 'select') {
       const id = moveDrag?.nodeId ?? rotateDrag?.pivotId ?? hoverNodeId ?? selectedCornerId
       return id ? activeFloor.corners.find((corner) => corner.id === id) : undefined
@@ -1905,7 +1972,7 @@
   })
 
   const hoveredBelow = $derived.by(() => {
-    if (!pointerPlan || activeStoreyIndex <= 0) return undefined
+    if (!pointerPlan || activeStoreyIndex <= 0 || planScope !== 'building') return undefined
     if (tool !== 'draw-double' && tool !== 'draw-logical' && tool !== 'draw-rect') return undefined
     if (hoveredCorner) return undefined
     const start = pendingDraw && activeFloor ? startCoords(activeFloor, pendingDraw) ?? undefined : undefined
@@ -1913,7 +1980,7 @@
   })
 
   const hoveredWall = $derived.by(() => {
-    if (!pointerPlan || !activeFloor || hoveredCorner) return undefined
+    if (!pointerPlan || !activeFloor || hoveredCorner || planScope !== 'building') return undefined
     if (tool !== 'draw-double' && tool !== 'draw-logical' && tool !== 'draw-rect') return undefined
     return nearestWallPoint(
       activeFloor.corners,
@@ -1982,6 +2049,18 @@
     if (roofFloor) {
       workspace.setBreadcrumbs([{ label: 'Roof', current: true }])
       return
+    }
+    if (planScope === 'site') {
+      workspace.setBreadcrumbs([
+        { label: 'Site & Grounds', current: true },
+      ])
+      const unreg = workspace.registerStepOut(() => {
+        switchScope('building')
+        return true
+      })
+      return () => {
+        unreg()
+      }
     }
     if (room) {
       workspace.setBreadcrumbs([
@@ -2976,7 +3055,9 @@
         const deg = turnLabel(rotateDrag.angle)
         return rotateDrag.snapped ? `${deg}°. Snaps to the angle.` : `${deg}°.`
       }
-      return moveDrag ? 'Release to place the building.' : ''
+      if (moveDrag) return 'Release to place the building.'
+      if (planScope === 'site') return 'Site & Grounds. Select paving, beds, carports, retaining walls or plot edges.'
+      return ''
     }
     if (tool === 'draw-rect') {
       if (!pendingDraw) return 'Click two corners. Shift leaves the rectangle.'
@@ -3065,43 +3146,78 @@
       type="single"
       variant="outline"
       size="sm"
-      value={tool === 'draw-rect' ? 'draw-double' : tool}
+      value={planScope}
       onValueChange={(next) => {
-        if (next) setTool(next as Tool)
+        if (next) switchScope(next as PlanScope)
       }}
-      aria-label="Tool"
+      aria-label="Scope"
     >
-      <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-        <MousePointer2 /><span class="hidden sm:inline">Select</span>
+      <ToggleGroup.Item value="building" aria-label="Building Mode" title="Building Mode: walls, rooms, stairs, counters, fittings" class="max-sm:px-2">
+        <Home /><span class="hidden sm:inline">Building</span>
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
-        <BrickWall /><span class="hidden sm:inline">Wall</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
-        <SquareDashed /><span class="hidden sm:inline">Logical</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
-        <Footprints /><span class="hidden sm:inline">Stair</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
-        <Plug /><span class="hidden sm:inline">Fittings</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
-        <Grid2x2 /><span class="hidden sm:inline">Paving</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
-        <Sprout /><span class="hidden sm:inline">Beds</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
-        <CarFront /><span class="hidden sm:inline">Carport</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
-        <Mountain /><span class="hidden sm:inline">Retaining</span>
-      </ToggleGroup.Item>
-      <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
-        <ChefHat /><span class="hidden sm:inline">Counters</span>
+      <ToggleGroup.Item value="site" aria-label="Site Mode" title="Site Mode: paving, beds, carports, retaining walls" class="max-sm:px-2">
+        <Trees /><span class="hidden sm:inline">Site</span>
       </ToggleGroup.Item>
     </ToggleGroup.Root>
+    <div class="h-4 w-px bg-border shrink-0"></div>
+    {#if planScope === 'building'}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={tool === 'draw-rect' ? 'draw-double' : tool}
+        onValueChange={(next) => {
+          if (next) setTool(next as Tool)
+        }}
+        aria-label="Building tools"
+      >
+        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
+          <MousePointer2 /><span class="hidden sm:inline">Select</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
+          <BrickWall /><span class="hidden sm:inline">Wall</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-logical" aria-label="Logical wall" title="Logical wall: divides a room without building anything" class="max-sm:px-2">
+          <SquareDashed /><span class="hidden sm:inline">Logical</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-stair" aria-label="Stair" title="Stair" class="max-sm:px-2">
+          <Footprints /><span class="hidden sm:inline">Stair</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
+          <ChefHat /><span class="hidden sm:inline">Counters</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-fixture" aria-label="Fittings" title="Fittings: sockets, lights, toilets, basins and more" class="max-sm:px-2">
+          <Plug /><span class="hidden sm:inline">Fittings</span>
+        </ToggleGroup.Item>
+      </ToggleGroup.Root>
+    {:else}
+      <ToggleGroup.Root
+        type="single"
+        variant="outline"
+        size="sm"
+        value={tool}
+        onValueChange={(next) => {
+          if (next) setTool(next as Tool)
+        }}
+        aria-label="Site tools"
+      >
+        <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
+          <MousePointer2 /><span class="hidden sm:inline">Select</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
+          <Grid2x2 /><span class="hidden sm:inline">Paving</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-bed" aria-label="Garden beds" title="Garden beds: flower beds and raised planters on the ground" class="max-sm:px-2">
+          <Sprout /><span class="hidden sm:inline">Beds</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-carport" aria-label="Carport" title="Carport: a roof on posts, standing free" class="max-sm:px-2">
+          <CarFront /><span class="hidden sm:inline">Carport</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="draw-retaining" aria-label="Retaining wall" title="Retaining wall: holds a bank back" class="max-sm:px-2">
+          <Mountain /><span class="hidden sm:inline">Retaining</span>
+        </ToggleGroup.Item>
+      </ToggleGroup.Root>
+    {/if}
     {#if focusedCells}
       <Button size="sm" variant="outline" title="Back to the whole plan" onclick={leaveRoom}>
         <Maximize2 />{focusedCells.name}: whole plan
@@ -3501,7 +3617,7 @@
       points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
       fill="#e7e5e4"
       stroke="#18181b"
-      stroke-width={s(0.06)}
+      stroke-width={s(planScope === 'site' ? 0.08 : 0.06)}
     />
     {#if selectedEdge !== null}
       {@const a = plotRing[selectedEdge]}
@@ -3518,8 +3634,32 @@
         />
       {/if}
     {/if}
+    {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
+      {@const ring = carportRing(carport)}
+      {@const colour = state === 'refused' ? '#dc2626' : state === 'placed' ? '#57534e' : '#2563eb'}
+      <polygon
+        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
+        fill={carportRoofSpec(carport.roof).colour}
+        fill-opacity={state === 'ghost' || state === 'refused' ? 0.3 : 0.38}
+        stroke={colour}
+        stroke-width={s(state === 'placed' ? 0.03 : 0.06)}
+        stroke-dasharray={dash(0.3, 0.16)}
+      />
+      <!-- A diagonal each way marks it as a roof with nothing under it; the way in is the open side. -->
+      <path
+        d="M {ring[0].x} {ring[0].z} L {ring[2].x} {ring[2].z} M {ring[1].x} {ring[1].z} L {ring[3].x} {ring[3].z}"
+        stroke={colour}
+        stroke-opacity="0.35"
+        stroke-width={s(0.02)}
+        fill="none"
+      />
+      {#each carportPosts(carport) as post, i (i)}
+        <rect x={post.x - 0.06} y={post.z - 0.06} width="0.12" height="0.12" fill={colour} />
+      {/each}
+    {/snippet}
     {#if activeStoreyIndex === 0}
-      <g class="retaining" pointer-events="none">
+      <g class="site-layer" class:site-subdued={planScope === 'building'}>
+        <g class="retaining" pointer-events="none">
         {#each document.retaining ?? [] as wall (wall.id)}
           {@const picked = selectedRetaining === wall.id}
           <polyline
@@ -3562,31 +3702,6 @@
           {/if}
         {/if}
       </g>
-    {/if}
-    {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
-      {@const ring = carportRing(carport)}
-      {@const colour = state === 'refused' ? '#dc2626' : state === 'placed' ? '#57534e' : '#2563eb'}
-      <polygon
-        points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
-        fill={carportRoofSpec(carport.roof).colour}
-        fill-opacity={state === 'ghost' || state === 'refused' ? 0.3 : 0.38}
-        stroke={colour}
-        stroke-width={s(state === 'placed' ? 0.03 : 0.06)}
-        stroke-dasharray={dash(0.3, 0.16)}
-      />
-      <!-- A diagonal each way marks it as a roof with nothing under it; the way in is the open side. -->
-      <path
-        d="M {ring[0].x} {ring[0].z} L {ring[2].x} {ring[2].z} M {ring[1].x} {ring[1].z} L {ring[3].x} {ring[3].z}"
-        stroke={colour}
-        stroke-opacity="0.35"
-        stroke-width={s(0.02)}
-        fill="none"
-      />
-      {#each carportPosts(carport) as post, i (i)}
-        <rect x={post.x - 0.06} y={post.z - 0.06} width="0.12" height="0.12" fill={colour} />
-      {/each}
-    {/snippet}
-    {#if activeStoreyIndex === 0}
       <g class="carports" pointer-events="none">
         {#each document.carports ?? [] as carport (carport.id)}
           {#if carportMove?.id === carport.id && carportMove.preview}
@@ -3599,8 +3714,6 @@
           {@render carportShape(carportGhost.carport, carportGhost.problem ? 'refused' : 'ghost')}
         {/if}
       </g>
-    {/if}
-    {#if activeStoreyIndex === 0}
       <g class="paving" pointer-events="none">
         {#each apronPolygons(document) as polygon, i (i)}
           <path
@@ -3707,6 +3820,7 @@
           {/if}
         {/if}
       </g>
+      </g>
     {/if}
     {#if localGrid.length > 0 && !outlineReference}
       <g clip-path="url(#plan-plot-clip)" pointer-events="none">
@@ -3736,7 +3850,7 @@
         />
       {/each}
     {/if}
-    <g clip-path="url(#plan-plot-clip)" pointer-events="none">
+    <g clip-path="url(#plan-plot-clip)" pointer-events="none" class="contours" class:opacity-50={planScope === 'building'}>
       {#if contours.minor}
         <path
           d={contours.minor}
@@ -4038,17 +4152,19 @@
           {/each}
         </g>
       {/if}
-      <g class="fixtures" pointer-events="none">
-        {#each levelFixtures as item (item.fixture.id)}
-          {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
-          {#if !counterUnder(activeFloor?.counters, shown.x, shown.z)}
-            <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+      {#if planScope === 'building'}
+        <g class="fixtures" pointer-events="none">
+          {#each levelFixtures as item (item.fixture.id)}
+            {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+            {#if !counterUnder(activeFloor?.counters, shown.x, shown.z)}
+              <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+            {/if}
+          {/each}
+          {#if fixtureGhost}
+            <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
           {/if}
-        {/each}
-        {#if fixtureGhost}
-          <FixtureSymbol fixture={{ ...fixtureGhost.placement.fixture, id: 'ghost' }} ghost invalid={fixtureGhost.placement.problem !== null} line={s(0.012)} />
-        {/if}
-      </g>
+        </g>
+      {/if}
     {#snippet counterShape(counter: Omit<Counter, 'id'>, state: 'set' | 'picked' | 'draft' | 'refused')}
       {@const ring = counterRing(counter)}
       {@const colour = state === 'refused' ? '#dc2626' : state === 'set' ? '#44403c' : '#2563eb'}
@@ -4082,7 +4198,7 @@
         {/if}
       {/if}
     {/snippet}
-    <g class="counters" pointer-events="none">
+    <g class="counters" pointer-events="none" class:hidden={planScope === 'site'}>
       {#each activeFloor?.counters ?? [] as counter (counter.id)}
         {@render counterShape(counterMove?.id === counter.id && counterMove.preview ? counterMove.preview : counter, selectedCounter === counter.id ? 'picked' : 'set')}
       {/each}
@@ -4112,14 +4228,16 @@
       {/if}
     </g>
     <!-- A sink or a hob set into a counter is drawn over it. -->
-    <g class="fixtures set-in" pointer-events="none">
-      {#each levelFixtures as item (item.fixture.id)}
-        {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
-        {#if counterUnder(activeFloor?.counters, shown.x, shown.z)}
-          <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
-        {/if}
-      {/each}
-    </g>
+    {#if planScope === 'building'}
+      <g class="fixtures set-in" pointer-events="none">
+        {#each levelFixtures as item (item.fixture.id)}
+          {@const shown = fixtureMove?.id === item.fixture.id && fixtureMove.preview ? fixtureMove.preview : item.fixture}
+          {#if counterUnder(activeFloor?.counters, shown.x, shown.z)}
+            <FixtureSymbol fixture={shown} chosen={selectedFixture?.id === item.fixture.id} line={s(0.012)} />
+          {/if}
+        {/each}
+      </g>
+    {/if}
     {#if focusedCells}
       <!-- Everything outside the room being laid out is veiled, so the room reads on its own. -->
       <path
@@ -4130,7 +4248,7 @@
         pointer-events="none"
       />
     {/if}
-      <g class="room-labels" pointer-events="none">
+      <g class="room-labels" pointer-events="none" class:hidden={planScope === 'site'}>
         {#each levelLayouts as entry (entry.floorId)}
           {#each entry.layout.spaces as resolved (resolved.space.id)}
             {@const at = ringLabelPoint(largestCell(resolved.cells).net)}
@@ -4251,9 +4369,9 @@
             stroke={wall.id === selectedWallId ? '#2563eb' : 'transparent'}
             stroke-width={s(wall.id === selectedWallId ? 0.08 : 0.14)}
             stroke-linecap="round"
-            pointer-events={tool === 'select' ? 'stroke' : 'none'}
+            pointer-events={tool === 'select' && planScope === 'building' ? 'stroke' : 'none'}
             onpointerdown={(e) => {
-              if (tool !== 'select' || !activeFloor || !svgEl) return
+              if (tool !== 'select' || planScope !== 'building' || !activeFloor || !svgEl) return
               e.stopPropagation()
               const plan = clientToPlan(svgEl, e.clientX, e.clientY)
               if (plan && beginNodeDrag(activeFloor, plan, e)) return
@@ -4369,8 +4487,8 @@
         <circle
           cx={corner.x}
           cy={corner.z}
-          r={s(hoveredCorner?.id === corner.id ? 0.28 : 0.16)}
-          fill={hoveredCorner?.id === corner.id ? '#2563eb' : '#18181b'}
+          r={s(hoveredCorner?.id === corner.id ? 0.28 : (planScope === 'building' ? 0.16 : 0.08))}
+          fill={hoveredCorner?.id === corner.id ? '#2563eb' : (planScope === 'building' ? '#18181b' : '#71717a')}
           pointer-events="none"
         />
       {/each}
@@ -5461,6 +5579,11 @@
 
   .rotate {
     cursor: grab;
+  }
+
+  .site-subdued {
+    opacity: 0.35;
+    transition: opacity 0.15s ease-in-out;
   }
 
 </style>
