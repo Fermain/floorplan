@@ -503,12 +503,12 @@ export function updateFixture(
   return ok(replaceFloor(document, { ...floor, fixtures }))
 }
 
-// Change a fitting's own setup (gas bottles' count, size and cage, a tank's size, an aircon's BTU), keeping its back where it was.
+// Change a fitting's own setup (gas bottles' count, size and cage, a tank's size, an aircon's BTU, a wood burner's kW), keeping its back where it was.
 export function setFixtureSetup(
   document: Document,
   floorId: string,
   fixtureId: string,
-  patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu'>>,
+  patch: Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'btu' | 'kw'>>,
 ): MutationResult {
   const floor = getFloor(document, floorId)
   if (!floor) return fail(document, 'floor not found')
@@ -520,6 +520,9 @@ export function setFixtureSetup(
   if (current.kind !== 'water-tank' && patch.litres !== undefined) return fail(document, 'only tanks have a size in litres')
   if (current.kind !== 'aircon-indoor' && current.kind !== 'aircon-outdoor' && patch.btu !== undefined) {
     return fail(document, 'only air conditioners have a BTU rating')
+  }
+  if (current.kind !== 'wood-burner' && patch.kw !== undefined) {
+    return fail(document, 'only wood burners have a kW rating')
   }
   // Check the new setup before sizing it: an unknown size has no dimensions to re-seat by.
   const problem = fixtureProblem({ ...current, ...patch })

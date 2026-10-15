@@ -12,6 +12,7 @@
   import { plumbingLayout } from '$lib/geometry/plumbing'
   import { gasLayout } from '$lib/geometry/gas'
   import { airconIssues, airconLayout } from '$lib/geometry/aircon'
+  import { chimneyLayout } from '$lib/geometry/chimney'
   import { finishIssues } from '$lib/geometry/finishes'
   import { counterIssues, counterTotals } from '$lib/geometry/counters'
   import { carportIssues } from '$lib/geometry/carports'
@@ -142,6 +143,9 @@
   const aircon = $derived(airconLayout(doc))
   const airconList = $derived(airconIssues(doc).map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
   const hasAircon = $derived(aircon.indoors.length > 0 || aircon.outdoors.length > 0)
+  const chimney = $derived(chimneyLayout(doc))
+  const heatingList = $derived(chimney.issues.map((issue): Issue => ({ id: issue.id, text: issue.text, storey: floorIndex(issue.floorId) })))
+  const hasWoodBurner = $derived(chimney.woodBurners.length > 0)
   const hasWalls = $derived(doc.building.floors.some((floor) => floor.walls.some((wall) => wall.skin !== 'logical')))
 
   // The sections down the page, each with what it has to attend to, or why it has nothing to show yet.
@@ -152,6 +156,7 @@
     { id: 'plumbing', title: 'Plumbing', issues: plumbingList, empty: !pipes.exit && !pipes.rain ? 'No fittings yet' : null },
     { id: 'gas', title: 'Gas', issues: gasList, empty: hasGas ? null : 'No gas fittings' },
     { id: 'aircon', title: 'Air conditioning', issues: airconList, empty: hasAircon ? null : 'No aircons placed' },
+    { id: 'heating', title: 'Heating', issues: heatingList, empty: hasWoodBurner ? null : 'No wood burners placed' },
     { id: 'joinery', title: 'Joinery', issues: kitchenList, empty: counterLength > 0 || joinery.units.cupboard > 0 ? null : 'No counters or cupboards yet' },
     { id: 'carports', title: 'Carports', issues: carportList, empty: (doc.carports ?? []).length > 0 ? null : 'None placed' },
     { id: 'retaining', title: 'Retaining walls', issues: retainingList, empty: retained ? null : 'None drawn' },
@@ -296,6 +301,32 @@
       label: 'Electrical circuits',
       value: aircon.outdoors.length > 0 ? `${aircon.outdoors.length} × 20 A` : '–',
       note: 'Dedicated circuits from the distribution board with outdoor isolator switches',
+    },
+  ])
+
+  const heatingFacts = $derived<Fact[]>([
+    {
+      label: 'Wood burners',
+      value: String(chimney.woodBurners.length),
+      note:
+        chimney.woodBurners.length > 0
+          ? chimney.woodBurners.map((b) => `${b.kw} kW (${b.roomName ?? 'room'})`).join(', ')
+          : 'None placed',
+    },
+    {
+      label: 'Heating capacity',
+      value: chimney.totalKw > 0 ? `${chimney.totalKw} kW` : '–',
+      note: 'Nominal closed-combustion heating output',
+    },
+    {
+      label: 'Flue pipe run',
+      value: chimney.totalFlueLength > 0 ? `${number.format(chimney.totalFlueLength)} m` : '–',
+      note: 'Room vitreous enamel flue and insulated stainless roof flue',
+    },
+    {
+      label: 'Roof cowls',
+      value: String(chimney.woodBurners.filter((b) => b.roofTopY !== null).length),
+      note: 'Anti-downdraught cowls with rain hats and roof storm collars',
     },
   ])
 
@@ -597,6 +628,18 @@
             {@render facts(airconFacts)}
           {:else}
             <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place an indoor aircon unit and outdoor compressor with the Fittings tool and the installation appears here.</p>
+          {/if}
+        {/if}
+      </section>
+
+      <section aria-labelledby="checks-heating">
+        {@render heading('heating', 'Freestanding closed-combustion wood burners with flue pipes through the ceiling and roof. A certified installer fits the flue and flashing to manufacturer specifications and SANS 10400-V.')}
+        {#if !folded.includes('heating')}
+          {@render attend(heatingList)}
+          {#if hasWoodBurner}
+            {@render facts(heatingFacts)}
+          {:else}
+            <p class="border-b px-3 py-3 text-[13px] text-muted-foreground">Place a wood burner in a room with the Fittings tool and the heating check appears here.</p>
           {/if}
         {/if}
       </section>

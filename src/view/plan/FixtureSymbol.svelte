@@ -110,6 +110,17 @@
     <line x1={-w * 0.14 - fanR} y1={0} x2={-w * 0.14 + fanR} y2={0} />
     <line x1={-w * 0.14} y1={-fanR} x2={-w * 0.14} y2={fanR} />
     <line x1={w * 0.2} y1={-d / 2} x2={w * 0.2} y2={d / 2} />
+  {:else if fixture.kind === 'wood-burner'}
+    {@const flueR = fixture.kw && fixture.kw >= 12 ? 0.09 : 0.075}
+    <!-- Stove body with rounded front corners and top bevel -->
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={0.04} class="fill" />
+    <!-- Flue collar and spigot in rear middle -->
+    <circle cx={0} cy={-d * 0.1} r={flueR} class="fill" />
+    <circle cx={0} cy={-d * 0.1} r={flueR * 0.65} class="solid" />
+    <!-- Front glass door frame and handle -->
+    <line x1={-w * 0.35} y1={d / 2 - 0.04} x2={w * 0.35} y2={d / 2 - 0.04} />
+    <line x1={-w * 0.28} y1={d / 2 - 0.02} x2={w * 0.28} y2={d / 2 - 0.02} />
+    <line x1={-w * 0.22} y1={d / 2 + 0.02} x2={w * 0.22} y2={d / 2 + 0.02} />
   {/if}
 </g>
 

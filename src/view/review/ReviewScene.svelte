@@ -62,6 +62,7 @@
   import FittingSetup from '../shared/FittingSetup.svelte'
   import { buildTrimParts, trimRuns, type TrimPart } from '../../lib/geometry/trims'
   import { powerLayout, type PanelSpot } from '../../lib/geometry/power'
+  import { buildChimneyParts, type ChimneyPart } from '../../lib/geometry/chimney'
   import { buildGutterParts, gutterLayout, gutterOf, type GutterPart } from '../../lib/geometry/gutters'
   import { floorSupports, type SupportPoint } from '../../lib/model/supports'
   import { systemOf, wallSystem } from '../../lib/model/systems'
@@ -152,6 +153,7 @@
   let bedMeshes = $state<BedPart[]>([])
   let carportMeshes = $state<CarportPart[]>([])
   let retainingMeshes = $state<RetainingPart[]>([])
+  let chimneyMeshes = $state<ChimneyPart[]>([])
   let counterMeshes = $state<{ key: string; floorId: string; datum: number; parts: CounterPart[] }[]>([])
   // How far the ground carries on past the survey.
   const SURROUNDINGS_M = 120
@@ -581,6 +583,8 @@
     bedMeshes = bedParts
     carportMeshes = carportParts
     retainingMeshes = retainingParts
+    const chimneyParts = buildChimneyParts(doc)
+    chimneyMeshes = chimneyParts
     contourMinor = minor
     contourMajor = major
     wallMeshes = built
@@ -609,6 +613,7 @@
       for (const part of bedParts) part.geometry.dispose()
       for (const part of carportParts) part.geometry.dispose()
       for (const part of retainingParts) part.geometry.dispose()
+      for (const part of chimneyParts) part.geometry.dispose()
       minor?.dispose()
       major?.dispose()
       for (const wall of built) {
@@ -1127,6 +1132,17 @@
           </T.Mesh>
         {/if}
       {/each}
+    {/each}
+
+    {#each chimneyMeshes.filter((part) => roofs && (!part.roofFloorId || shownFloor(part.roofFloorId))) as part (part.geometry.uuid)}
+      <T.Mesh geometry={part.geometry} castShadow receiveShadow>
+        <T.MeshStandardMaterial
+          color={part.colour}
+          roughness={part.roughness}
+          metalness={part.metalness}
+          side={DoubleSide}
+        />
+      </T.Mesh>
     {/each}
 
     {#each walls === 'hidden' ? [] : wallMeshes.filter((wall) => shownFloor(wall.floorId)) as wall (wall.key)}

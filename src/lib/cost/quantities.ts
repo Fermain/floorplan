@@ -6,16 +6,17 @@ import { scheduleWall } from '../geometry/schedule'
 import { collectLintelSpans, collectWallBlockSpans } from '../geometry/walls'
 import { signedPolygonArea, wallLength } from '../model/geom'
 import { MORTAR_JOINT, systemOf, wallSystem, WALL_SYSTEMS, type UnitKey, type WallSystem } from '../model/systems'
-import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres, AirconBtu } from '../model/types'
+import type { Document, Floor, FloorFinish, OpeningKind, RoofCovering, SupportType, FixtureKind, GutterType, BottleSize, TankLitres, AirconBtu, WoodBurnerKw } from '../model/types'
 import { COVERINGS, coveringOf, tilesPerM2 } from '../geometry/coverings'
 import { layoutSpaces } from '../geometry/spaces'
 import { stairConcreteM3, stairVoids } from '../geometry/stairs'
 import { supportingFloor } from '../model/stories'
 import { assumptionsOf, rateOf } from './rates'
 import { FENCES, fencePosts, fenceSpec } from '../model/fences'
-import { AIRCON_BTUS, AIRCON_SIZES, BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres } from '../model/fixtures'
+import { AIRCON_BTUS, AIRCON_SIZES, BOTTLE_SIZES, BOTTLES, bottleSetup, FIXTURES, TANK_SIZES, TANKS, tankLitres, WOOD_BURNER_KWS, WOOD_BURNER_SIZES } from '../model/fixtures'
 import { CABLE_WASTE, electricalLayout } from '../geometry/electrical'
 import { airconLayout } from '../geometry/aircon'
+import { chimneyLayout } from '../geometry/chimney'
 import { gasLayout } from '../geometry/gas'
 import { PAVING_LIST, pavingPieces } from '../geometry/paving'
 import { finishTotals } from '../geometry/finishes'
@@ -46,7 +47,7 @@ import {
 const SUPPORT_BASE_M = 0.6
 const SUPPORT_BASE_DEPTH_M = 0.3
 
-export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Joinery' | 'Paving' | 'Landscaping' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
+export type QuantityGroup = 'Demolition' | 'Masonry' | 'Mortar' | 'Lintels' | 'Openings' | 'Concrete' | 'Finishes' | 'Roof' | 'Electrical' | 'Plumbing' | 'Gas' | 'Air conditioning' | 'Heating' | 'Joinery' | 'Paving' | 'Landscaping' | 'Retaining walls' | 'Carports' | 'Supports' | 'Fencing'
 
 export type QuantityUnit = 'each' | 'bag' | 'm' | 'm²' | 'm³' | 'L'
 
@@ -65,7 +66,7 @@ export type QuantityLine = {
 // A litre of paint covers about this much wall in one coat.
 export const PAINT_COVERAGE_M2_PER_L = 8
 
-export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Joinery', 'Paving', 'Landscaping', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
+export const GROUP_ORDER: QuantityGroup[] = ['Demolition', 'Masonry', 'Mortar', 'Lintels', 'Openings', 'Concrete', 'Finishes', 'Roof', 'Electrical', 'Plumbing', 'Gas', 'Air conditioning', 'Heating', 'Joinery', 'Paving', 'Landscaping', 'Retaining walls', 'Carports', 'Supports', 'Fencing']
 
 export const LINTEL_STEP_M = 0.15
 
@@ -431,8 +432,8 @@ export function takeoff(doc: Document): QuantityLine[] {
   }
   for (const spec of FIXTURES) {
     const count = fittings.get(spec.id)
-    // Gas bottles, rainwater tanks and air conditioners are counted below, by size.
-    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank' || spec.id === 'aircon-indoor' || spec.id === 'aircon-outdoor') continue
+    // Gas bottles, rainwater tanks, air conditioners and wood burners are counted below, by size.
+    if (!count || spec.id === 'gas-cylinder' || spec.id === 'water-tank' || spec.id === 'aircon-indoor' || spec.id === 'aircon-outdoor' || spec.id === 'wood-burner') continue
     drafts.push({
       id: `fixture:${spec.id}`,
       group: spec.trade === 'electrical' ? 'Electrical' : spec.trade === 'gas' ? 'Gas' : spec.trade === 'building' ? 'Masonry' : 'Plumbing',
@@ -715,6 +716,52 @@ export function takeoff(doc: Document): QuantityLine[] {
       unit: 'm',
       quantity: Math.ceil(aircon.totalCondensateLength * 1.1),
       rateKey: 'aircon-condensate-pipe',
+    })
+  }
+
+  // Wood burners and chimneys: freestanding cast iron stoves by kW, flue pipe by length, and cowl kit.
+  const chimney = chimneyLayout(doc)
+  const burnerCounts = new Map<WoodBurnerKw, number>()
+  for (const item of chimney.woodBurners) {
+    burnerCounts.set(item.kw, (burnerCounts.get(item.kw) ?? 0) + 1)
+  }
+
+  for (const kw of WOOD_BURNER_KWS) {
+    const count = burnerCounts.get(kw)
+    if (count) {
+      drafts.push({
+        id: `wood-burner:${kw}`,
+        group: 'Heating',
+        label: `Closed-combustion wood burner ${kw} kW`,
+        note: `Freestanding cast iron stove (heats up to ${WOOD_BURNER_SIZES[kw].m2Max} m²)`,
+        unit: 'each',
+        quantity: count,
+        rateKey: `wood-burner:${kw}`,
+      })
+    }
+  }
+
+  if (chimney.totalFlueLength > 0) {
+    drafts.push({
+      id: 'wood-burner-flue',
+      group: 'Heating',
+      label: 'Flue pipe kit (vitreous & insulated stainless)',
+      note: 'Room flue pipe and insulated roof flue with brackets, plus 10%',
+      unit: 'm',
+      quantity: Math.ceil(chimney.totalFlueLength * 1.1),
+      rateKey: 'wood-burner-flue',
+    })
+  }
+
+  if (chimney.woodBurners.length > 0) {
+    drafts.push({
+      id: 'wood-burner-cowl',
+      group: 'Heating',
+      label: 'Chimney cowl and roof flashing kit',
+      note: 'Anti-downdraught cowl with rain hat, storm collar flashing and ceiling plate',
+      unit: 'each',
+      quantity: chimney.woodBurners.length,
+      rateKey: 'wood-burner-cowl',
     })
   }
 

@@ -160,10 +160,12 @@ export type FixtureKind =
   | 'air-brick'
   | 'aircon-indoor'
   | 'aircon-outdoor'
+  | 'wood-burner'
 
 export type BottleSize = 9 | 19 | 48
 export type TankLitres = 1000 | 2500 | 5000 | 10000
 export type AirconBtu = 9000 | 12000 | 18000 | 24000
+export type WoodBurnerKw = 8 | 10 | 12 | 14
 
 // (x, z) is the middle of the fixture's footprint, (dx, dz) the way it faces, y its underside above the finished floor.
 export type Fixture = {
@@ -182,6 +184,8 @@ export type Fixture = {
   litres?: TankLitres
   // Air conditioners only: cooling capacity in BTU/h.
   btu?: AirconBtu
+  // Wood burners only: nominal heat output in kW.
+  kw?: WoodBurnerKw
   // Stoves only: a hob set into a worktop with an oven under it, rather than a stove standing in a gap.
   builtIn?: boolean
 }

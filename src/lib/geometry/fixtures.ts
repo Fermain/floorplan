@@ -1,7 +1,8 @@
 import { BoxGeometry, BufferGeometry, CylinderGeometry, LatheGeometry, Matrix4, SphereGeometry, TorusGeometry, Vector2, Vector3 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { cornerById } from '../model/geom'
-import { BOTTLE_GAP_M, BOTTLES, bottleSetup, BUILT_IN, CAGE_M, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec } from '../model/fixtures'
+import { BOTTLE_GAP_M, BOTTLES, bottleSetup, BUILT_IN, CAGE_M, DEFAULT_WOOD_BURNER_KW, EITHER_SIDE, fixtureFootprint, fixtureSize, fixtureSpec, WOOD_BURNER_SIZES } from '../model/fixtures'
+import { WALL_HEAD } from '../plot/fixture'
 import type { Counter, Document, Fixture, FixtureKind, Floor, Wall } from '../model/types'
 import { settleAgainstCounters, SINK_BOWLS } from './counters'
 import { counterKindSpec, counterUnder } from '../model/counters'
@@ -146,7 +147,7 @@ export function siteField(doc: Document): Document['heightfield'] {
 }
 
 // A fitting's own setup, such as how many gas bottles it holds, which can change its size.
-export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn' | 'btu'>>
+export type FixtureSetup = Partial<Pick<Fixture, 'bottles' | 'bottleKg' | 'cage' | 'litres' | 'builtIn' | 'btu' | 'kw'>>
 
 function against(face: Point, n: Point, kind: FixtureKind, y: number, setup: FixtureSetup = {}): Omit<Fixture, 'id'> {
   const reach = fixtureSize({ kind, ...setup }).depth / 2 + FACE_GAP_M
@@ -404,6 +405,9 @@ const DB: Finish = { colour: '#6b7280', roughness: 0.45, metalness: 0.55 }
 const DB_FACE: Finish = { colour: '#4b5563', roughness: 0.5, metalness: 0.45 }
 const TERRACOTTA: Finish = { colour: '#a5583a', roughness: 0.85, metalness: 0 }
 const VENT_SLOT: Finish = { colour: '#2b211d', roughness: 0.95, metalness: 0 }
+const CAST_IRON: Finish = { colour: '#222326', roughness: 0.78, metalness: 0.35 }
+const FIRE_GLOW: Finish = { colour: '#ea580c', roughness: 0.3, metalness: 0, emissive: '#f97316', emissiveIntensity: 0.85 }
+const FLUE_BLACK: Finish = { colour: '#18181b', roughness: 0.45, metalness: 0.55 }
 
 // A hair above the floor, so a shower tray or washing machine does not flicker against the slab.
 const FLOOR_CLEAR_M = 0.003
@@ -771,6 +775,41 @@ function pieces(fixture: Fixture, counter: Counter | null = null): Piece[] {
         box(0.04, d * 1.15, 0.035, w * 0.32, d * 0.55, -0.035, BRUSHED),
         box(0.04, 0.03, 0.3, -w * 0.32, 0.015, -0.3, BRUSHED),
         box(0.04, 0.03, 0.3, w * 0.32, 0.015, -0.3, BRUSHED),
+      ]
+    }
+    case 'wood-burner': {
+      const kw = fixture.kw ?? DEFAULT_WOOD_BURNER_KW
+      const flueR = WOOD_BURNER_SIZES[kw].flueDia / 2
+      const legH = 0.08
+      const legW = 0.05
+      const flueOut = d * 0.4
+      const roomFlueH = Math.max(0.1, WALL_HEAD - h)
+      return [
+        // 4 cast iron legs
+        box(legW, legW, legH, -w / 2 + 0.04, 0.04, 0, CAST_IRON),
+        box(legW, legW, legH, w / 2 - 0.04, 0.04, 0, CAST_IRON),
+        box(legW, legW, legH, -w / 2 + 0.04, d - 0.04, 0, CAST_IRON),
+        box(legW, legW, legH, w / 2 - 0.04, d - 0.04, 0, CAST_IRON),
+        // Main cast iron stove body
+        box(w, d, h - legH - 0.02, 0, d / 2, legH, CAST_IRON),
+        // Top bevel lid plate
+        box(w + 0.02, d + 0.02, 0.02, 0, d / 2, h - 0.02, CAST_IRON),
+        // Front door frame
+        box(w * 0.76, 0.02, (h - legH - 0.08) * 0.75, 0, d + 0.005, legH + 0.05, CAST_IRON),
+        // Front glass window
+        box(w * 0.62, 0.005, (h - legH - 0.12) * 0.65, 0, d + 0.01, legH + 0.08, GLASS),
+        // Warm flame / ember glow inside
+        box(w * 0.58, 0.004, (h - legH - 0.14) * 0.6, 0, d + 0.007, legH + 0.09, FIRE_GLOW),
+        // Lever handle
+        box(0.018, 0.035, 0.12, w * 0.32, d + 0.025, legH + (h - legH) * 0.35, BRUSHED),
+        // Air slider under door
+        box(0.08, 0.02, 0.015, 0, d + 0.01, legH + 0.015, BRUSHED),
+        // Top flue spigot collar
+        puck(flueR + 0.012, 0.035, 0, flueOut, h, CAST_IRON, 24),
+        // Room vitreous flue pipe rising to ceiling head
+        puck(flueR, roomFlueH, 0, flueOut, h, FLUE_BLACK, 24),
+        // Ceiling trim escutcheon plate
+        puck(flueR + 0.045, 0.01, 0, flueOut, WALL_HEAD - 0.01, FLUE_BLACK, 24),
       ]
     }
     default:
