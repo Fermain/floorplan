@@ -6,6 +6,7 @@ import {
   counterUnder,
   counterTopSpec,
   cupboardBays,
+  COUNTER_MIN_LENGTH_M,
   WALL_UNIT_BOTTOM_M,
   WALL_UNIT_DEPTH_M,
   WALL_UNIT_TOP_M,
@@ -492,4 +493,284 @@ export function counterTotals(doc: Document): { units: Record<CounterKind, numbe
     }
   }
   return totals
+}
+
+// Dragging one end of a counter to resize its length along its axis, snapping to 600 mm cabinet modules,
+// wall face stops, and door clearance.
+export function counterEndDrag(
+  floor: Floor,
+  counter: Counter,
+  end: 'start' | 'end',
+  pointer: Point,
+  options: { snapModule?: boolean } = {},
+): Pick<Counter, 'x' | 'z' | 'length'> {
+  const dir = { x: counter.dx, z: counter.dz }
+  const snapModule = options.snapModule ?? true
+
+  if (end === 'end') {
+    // Start (x, z) is fixed; end moves.
+    const rawDist = (pointer.x - counter.x) * dir.x + (pointer.z - counter.z) * dir.z
+    let length = step(rawDist)
+
+    // Magnetic snap to 600mm / 300mm cabinet modules
+    if (snapModule) {
+      const nearestModule = Math.round(rawDist / 0.6) * 0.6
+      if (Math.abs(rawDist - nearestModule) <= 0.08) length = nearestModule
+      else {
+        const nearestHalf = Math.round(rawDist / 0.3) * 0.3
+        if (Math.abs(rawDist - nearestHalf) <= 0.06) length = nearestHalf
+      }
+    }
+
+    // If counter is against a wall face, constrain to wall extent and stops
+    if (counter.kind === 'base' || counter.kind === 'cupboard') {
+      const face = counterFace(floor, { x: counter.x + dir.x * 0.05, z: counter.z + dir.z * 0.05 }, 0.45, {
+        kind: counter.kind,
+        depth: counter.depth,
+        ignore: counter.id,
+      })
+      if (face) {
+        const originDist = (counter.x - face.point.x) * face.dir.x + (counter.z - face.point.z) * face.dir.z
+        const maxAlong = face.after - originDist
+        if (length > maxAlong) length = Math.max(0.3, step(maxAlong))
+        for (const span of face.spans) {
+          if (!span.stop) continue
+          const relFrom = span.from - originDist
+          if (relFrom > 0 && length > relFrom) length = Math.max(0.3, relFrom)
+        }
+      }
+    }
+
+    length = Math.max(COUNTER_MIN_LENGTH_M, Math.round(length * 100) / 100)
+    return { x: counter.x, z: counter.z, length }
+  } else {
+    // End is fixed; start (x, z) moves.
+    const fixedEnd = {
+      x: counter.x + dir.x * counter.length,
+      z: counter.z + dir.z * counter.length,
+    }
+    const rawDist = (fixedEnd.x - pointer.x) * dir.x + (fixedEnd.z - pointer.z) * dir.z
+    let length = step(rawDist)
+
+    if (snapModule) {
+      const nearestModule = Math.round(rawDist / 0.6) * 0.6
+      if (Math.abs(rawDist - nearestModule) <= 0.08) length = nearestModule
+      else {
+        const nearestHalf = Math.round(rawDist / 0.3) * 0.3
+        if (Math.abs(rawDist - nearestHalf) <= 0.06) length = nearestHalf
+      }
+    }
+
+    length = Math.max(COUNTER_MIN_LENGTH_M, Math.round(length * 100) / 100)
+    const newX = fixedEnd.x - dir.x * length
+    const newZ = fixedEnd.z - dir.z * length
+    return { x: newX, z: newZ, length }
+  }
+}
+
+export type BarSnap = {
+  anchorCounter: Counter
+  point: Point
+  dir: Point
+  edge: 'start' | 'end' | 'front' | 'back'
+}
+
+// Snaps a bar's start position to an existing counter's edge or cap, providing an aligned outward direction.
+export function snapBarOrigin(floor: Floor, pointer: Point, reach = 0.4): BarSnap | null {
+  let best: { snap: BarSnap; dist: number } | null = null
+
+  for (const counter of floor.counters ?? []) {
+    const dir = { x: counter.dx === 0 ? 0 : counter.dx, z: counter.dz === 0 ? 0 : counter.dz }
+    const out = { x: -counter.dz === 0 ? 0 : -counter.dz, z: counter.dx === 0 ? 0 : counter.dx }
+    const p0 = { x: counter.x, z: counter.z }
+    const p1 = { x: counter.x + dir.x * counter.length, z: counter.z + dir.z * counter.length }
+    const p2 = { x: p1.x + out.x * counter.depth, z: p1.z + out.z * counter.depth }
+    const p3 = { x: p0.x + out.x * counter.depth, z: p0.z + out.z * counter.depth }
+
+    // 1. End cap (p1 to p2)
+    const midEnd = { x: (p1.x + p2.x) / 2, z: (p1.z + p2.z) / 2 }
+    const distToEnd = Math.hypot(pointer.x - midEnd.x, pointer.z - midEnd.z)
+    if (distToEnd < reach && (!best || distToEnd < best.dist)) {
+      best = {
+        snap: {
+          anchorCounter: counter,
+          point: midEnd,
+          dir,
+          edge: 'end',
+        },
+        dist: distToEnd,
+      }
+    }
+
+    // 2. Start cap (p0 to p3)
+    const midStart = { x: (p0.x + p3.x) / 2, z: (p0.z + p3.z) / 2 }
+    const distToStart = Math.hypot(pointer.x - midStart.x, pointer.z - midStart.z)
+    if (distToStart < reach && (!best || distToStart < best.dist)) {
+      best = {
+        snap: {
+          anchorCounter: counter,
+          point: midStart,
+          dir: { x: -dir.x, z: -dir.z },
+          edge: 'start',
+        },
+        dist: distToStart,
+      }
+    }
+
+    // 3. Front edge (p3 to p2)
+    const uFront = (pointer.x - p3.x) * dir.x + (pointer.z - p3.z) * dir.z
+    if (uFront >= -0.1 && uFront <= counter.length + 0.1) {
+      const clampedU = Math.max(0, Math.min(counter.length, uFront))
+      const pt = { x: p3.x + dir.x * clampedU, z: p3.z + dir.z * clampedU }
+      const d = Math.hypot(pointer.x - pt.x, pointer.z - pt.z)
+      if (d < reach && (!best || d < best.dist)) {
+        best = {
+          snap: {
+            anchorCounter: counter,
+            point: pt,
+            dir: out,
+            edge: 'front',
+          },
+          dist: d,
+        }
+      }
+    }
+
+    // 4. Back edge (p0 to p1) for free-standing island/bar
+    if (counter.kind === 'island' || counter.kind === 'bar') {
+      const uBack = (pointer.x - p0.x) * dir.x + (pointer.z - p0.z) * dir.z
+      if (uBack >= -0.1 && uBack <= counter.length + 0.1) {
+        const clampedU = Math.max(0, Math.min(counter.length, uBack))
+        const pt = { x: p0.x + dir.x * clampedU, z: p0.z + dir.z * clampedU }
+        const d = Math.hypot(pointer.x - pt.x, pointer.z - pt.z)
+        if (d < reach && (!best || d < best.dist)) {
+          best = {
+            snap: {
+              anchorCounter: counter,
+              point: pt,
+              dir: { x: -out.x, z: -out.z },
+              edge: 'back',
+            },
+            dist: d,
+          }
+        }
+      }
+    }
+  }
+
+  return best?.snap ?? null
+}
+
+export type CounterZone = {
+  wallId: string
+  counter: Omit<Counter, 'id'>
+  polygon: Point[]
+  length: number
+  midPoint: Point
+}
+
+// Identifies candidate counter placement zones along uninterrupted perimeter walls in a room.
+export function counterZonesForRoom(
+  floor: Floor,
+  rings: Point[][],
+  cornerIds: Set<string>,
+  kind: CounterKind = 'base',
+): CounterZone[] {
+  const zones: CounterZone[] = []
+  const spec = counterKindSpec(kind)
+
+  for (const wall of floor.walls) {
+    if (wall.skin === 'logical') continue
+    if (!cornerIds.has(wall.startCornerId) || !cornerIds.has(wall.endCornerId)) continue
+    const a = cornerById(floor.corners, wall.startCornerId)
+    const b = cornerById(floor.corners, wall.endCornerId)
+    if (!a || !b) continue
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (length < 0.6) continue
+    const t = { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
+    const n = { x: -t.z, z: t.x }
+    const half = wallThickness(systemOf(wall)) / 2
+
+    // Determine which side of the wall faces inside the room rings
+    const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }
+    const testPos = { x: mid.x + n.x * (half + 0.1), z: mid.z + n.z * (half + 0.1) }
+    const testNeg = { x: mid.x - n.x * (half + 0.1), z: mid.z - n.z * (half + 0.1) }
+    const inPos = rings.some((r) => pointInRing(r, testPos))
+    const inNeg = rings.some((r) => pointInRing(r, testNeg))
+    if (!inPos && !inNeg) continue
+    const side = inPos ? 1 : -1
+
+    const origin = { x: a.x + n.x * half * side, z: a.z + n.z * half * side }
+    const dir = side === 1 ? t : { x: -t.x, z: -t.z }
+    const out = { x: -dir.z, z: dir.x }
+
+    // Blocks along the wall
+    const blocks = [
+      ...faceBlocks(floor, wall.id, origin, t),
+      ...openingBlocks(wall, kind),
+      ...counterBlocks(floor, origin, t, { x: n.x * side, z: n.z * side }, spec.depth),
+    ]
+
+    // Find free spans between 0 and length
+    const sortedBlocks = blocks
+      .map(([from, to]) => [Math.max(0, from), Math.min(length, to)] as [number, number])
+      .filter(([from, to]) => to > from + 1e-4)
+      .sort((p, q) => p[0] - q[0])
+
+    const merged: [number, number][] = []
+    for (const b of sortedBlocks) {
+      if (merged.length === 0 || b[0] > merged[merged.length - 1][1] + 1e-4) merged.push([...b])
+      else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], b[1])
+    }
+
+    const freeSpans: [number, number][] = []
+    let cursor = 0
+    for (const [from, to] of merged) {
+      if (from > cursor + 1e-4) freeSpans.push([cursor, from])
+      cursor = Math.max(cursor, to)
+    }
+    if (length > cursor + 1e-4) freeSpans.push([cursor, length])
+
+    for (const [fLo, fHi] of freeSpans) {
+      const spanLen = fHi - fLo
+      if (spanLen < 0.6) continue
+
+      let startPoint: Point
+      if (side === 1) {
+        startPoint = { x: origin.x + t.x * fLo, z: origin.z + t.z * fLo }
+      } else {
+        startPoint = { x: origin.x + t.x * fHi, z: origin.z + t.z * fHi }
+      }
+
+      const zoneLen = step(spanLen)
+      if (zoneLen < 0.6) continue
+
+      const counterCandidate: Omit<Counter, 'id'> = {
+        x: startPoint.x,
+        z: startPoint.z,
+        dx: dir.x,
+        dz: dir.z,
+        length: zoneLen,
+        depth: spec.depth,
+        kind,
+        top: 'laminate',
+      }
+
+      const polygon = counterRing(counterCandidate)
+      const midPoint = {
+        x: startPoint.x + dir.x * (zoneLen / 2) + out.x * (spec.depth / 2),
+        z: startPoint.z + dir.z * (zoneLen / 2) + out.z * (spec.depth / 2),
+      }
+
+      zones.push({
+        wallId: wall.id,
+        counter: counterCandidate,
+        polygon,
+        length: zoneLen,
+        midPoint,
+      })
+    }
+  }
+
+  return zones
 }

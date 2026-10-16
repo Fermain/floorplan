@@ -62,8 +62,28 @@
   import { groundOf, measureRetaining, retainingAt } from '../../lib/geometry/retaining'
   import { retainingSpec } from '../../lib/model/retaining'
   import type { RetainingType } from '../../lib/model/types'
-  import { counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, type CounterFace } from '../../lib/geometry/counters'
-  import { counterKindSpec, counterProblem, counterRing, counterTopSpec, counterUnder, cupboardBays } from '../../lib/model/counters'
+  import {
+    counterAlongFace,
+    counterAt,
+    counterBetween,
+    counterCarried,
+    counterEndDrag,
+    counterFace,
+    counterZonesForRoom,
+    snapBarOrigin,
+    type CounterFace,
+    type CounterZone,
+  } from '../../lib/geometry/counters'
+  import {
+    counterBays,
+    counterCornerSeams,
+    counterKindSpec,
+    counterProblem,
+    counterRing,
+    counterTopSpec,
+    counterUnder,
+    cupboardBays,
+  } from '../../lib/model/counters'
   import type { Counter, CounterKind, CounterTop } from '../../lib/model/types'
   import { carportName, carportProblem, carportRoofSpec, carportSize } from '../../lib/model/carports'
   import { pointInRing } from '../../lib/geometry/pad'
@@ -193,7 +213,7 @@
   let selectedCounter = $state<string | null>(null)
   let counterKind = $state<CounterKind>('base')
   let counterTop = $state<CounterTop>('laminate')
-  let counterStart = $state<{ face: CounterFace | null; point: { x: number; z: number } } | null>(null)
+  let counterStart = $state<{ face: CounterFace | null; point: { x: number; z: number }; barDir?: { x: number; z: number } | null } | null>(null)
   // The room being laid out on its own, by the id of its space; the rest of the plan is veiled.
   let focusedRoom = $state<string | null>(null)
   // Retaining walls: the one picked, the kind of the next, and the points of one being drawn.
@@ -247,6 +267,8 @@
   // A carport being dragged: where it was picked up, and where it would land.
   let carportMove = $state<{ id: string; grabX: number; grabZ: number; preview: Carport | null; problem: string | null } | null>(null)
   let counterMove = $state<{ id: string; grabAlong: number; grabOut: number; preview: Counter | null } | null>(null)
+  let counterResizeDrag = $state<{ id: string; end: 'start' | 'end'; original: Counter; preview: Counter | null } | null>(null)
+  let hoveredZone = $state<CounterZone | null>(null)
   let fixtureMove = $state<{ floorId: string; id: string; preview: Fixture | null } | null>(null)
   let serviceDrag = $state<{ kind: ServiceKind; target: 'end' | 'soakaway' | number; point: { x: number; z: number }; moved: boolean } | null>(null)
   let selectedStair = $state<{ floorId: string; id: string } | null>(null)
@@ -1155,7 +1177,25 @@
       }
 
       if (beginServiceDrag(plan, event)) return
-      if (beginNodeDrag(activeFloor, plan, event)) return
+      // End handles of a selected counter: dragging either end resizes its length
+      if (chosenCounter) {
+        const handleR = Math.max(0.25, s(0.3))
+        const startDist = Math.hypot(plan.x - chosenCounter.x, plan.z - chosenCounter.z)
+        const endX = chosenCounter.x + chosenCounter.dx * chosenCounter.length
+        const endZ = chosenCounter.z + chosenCounter.dz * chosenCounter.length
+        const endDist = Math.hypot(plan.x - endX, plan.z - endZ)
+        if (startDist <= handleR) {
+          counterResizeDrag = { id: chosenCounter.id, end: 'start', original: chosenCounter, preview: null }
+          svgEl?.setPointerCapture(event.pointerId)
+          return
+        }
+        if (endDist <= handleR) {
+          counterResizeDrag = { id: chosenCounter.id, end: 'end', original: chosenCounter, preview: null }
+          svgEl?.setPointerCapture(event.pointerId)
+          return
+        }
+      }
+
       // A fitting set into a counter is picked before the counter it stands in.
       const hit = fixtureAt(plan.x, plan.z)
       const setIn = hit && levelFixtures.find((item) => item.fixture.id === hit.id)?.fixture
@@ -1346,6 +1386,14 @@
       carportMove = { ...moving, preview, problem: carportProblem(others, preview) }
       return
     }
+    if (counterResizeDrag) {
+      const moving = counterResizeDrag
+      const item = activeFloor?.counters?.find((entry) => entry.id === moving.id)
+      if (!activeFloor || !item) return
+      const next = counterEndDrag(activeFloor, moving.original, moving.end, plan)
+      counterResizeDrag = { ...moving, preview: { ...moving.original, ...next } }
+      return
+    }
     if (counterMove) {
       const moving = counterMove
       const item = activeFloor?.counters?.find((entry) => entry.id === moving.id)
@@ -1415,6 +1463,13 @@
       carportMove = null
       const next = parked.preview
       if (next) applyResult(documentStore.updateCarport(parked.id, { x: next.x, z: next.z }))
+      return
+    }
+    const resizing = counterResizeDrag
+    if (resizing) {
+      counterResizeDrag = null
+      const next = resizing.preview
+      if (next && activeFloor) applyResult(documentStore.updateCounter(activeFloor.id, resizing.id, { x: next.x, z: next.z, length: next.length }))
       return
     }
     const carried = counterMove
@@ -2548,8 +2603,12 @@
   // A counter against a wall is drawn along the wall's face: click where it starts, then where it ends. One standing
   // free (an island or a bar) is drawn corner to corner, square to the drawing grid.
   function counterStartAt(plan: { x: number; z: number }) {
+    if (counterKind === 'bar' && activeFloor) {
+      const snap = snapBarOrigin(activeFloor, plan, 0.4)
+      if (snap) return { face: null, point: snap.point, barDir: snap.dir }
+    }
     const face = (counterKind === 'base' || counterKind === 'cupboard') && activeFloor ? counterFace(activeFloor, plan, Math.max(0.35, s(0.45)), { kind: counterKind }) : null
-    return { face, point: face?.point ?? { x: Math.round(plan.x * 20) / 20, z: Math.round(plan.z * 20) / 20 } }
+    return { face, point: face?.point ?? { x: Math.round(plan.x * 20) / 20, z: Math.round(plan.z * 20) / 20 }, barDir: null }
   }
   const counterHover = $derived(tool === 'draw-counter' && pointerPlan && !counterStart ? counterStartAt(pointerPlan) : null)
   const counterDraft = $derived.by((): { counter: Omit<Counter, 'id'>; problem: string | null } | null => {
@@ -2557,12 +2616,18 @@
     const at = pointerPlan
     if (tool !== 'draw-counter' || !start || !at) return null
     const spec = counterKindSpec(counterKind)
-    let shape
+    let shape: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'>
     if (start.face) shape = counterAlongFace(start.face, at, spec.depth)
-    else {
+    else if (counterKind === 'bar' && start.barDir) {
+      const dist = (at.x - start.point.x) * start.barDir.x + (at.z - start.point.z) * start.barDir.z
+      const len = Math.max(0.05, Math.round(Math.abs(dist) * 20) / 20)
+      const sign = dist >= 0 ? 1 : -1
+      const dir = sign >= 0 ? start.barDir : { x: -start.barDir.x, z: -start.barDir.z }
+      shape = { x: start.point.x, z: start.point.z, dx: dir.x, dz: dir.z, length: len, depth: spec.depth }
+    } else {
       shape = counterBetween(start.point, at, pavingAxis)
-      // A bar keeps its own depth; an island takes the depth it is drawn to.
-      if (counterKind === 'bar' || shape.depth < 0.3) shape = { ...shape, depth: spec.depth }
+      // A bar keeps its fixed depth, but island preserves exact drawn depth without jumping
+      if (counterKind === 'bar') shape = { ...shape, depth: spec.depth }
     }
     const counter = { ...shape, kind: counterKind, top: counterTop }
     return { counter, problem: counterProblem(counter) }
@@ -2642,6 +2707,12 @@
     }
     return null
   })
+
+  const roomZones = $derived.by(() => {
+    if (!activeFloor || !focusedCells) return []
+    return counterZonesForRoom(activeFloor, focusedCells.rings, focusedCells.cornerIds, counterKind)
+  })
+  const activeCornerSeams = $derived(counterCornerSeams(activeFloor?.counters))
 
   // The turn the plan had before a room was laid out, to go back to after it.
   let turnBeforeRoom: number | null = null
@@ -3729,6 +3800,18 @@
           stroke={colour}
           stroke-width={s(state === 'set' ? 0.02 : 0.045)}
         />
+        <!-- Discrete cabinet bays modulo seams (~600mm) -->
+        {#each counterBays(counter) as seam, i (i)}
+          <line
+            x1={seam.p1.x}
+            y1={seam.p1.z}
+            x2={seam.p2.x}
+            y2={seam.p2.z}
+            stroke={colour}
+            stroke-opacity="0.32"
+            stroke-width={s(0.014)}
+          />
+        {/each}
         {#if counter.wallUnits}
           <!-- Cupboards on the wall above: a dashed line 350 mm out from the wall. -->
           {@const back = counterRing({ ...counter, depth: 0.35 })}
@@ -3738,7 +3821,31 @@
     {/snippet}
     <g class="counters" pointer-events="none" class:hidden={planScope === 'site'}>
       {#each activeFloor?.counters ?? [] as counter (counter.id)}
-        {@render counterShape(counterMove?.id === counter.id && counterMove.preview ? counterMove.preview : counter, selectedCounter === counter.id ? 'picked' : 'set')}
+        {@const preview = counterResizeDrag?.id === counter.id && counterResizeDrag.preview ? counterResizeDrag.preview : counterMove?.id === counter.id && counterMove.preview ? counterMove.preview : counter}
+        {@render counterShape(preview, selectedCounter === counter.id ? 'picked' : 'set')}
+      {/each}
+      <!-- 45-degree corner miter seams and internal carcass indicators -->
+      {#each activeCornerSeams as seam, i (i)}
+        {#if seam.carcass}
+          <line
+            x1={seam.carcass.p1.x}
+            y1={seam.carcass.p1.z}
+            x2={seam.carcass.p2.x}
+            y2={seam.carcass.p2.z}
+            stroke="#44403c"
+            stroke-opacity="0.35"
+            stroke-width={s(0.015)}
+            stroke-dasharray={dash(0.06, 0.04)}
+          />
+        {/if}
+        <line
+          x1={seam.miter.p1.x}
+          y1={seam.miter.p1.z}
+          x2={seam.miter.p2.x}
+          y2={seam.miter.p2.z}
+          stroke="#44403c"
+          stroke-width={s(0.022)}
+        />
       {/each}
       {#if counterGuide}
         <polygon
@@ -3752,6 +3859,32 @@
       {/if}
       {#if counterDraft && counterDraft.counter.length > 0}
         {@render counterShape(counterDraft.counter, counterDraft.problem ? 'refused' : 'draft')}
+        {@const c = counterDraft.counter}
+        {@const midX = c.x + c.dx * (c.length / 2) - c.dz * (c.depth / 2)}
+        {@const midZ = c.z + c.dz * (c.length / 2) + c.dx * (c.depth / 2)}
+        <g class="counter-draft-label" pointer-events="none">
+          <rect
+            x={midX - s(0.7)}
+            y={midZ - s(0.16)}
+            width={s(1.4)}
+            height={s(0.32)}
+            rx={s(0.06)}
+            fill={counterDraft.problem ? '#fee2e2' : '#eff6ff'}
+            stroke={counterDraft.problem ? '#dc2626' : '#2563eb'}
+            stroke-width={s(0.015)}
+          />
+          <text
+            x={midX}
+            y={midZ + s(0.02)}
+            fill={counterDraft.problem ? '#dc2626' : '#1d4ed8'}
+            font-size={s(0.16)}
+            font-weight="600"
+            text-anchor="middle"
+            dominant-baseline="middle"
+          >
+            {Math.round(c.length * 1000)} × {Math.round(c.depth * 1000)} mm
+          </text>
+        </g>
       {/if}
       {#each counterGuide?.labels ?? [] as label, i (i)}
         <text transform={upright(label.x, label.z, label.angle)} fill="#1d4ed8" font-size={s(0.3)} text-anchor="middle" dominant-baseline="middle">
@@ -3765,6 +3898,144 @@
         {/if}
       {/if}
     </g>
+    <!-- Interactive end handles for chosen counter -->
+    {#if chosenCounter && planScope === 'building' && tool === 'select'}
+      {@const c = counterResizeDrag?.id === chosenCounter.id && counterResizeDrag.preview ? counterResizeDrag.preview : chosenCounter}
+      {@const startPt = { x: c.x, z: c.z }}
+      {@const endPt = { x: c.x + c.dx * c.length, z: c.z + c.dz * c.length }}
+      <g class="counter-handles" pointer-events="all">
+        <circle
+          cx={startPt.x}
+          cy={startPt.z}
+          r={s(0.12)}
+          fill="#ffffff"
+          stroke="#2563eb"
+          stroke-width={s(0.035)}
+          class="cursor-ew-resize hover:scale-125 transition-transform"
+          role="button"
+          aria-label="Resize counter start"
+          tabindex="-1"
+          onpointerdown={(e) => {
+            e.stopPropagation()
+            counterResizeDrag = { id: c.id, end: 'start', original: chosenCounter!, preview: null }
+            svgEl?.setPointerCapture(e.pointerId)
+          }}
+        />
+        <circle
+          cx={endPt.x}
+          cy={endPt.z}
+          r={s(0.12)}
+          fill="#ffffff"
+          stroke="#2563eb"
+          stroke-width={s(0.035)}
+          class="cursor-ew-resize hover:scale-125 transition-transform"
+          role="button"
+          aria-label="Resize counter end"
+          tabindex="-1"
+          onpointerdown={(e) => {
+            e.stopPropagation()
+            counterResizeDrag = { id: c.id, end: 'end', original: chosenCounter!, preview: null }
+            svgEl?.setPointerCapture(e.pointerId)
+          }}
+        />
+      </g>
+    {/if}
+    <!-- Room Focus / Counter Zones with One-Click Fill -->
+    {#if (focusedRoom || tool === 'draw-counter') && planScope === 'building' && roomZones.length > 0}
+      <g class="room-counter-zones" pointer-events="all">
+        {#each roomZones as zone (zone.wallId + zone.counter.x + zone.counter.z)}
+          {@const isHovered = hoveredZone === zone}
+          <polygon
+            points={pointsAttr(zone.polygon.map((p) => [p.x, p.z] as SvgPoint))}
+            fill="#2563eb"
+            fill-opacity={isHovered ? 0.16 : 0.05}
+            stroke="#2563eb"
+            stroke-opacity={isHovered ? 0.8 : 0.25}
+            stroke-width={s(isHovered ? 0.03 : 0.018)}
+            stroke-dasharray={isHovered ? undefined : dash(0.08, 0.05)}
+            class="cursor-pointer transition-all"
+            role="button"
+            aria-label="Fill wall with counter"
+            tabindex="-1"
+            onpointerenter={() => (hoveredZone = zone)}
+            onpointerleave={() => { if (hoveredZone === zone) hoveredZone = null }}
+            onclick={(e) => {
+              e.stopPropagation()
+              if (!activeFloor) return
+              if (applyResult(documentStore.addCounter(activeFloor.id, zone.counter))) {
+                const added = documentStore.document.building.floors.find((f) => f.id === activeFloor.id)?.counters?.at(-1)
+                counterStart = null
+                hoveredZone = null
+                if (added) chooseSelection({ counter: added.id })
+              }
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation()
+                if (!activeFloor) return
+                if (applyResult(documentStore.addCounter(activeFloor.id, zone.counter))) {
+                  const added = documentStore.document.building.floors.find((f) => f.id === activeFloor.id)?.counters?.at(-1)
+                  counterStart = null
+                  hoveredZone = null
+                  if (added) chooseSelection({ counter: added.id })
+                }
+              }
+            }}
+          />
+          {#if isHovered}
+            <g
+              class="fill-wall-pill cursor-pointer"
+              role="button"
+              aria-label="Fill wall with counter"
+              tabindex="-1"
+              onclick={(e) => {
+                e.stopPropagation()
+                if (!activeFloor) return
+                if (applyResult(documentStore.addCounter(activeFloor.id, zone.counter))) {
+                  const added = documentStore.document.building.floors.find((f) => f.id === activeFloor.id)?.counters?.at(-1)
+                  counterStart = null
+                  hoveredZone = null
+                  if (added) chooseSelection({ counter: added.id })
+                }
+              }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation()
+                  if (!activeFloor) return
+                  if (applyResult(documentStore.addCounter(activeFloor.id, zone.counter))) {
+                    const added = documentStore.document.building.floors.find((f) => f.id === activeFloor.id)?.counters?.at(-1)
+                    counterStart = null
+                    hoveredZone = null
+                    if (added) chooseSelection({ counter: added.id })
+                  }
+                }
+              }}
+            >
+              <rect
+                x={zone.midPoint.x - s(0.85)}
+                y={zone.midPoint.z - s(0.22)}
+                width={s(1.7)}
+                height={s(0.44)}
+                rx={s(0.22)}
+                fill="#2563eb"
+                class="shadow-md"
+              />
+              <text
+                x={zone.midPoint.x}
+                y={zone.midPoint.z + s(0.01)}
+                fill="#ffffff"
+                font-size={s(0.18)}
+                font-weight="600"
+                text-anchor="middle"
+                dominant-baseline="middle"
+              >
+                Fill Wall ({Math.round(zone.length * 1000)} mm)
+              </text>
+            </g>
+          {/if}
+        {/each}
+      </g>
+    {/if}
     <!-- A sink or a hob set into a counter is drawn over it. -->
     {#if planScope === 'building'}
       <g class="fixtures set-in" pointer-events="none">

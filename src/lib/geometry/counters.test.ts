@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { takeoff } from '../cost/quantities'
-import { counterRing, cupboardBays } from '../model/counters'
+import { counterBays, counterCornerSeams, counterRing, cupboardBays } from '../model/counters'
 import { addCorner, addCounter, addFixture, addOpening, addWall, addWallRing, moveCorners, removeCounter, updateCounter } from '../model/mutations'
 import type { Counter, Document } from '../model/types'
 import { fixtureDocument } from '../plot/fixture'
-import { buildCounterParts, counterAlongFace, counterAt, counterBetween, counterCarried, counterFace, counterIssues, countersOnWall, counterTotals } from './counters'
+import {
+  buildCounterParts,
+  counterAlongFace,
+  counterAt,
+  counterBetween,
+  counterCarried,
+  counterEndDrag,
+  counterFace,
+  counterIssues,
+  countersOnWall,
+  counterTotals,
+  counterZonesForRoom,
+  snapBarOrigin,
+} from './counters'
 import { buildFixtureParts, placeFixture } from './fixtures'
 
 // A room from (4, 4) to (10, 9), in cavity brick 262 mm thick.
@@ -415,4 +428,165 @@ describe('counters', () => {
     // The island standing at z = backZ + 0.8 intersects the 1.2m deep cupboard zone
     expect(deepFace === null || deepFace.before + deepFace.after < normalFace.before + normalFace.after).toBe(true)
   })
+
+  it('subdivides counters into discrete cabinet bays with seams along their length', () => {
+    // 2.4 m base counter -> 4 bays of 600 mm, with 3 interior seams
+    const longCounter = { x: 0, z: 0, dx: 1, dz: 0, length: 2.4, depth: 0.6 }
+    const seams = counterBays(longCounter)
+    expect(seams.length).toBe(3)
+    expect(seams[0].u).toBeCloseTo(0.6, 6)
+    expect(seams[1].u).toBeCloseTo(1.2, 6)
+    expect(seams[2].u).toBeCloseTo(1.8, 6)
+    expect(seams[0].p1).toMatchObject({ x: 0.6, z: 0 })
+    expect(seams[0].p2).toMatchObject({ x: 0.6, z: 0.6 })
+
+    // Non-modulo length: 2.1 m -> 4 bays of 525 mm
+    const modCounter = { x: 0, z: 0, dx: 1, dz: 0, length: 2.1, depth: 0.6 }
+    const modSeams = counterBays(modCounter)
+    expect(modSeams.length).toBe(3)
+    expect(modSeams[0].u).toBeCloseTo(0.525, 6)
+
+    // Short counter under 0.6 m -> 1 bay, no interior seams
+    const shortCounter = { x: 0, z: 0, dx: 1, dz: 0, length: 0.5, depth: 0.6 }
+    expect(counterBays(shortCounter)).toEqual([])
+  })
+
+  it('detects 45° corner miter seams where perpendicular counters meet', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = 4 + HALF
+    const backX = 4 + HALF
+
+    // Counter along south wall from corner x = backX to x = backX + 2.4
+    const southCounter: Omit<Counter, 'id'> = {
+      x: backX,
+      z: backZ,
+      dx: 1,
+      dz: 0,
+      length: 2.4,
+      depth: 0.6,
+      kind: 'base',
+      top: 'laminate',
+    }
+    // Counter along west wall running south towards corner, stopping 0.6 m from corner (z = backZ + 0.6)
+    const westCounter: Omit<Counter, 'id'> = {
+      x: backX,
+      z: backZ + 2.6,
+      dx: 0,
+      dz: -1,
+      length: 2.0,
+      depth: 0.6,
+      kind: 'base',
+      top: 'laminate',
+    }
+
+    doc = addCounter(doc, fid, southCounter).document
+    doc = addCounter(doc, fid, westCounter).document
+    const counters = floorOf(doc).counters!
+    expect(counters.length).toBe(2)
+
+    const seams = counterCornerSeams(counters)
+    expect(seams.length).toBe(1)
+    const seam = seams[0]
+
+    // Miter line goes from outer wall corner (backX, backZ) to inner corner (backX + 0.6, backZ + 0.6)
+    expect(seam.miter.p1.x).toBeCloseTo(backX, 5)
+    expect(seam.miter.p1.z).toBeCloseTo(backZ, 5)
+    expect(seam.miter.p2.x).toBeCloseTo(backX + 0.6, 5)
+    expect(seam.miter.p2.z).toBeCloseTo(backZ + 0.6, 5)
+
+    // Length of miter line is hypot(0.6, 0.6) = ~0.8485 m
+    const miterLen = Math.hypot(seam.miter.p2.x - seam.miter.p1.x, seam.miter.p2.z - seam.miter.p1.z)
+    expect(miterLen).toBeCloseTo(Math.hypot(0.6, 0.6), 5)
+
+    // Carcass boundary line is present
+    expect(seam.carcass).toBeDefined()
+  })
+
+  it('allows end handle dragging to resize counter with module snapping and stops', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = 4 + HALF
+    const backX = 4 + HALF
+    const item: Counter = {
+      id: 'c1',
+      x: backX,
+      z: backZ,
+      dx: 1,
+      dz: 0,
+      length: 1.8,
+      depth: 0.6,
+      kind: 'base',
+      top: 'laminate',
+    }
+    doc = addCounter(doc, fid, item).document
+    const floor = floorOf(doc)
+
+    // Drag end handle longer: pointer at x = backX + 2.38 -> snaps to 2.4 m (600 mm module)
+    const lengthened = counterEndDrag(floor, item, 'end', { x: backX + 2.38, z: backZ })
+    expect(lengthened.length).toBeCloseTo(2.4, 6)
+    expect(lengthened.x).toBeCloseTo(backX, 6)
+
+    // Drag end handle shorter: pointer at x = backX + 1.22 -> snaps to 1.2 m
+    const shortened = counterEndDrag(floor, item, 'end', { x: backX + 1.22, z: backZ })
+    expect(shortened.length).toBeCloseTo(1.2, 6)
+
+    // Drag end handle too short (< 0.3 m) -> clamps to COUNTER_MIN_LENGTH_M (0.3 m)
+    const tooShort = counterEndDrag(floor, item, 'end', { x: backX + 0.1, z: backZ })
+    expect(tooShort.length).toBeCloseTo(0.3, 6)
+
+    // Drag start handle: moves (x, z) while preserving opposite end at backX + 1.8
+    const startMoved = counterEndDrag(floor, item, 'start', { x: backX + 0.62, z: backZ })
+    expect(startMoved.length).toBeCloseTo(1.2, 6)
+    expect(startMoved.x).toBeCloseTo(backX + 0.6, 6)
+    expect(startMoved.x + startMoved.length).toBeCloseTo(backX + 1.8, 6)
+  })
+
+  it('snaps a bar start to an existing counter edge', () => {
+    let doc = room()
+    const fid = floorOf(doc).id
+    const backZ = 4 + HALF
+    const baseItem: Counter = {
+      id: 'c1',
+      x: 5,
+      z: backZ,
+      dx: 1,
+      dz: 0,
+      length: 2.0,
+      depth: 0.6,
+      kind: 'base',
+      top: 'laminate',
+    }
+    doc = addCounter(doc, fid, baseItem).document
+    const floor = floorOf(doc)
+
+    // Pointer near the end cap at x = 7.0, z = backZ + 0.3
+    const snapEnd = snapBarOrigin(floor, { x: 7.05, z: backZ + 0.35 })
+    expect(snapEnd).not.toBeNull()
+    expect(snapEnd?.edge).toBe('end')
+    expect(snapEnd?.point.x).toBeCloseTo(7.0, 5)
+
+    // Pointer near the front edge at x = 6.0, z = backZ + 0.6
+    const snapFront = snapBarOrigin(floor, { x: 6.0, z: backZ + 0.65 })
+    expect(snapFront).not.toBeNull()
+    expect(snapFront?.edge).toBe('front')
+    expect(snapFront?.dir).toMatchObject({ x: 0, z: 1 }) // points out into the room
+  })
+
+  it('finds candidate counter zones along uninterrupted walls in a room', () => {
+    const doc = room()
+    const floor = floorOf(doc)
+    const cornerIds = new Set(floor.corners.map((c) => c.id))
+    const rings = [floor.corners.map((c) => ({ x: c.x, z: c.z }))]
+
+    const zones = counterZonesForRoom(floor, rings, cornerIds, 'base')
+    // 4 unobstructed walls of the room should each yield a candidate counter zone
+    expect(zones.length).toBe(4)
+    for (const zone of zones) {
+      expect(zone.length).toBeGreaterThanOrEqual(4.0)
+      expect(zone.counter.depth).toBeCloseTo(0.6, 6)
+      expect(zone.polygon.length).toBe(4)
+    }
+  })
 })
+

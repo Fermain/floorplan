@@ -70,6 +70,10 @@ export function counterProblem(counter: Omit<Counter, 'id'>): string | null {
   return null
 }
 
+export const CABINET_MODULE_M = 0.6
+export const CABINET_MIN_BAY_M = 0.3
+export const CABINET_MAX_BAY_M = 0.8
+
 export type CupboardBay = {
   p1: { x: number; z: number }
   p2: { x: number; z: number }
@@ -79,7 +83,7 @@ export type CupboardBay = {
 
 // Subdivides a cupboard along its length into standard wardrobe bays (~600mm wide) with their four corners in plan.
 export function cupboardBays(counter: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'>): CupboardBay[] {
-  const numBays = Math.max(1, Math.round(counter.length / 0.6))
+  const numBays = Math.max(1, Math.round(counter.length / CABINET_MODULE_M))
   const bayLength = counter.length / numBays
   const out = { x: -counter.dz, z: counter.dx }
   const bays: CupboardBay[] = []
@@ -93,4 +97,96 @@ export function cupboardBays(counter: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'l
     bays.push({ p1, p2, p3, p4 })
   }
   return bays
+}
+
+export type CounterBaySeam = {
+  p1: { x: number; z: number }
+  p2: { x: number; z: number }
+  u: number
+}
+
+// Subdivides a counter along its length into discrete cabinet units (~600mm modulo) with their seam lines.
+export function counterBays(counter: Pick<Counter, 'x' | 'z' | 'dx' | 'dz' | 'length' | 'depth'>, moduleWidth = CABINET_MODULE_M): CounterBaySeam[] {
+  const numBays = Math.max(1, Math.round(counter.length / moduleWidth))
+  if (numBays <= 1) return []
+  const bayLength = counter.length / numBays
+  const out = { x: -counter.dz, z: counter.dx }
+  const seams: CounterBaySeam[] = []
+  for (let i = 1; i < numBays; i++) {
+    const u = i * bayLength
+    const p1 = { x: counter.x + counter.dx * u, z: counter.z + counter.dz * u }
+    const p2 = { x: p1.x + out.x * counter.depth, z: p1.z + out.z * counter.depth }
+    seams.push({ p1, p2, u })
+  }
+  return seams
+}
+
+export type CornerSeam = {
+  miter: { p1: { x: number; z: number }; p2: { x: number; z: number } }
+  carcass?: { p1: { x: number; z: number }; p2: { x: number; z: number } }
+  counterIds: [string, string]
+}
+
+// Detects perpendicular counter pairs meeting at an L-corner and calculates their 45° miter seam
+// and internal carcass boundary line.
+export function counterCornerSeams(counters: readonly Counter[] | undefined): CornerSeam[] {
+  if (!counters || counters.length < 2) return []
+  const seams: CornerSeam[] = []
+  for (let i = 0; i < counters.length; i++) {
+    const a = counters[i]
+    if (a.kind === 'cupboard') continue
+    const outA = { x: -a.dz, z: a.dx }
+    for (let j = i + 1; j < counters.length; j++) {
+      const b = counters[j]
+      if (b.kind === 'cupboard') continue
+      // Perpendicular check
+      if (Math.abs(a.dx * b.dx + a.dz * b.dz) > 0.05) continue
+      const outB = { x: -b.dz, z: b.dx }
+
+      // Outer back corner intersection O
+      const uA = (b.x - a.x) * a.dx + (b.z - a.z) * a.dz
+      const uB = (a.x - b.x) * b.dx + (a.z - b.z) * b.dz
+      const O = { x: a.x + a.dx * uA, z: a.z + a.dz * uA }
+
+      // Check if O is near an end of each counter's back edge
+      const reachA = Math.max(0.15, b.depth + 0.15)
+      const reachB = Math.max(0.15, a.depth + 0.15)
+      const nearStartA = Math.abs(uA) <= reachA
+      const nearEndA = Math.abs(uA - a.length) <= reachA
+      const nearStartB = Math.abs(uB) <= reachB
+      const nearEndB = Math.abs(uB - b.length) <= reachB
+      if ((!nearStartA && !nearEndA) || (!nearStartB && !nearEndB)) continue
+
+      // Inner front corner intersection I
+      const frontAx = a.x + outA.x * a.depth
+      const frontAz = a.z + outA.z * a.depth
+      const frontBx = b.x + outB.x * b.depth
+      const frontBz = b.z + outB.z * b.depth
+      const wA = (frontBx - frontAx) * a.dx + (frontBz - frontAz) * a.dz
+      const I = { x: frontAx + a.dx * wA, z: frontAz + a.dz * wA }
+
+      // Distance from O to I must match hypot(depthA, depthB)
+      const expectedDist = Math.hypot(a.depth, b.depth)
+      const actualDist = Math.hypot(I.x - O.x, I.z - O.z)
+      if (Math.abs(actualDist - expectedDist) > 0.08) continue
+
+      // Internal carcass seam line across the corner square
+      let carcass: { p1: { x: number; z: number }; p2: { x: number; z: number } } | undefined
+      const ptEndA = { x: a.x + a.dx * a.length, z: a.z + a.dz * a.length }
+      const ptEndB = { x: b.x + b.dx * b.length, z: b.z + b.dz * b.length }
+
+      if (Math.hypot(a.x - (O.x + a.dx * b.depth), a.z - (O.z + a.dz * b.depth)) < 0.15) {
+        carcass = { p1: { x: a.x, z: a.z }, p2: I }
+      } else if (Math.hypot(ptEndA.x - (O.x - a.dx * b.depth), ptEndA.z - (O.z - a.dz * b.depth)) < 0.15) {
+        carcass = { p1: ptEndA, p2: I }
+      } else if (Math.hypot(b.x - (O.x + b.dx * a.depth), b.z - (O.z + b.dz * a.depth)) < 0.15) {
+        carcass = { p1: { x: b.x, z: b.z }, p2: I }
+      } else if (Math.hypot(ptEndB.x - (O.x - b.dx * a.depth), ptEndB.z - (O.z - b.dz * a.depth)) < 0.15) {
+        carcass = { p1: ptEndB, p2: I }
+      }
+
+      seams.push({ miter: { p1: O, p2: I }, carcass, counterIds: [a.id, b.id] })
+    }
+  }
+  return seams
 }
