@@ -6,5 +6,5 @@
 </script>
 
 <!-- Light or dark follows the device unless Settings says otherwise. -->
-<ModeWatcher defaultMode="system" themeColors={{ light: '#ffffff', dark: '#18181b' }} />
+<ModeWatcher defaultMode="system" themeColors={{ light: '#f6f4ee', dark: '#121923' }} />
 {@render children()}
