@@ -1,9 +1,9 @@
 <script lang="ts">
   import { asset, resolve } from '$app/paths'
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
-  import { Button } from '$lib/components/ui/button'
   import { EXAMPLES } from '$lib/examples'
   import { exampleHref } from '$lib/routes/links'
+  import SheetHeading from '$lib/components/marketing/SheetHeading.svelte'
 
   const REPO = 'https://github.com/Fermain/floorplan'
   const app = resolve('/app')
@@ -38,7 +38,7 @@
         'The ground line, the floor level and the damp-proof course are drawn under the wall.',
       ],
       image: 'focus.jpg',
-      alt: 'A face-brick wall seen from outside, with a window, a rainwater tank, a dimension chain and the ground line under it',
+      alt: 'A face-brick wall seen from outside, with a sliding door, a window, their lintels, a dimension chain and the ground line under it',
     },
     {
       id: 'review',
@@ -90,7 +90,7 @@
         'Put the drawing back to the house as built at any time.',
       ],
       image: 'alterations.jpg',
-      alt: 'The farmhouse plan with a new wall across the living room in green and a wall taken down between two rooms in red',
+      alt: 'The farmhouse plan with a new wall across the living room in green and the wall between the bathroom and a bedroom taken down, in red',
     },
     {
       id: 'checks',
@@ -127,97 +127,130 @@
     { name: 'IndexedDB', text: 'Projects save in your browser as you work. Nothing is uploaded.' },
     { name: 'Open source', text: 'The code, the example houses and the rates are on GitHub.' },
   ]
+
+  const PRO = 'https://pro.floorplan.ferma.in'
+  const heroTitle = 'Design a house\nbrick by brick.'
+
+  // What it means that the app is free, said three ways.
+  const commons = [
+    { name: 'Free to use', text: 'Everything on this page, with no trial, no account and no card.' },
+    { name: 'Yours to keep', text: 'Projects stay on your machine. Back them up as a file whenever you like.' },
+    { name: 'Open to all', text: 'The code, the example houses and the rates are on GitHub. Tell us what is wrong for where you build.' },
+  ]
+
+  // Sheets are numbered down the page, as in a set of drawings.
+  const sheet = (n: number, name: string) => `Sheet ${String(n).padStart(2, '0')} · ${name}`
+  const afterTour = 3 + tour.length
 </script>
 
 <svelte:head>
   <title>Floorplan: house design, priced and checked as you draw</title>
 </svelte:head>
 
-<!-- One measure for the whole page: every section sits in the same column, with the same gutters and the same
-     space above and below, so headings and pictures line up from top to bottom. -->
-{#snippet eyebrow(text: string)}
-  <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{text}</p>
+<!-- One measure for the whole page: every section sits in the same column, with the same gutters. Each section is a
+     sheet, with its heading over a dimension line. -->
+{#snippet shot(image: string, alt: string, eager = false)}
+  <img class="block h-auto w-full border-[1.5px] border-rule bg-card" src={asset(`/shots/${image}`)} loading={eager ? 'eager' : 'lazy'} {alt} />
 {/snippet}
 
-<div class="min-h-dvh bg-background text-foreground">
-  <header class="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-    <div class="wrap flex items-center justify-between gap-3 py-2">
-      <a class="text-sm font-semibold" href={resolve('/')}>Floorplan</a>
-      <nav class="flex items-center gap-1 text-sm" aria-label="Site">
-        <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-sm:hidden" href="#tour">Features</a>
-        <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-sm:hidden" href="#examples">Examples</a>
-        <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-md:hidden" href="#technology">Technology</a>
-        <a class="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground" href={REPO} rel="noreferrer">GitHub</a>
-        <Button size="sm" class="ml-1" href={app}>Open the app</Button>
+<div class="sheet-ground min-h-dvh bg-background text-foreground">
+  <header class="sticky top-0 z-20 border-b-[1.5px] border-rule bg-background">
+    <div class="wrap flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5">
+      <a href={resolve('/')} class="block py-1" aria-label="Fermain Floorplan, home">
+        <img src={asset('/brand/floorplan.svg')} alt="" width="136" height="28" class="block dark:hidden" />
+        <img src={asset('/brand/floorplan-dark.svg')} alt="" width="136" height="28" class="hidden dark:block" />
+      </a>
+      <nav class="flex flex-wrap items-center gap-1 text-[15px]" aria-label="Site">
+        <a class="px-3 py-2 hover:underline max-md:hidden" href="#tour">Features</a>
+        <a class="px-3 py-2 hover:underline max-md:hidden" href="#examples">Examples</a>
+        <a class="px-3 py-2 hover:underline max-sm:hidden" href="#pro">Pro</a>
+        <a class="px-3 py-2 hover:underline max-sm:hidden" href={REPO} rel="noreferrer">GitHub</a>
+        <a class="bg-brick px-4 py-2 font-semibold text-brick-foreground hover:bg-brick/90" href={app}>Open the app</a>
       </nav>
     </div>
   </header>
 
   <main>
-    <section class="border-b bg-muted/40">
-      <div class="wrap row py-12 lg:items-center lg:py-20">
-        <div class="grid gap-6">
-          <h1 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Design a house brick by brick. Know what it costs before you build.
-          </h1>
-          <p class="text-base text-muted-foreground">
-            Floorplan is a design tool for small, low-cost houses in South Africa. Draw on a sloping plot in real bricks
-            and blocks, and get a bill of quantities and the SANS 10400 checks as you go.
-          </p>
-          <div class="flex flex-wrap gap-2">
-            <Button href={app}>Open the app<ArrowRight /></Button>
-            <Button variant="outline" href={exampleHref(showcase.id)}>Preview an example</Button>
-          </div>
-          <p class="text-sm text-muted-foreground">Runs in your browser, with no account. Projects stay on your machine. Free and open source.</p>
+    <section class="wrap row py-12 lg:items-center lg:py-[72px]">
+      <div class="flex flex-col gap-5">
+        <SheetHeading level={1} size="lg" title={heroTitle} label={sheet(1, 'Free and open source')} />
+        <p class="m-0 max-w-[34em] text-lg leading-relaxed text-muted-foreground">
+          Know what it costs before you build. Floorplan is a design tool for small, low-cost houses in South Africa.
+          Draw on a sloping plot in real bricks and blocks, and get a bill of quantities and the SANS 10400 checks as you
+          go.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <a href={app} class="inline-flex items-center gap-2 bg-brick px-5 py-3.5 font-semibold text-brick-foreground hover:bg-brick/90">Open the app<ArrowRight class="size-4" /></a>
+          <a href={exampleHref(showcase.id)} class="border-[1.5px] border-rule px-5 py-3.5 font-semibold hover:bg-accent">Preview an example</a>
         </div>
-        <img
-          class="w-full rounded-md border shadow-sm"
-          src={asset('/shots/review.jpg')}
-          width="1456"
-          height="763"
-          alt="A face-brick farmhouse with solar panels, a painted cottage and a carport, seen in the 3D Review"
-        />
+        <p class="m-0 font-mono text-xs tracking-wider text-muted-foreground uppercase">In your browser · No account · Projects stay on your machine</p>
+      </div>
+      {@render shot('review.jpg', 'A face-brick farmhouse with solar panels, two cottages and a garage on a sloping plot, seen in the 3D Review', true)}
+    </section>
+
+    <section id="community" class="scroll-mt-16 border-t-[1.5px] border-rule bg-card" aria-label="For the community">
+      <div class="wrap flex flex-col gap-8 py-12 lg:py-16">
+        <SheetHeading title="Made for the people who build most of our houses" label={sheet(2, 'For the community')} />
+        <div class="grid gap-x-12 gap-y-5 text-[17px] leading-relaxed text-muted-foreground lg:grid-cols-2">
+          <p class="m-0">
+            Most small houses in South Africa, and across the continent, go up without an architect or a quantity
+            surveyor. The owner and a builder work it out between them, and the first real price often arrives when the
+            materials run out. The software that could help was made for other markets and bigger budgets.
+          </p>
+          <p class="m-0">
+            Floorplan is our answer to that, made in the spirit of ubuntu. A house that is planned well and priced
+            honestly is good for the family in it, the builder who put it up and the street it stands on. So the whole
+            app is free, and the code is open for anyone to read, fix or take further.
+          </p>
+        </div>
+        <dl class="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] overflow-hidden border-[1.5px] border-rule">
+          {#each commons as item, i (item.name)}
+            <div class="-mr-px -mb-px flex flex-col gap-2 border-r border-b border-rule p-6">
+              <span class="font-mono text-xs text-line">{String.fromCharCode(65 + i)}</span>
+              <dt class="text-[19px] font-semibold">{item.name}</dt>
+              <dd class="m-0 leading-relaxed text-muted-foreground">{item.text}</dd>
+            </div>
+          {/each}
+        </dl>
       </div>
     </section>
 
-    <section id="tour" class="scroll-mt-12" aria-label="Features">
+    <section id="tour" class="scroll-mt-16" aria-label="Features">
       {#each tour as item, index (item.id)}
-        <div class="border-b {index % 2 === 1 ? 'bg-muted/40' : ''}">
-          <div class="wrap row py-12 lg:py-20">
-            <div class="grid content-start gap-4">
-              {@render eyebrow(item.title)}
-              <h2 class="text-xl font-semibold tracking-tight text-balance">{item.lead}</h2>
-              <ul class="grid gap-2.5 border-l-2 pl-4 text-sm text-muted-foreground">
-                {#each item.points as point (point)}
-                  <li>{point}</li>
+        <div class="border-t-[1.5px] border-rule {index % 2 === 1 ? 'bg-card' : ''}">
+          <div class="wrap row py-12 lg:py-16">
+            <div class="flex flex-col gap-5">
+              <SheetHeading title={item.lead} label={sheet(3 + index, item.title)} />
+              <ul class="m-0 flex list-none flex-col border-t border-rule p-0">
+                {#each item.points as point, i (point)}
+                  <li class="flex gap-3.5 border-b border-border py-2.5">
+                    <span class="pt-0.5 font-mono text-sm text-line">{String.fromCharCode(65 + i)}</span>
+                    <span>{point}</span>
+                  </li>
                 {/each}
               </ul>
             </div>
-            <img class="w-full rounded-md border shadow-sm" src={asset(`/shots/${item.image}`)} width="1456" height="763" loading="lazy" alt={item.alt} />
+            {@render shot(item.image, item.alt)}
           </div>
         </div>
       {/each}
     </section>
 
-    <section id="examples" class="scroll-mt-12 border-b" aria-labelledby="examples-heading">
-      <div class="wrap grid gap-8 py-12 lg:py-20">
-        <div class="grid max-w-2xl gap-4">
-          {@render eyebrow('Examples')}
-          <h2 id="examples-heading" class="text-xl font-semibold tracking-tight text-balance">Preview a finished house before you draw your own.</h2>
-          <p class="text-sm text-muted-foreground">
-            Six example projects come with the app. Each opens here as a preview: the plan, the 3D model, the bill of
-            quantities and the checks, with nothing to install and nothing saved. When one is close to what you want,
-            open a copy and change it.
-          </p>
-        </div>
-        <ul class="grid border-t text-sm">
-          {#each EXAMPLES as example (example.id)}
-            <li class="grid gap-x-6 gap-y-1 border-b py-3 md:grid-cols-[14rem_1fr_auto] md:items-baseline">
-              <a class="font-medium underline-offset-4 hover:underline" href={exampleHref(example.id)}>{example.name}</a>
-              <span class="text-muted-foreground">
-                {example.place} · {example.highlights.join(' · ')}
-              </span>
-              <a class="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline" href={exampleHref(example.id)}>
+    <section id="examples" class="scroll-mt-16 border-t-[1.5px] border-rule" aria-labelledby="examples-heading">
+      <div class="wrap flex flex-col gap-7 py-12 lg:py-16">
+        <SheetHeading id="examples-heading" title="Preview a finished house before you draw your own" label={sheet(afterTour, 'Examples')} />
+        <p class="m-0 max-w-[44em] text-[17px] leading-relaxed text-muted-foreground">
+          Six example projects come with the app. Each opens here as a preview: the plan, the 3D model, the bill of
+          quantities and the checks, with nothing to install and nothing saved. When one is close to what you want,
+          open a copy and change it.
+        </p>
+        <ul class="m-0 grid list-none border-[1.5px] border-rule bg-card p-0">
+          {#each EXAMPLES as example, i (example.id)}
+            <li class="grid gap-x-6 gap-y-1 px-4 py-3 md:grid-cols-[2rem_14rem_1fr_auto] md:items-baseline {i > 0 ? 'border-t border-border' : ''}">
+              <span class="font-mono text-xs text-line max-md:hidden">{String(i + 1).padStart(2, '0')}</span>
+              <a class="font-semibold underline-offset-4 hover:underline" href={exampleHref(example.id)}>{example.name}</a>
+              <span class="text-muted-foreground">{example.place} · {example.highlights.join(' · ')}</span>
+              <a class="inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline" href={exampleHref(example.id)}>
                 Preview<ArrowRight class="size-3.5" />
               </a>
             </li>
@@ -226,59 +259,90 @@
       </div>
     </section>
 
-    <section class="border-b bg-muted/40" aria-labelledby="more-heading">
-      <div class="wrap grid gap-8 py-12 lg:py-20">
-        <div class="grid gap-4">
-          {@render eyebrow('And the rest')}
-          <h2 id="more-heading" class="text-xl font-semibold tracking-tight">Small things that add up.</h2>
+    <!-- Ink in both themes: this band is about the paid version, which lives elsewhere. -->
+    <section id="pro" class="scroll-mt-16 border-t-[1.5px] border-rule bg-[#1b2430] text-[#f6f4ee] [--line:#9fb7e6]" aria-label="Floorplan Pro">
+      <div class="wrap row py-12 lg:items-center lg:py-16">
+        <div class="flex flex-col gap-5">
+          <SheetHeading title="Quoting for a living? There is Floorplan Pro" label={sheet(afterTour + 1, 'For builders and contractors')} />
+          <p class="m-0 text-[17px] leading-relaxed text-[#c9ced6]">
+            Pro is for builders and contractors who price jobs for clients. It adds your own rates, labour and margin,
+            the bricks, blocks and building rules of countries beyond South Africa, and a proposal the client opens on
+            WhatsApp. We are building it with a small group of builders, and it is in early access.
+          </p>
+          <p class="m-0 text-[17px] leading-relaxed text-[#c9ced6]">Everything in the free app stays free.</p>
+          <div class="flex flex-wrap gap-3">
+            <a href={PRO} class="inline-flex items-center gap-2 bg-[#e4936f] px-5 py-3.5 font-semibold text-[#1b2430] hover:bg-[#eaa585]">See Floorplan Pro<ArrowRight class="size-4" /></a>
+          </div>
         </div>
-        <dl class="grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+        <a href={PRO} class="block justify-self-center lg:justify-self-end" aria-label="Floorplan Pro">
+          <img src={asset('/brand/floorplan-pro-dark.svg')} alt="" width="339" height="70" class="block h-auto max-w-full" loading="lazy" />
+        </a>
+      </div>
+    </section>
+
+    <section class="border-t-[1.5px] border-rule bg-card" aria-labelledby="more-heading">
+      <div class="wrap flex flex-col gap-7 py-12 lg:py-16">
+        <SheetHeading id="more-heading" title="Small things that add up" label={sheet(afterTour + 2, 'And the rest')} />
+        <dl class="m-0 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
           {#each more as item (item.name)}
-            <div class="grid content-start gap-1 border-t pt-4">
-              <dt class="text-sm font-semibold">{item.name}</dt>
-              <dd class="text-sm text-muted-foreground">{item.text}</dd>
+            <div class="flex flex-col gap-1 border-t border-rule pt-4">
+              <dt class="font-semibold">{item.name}</dt>
+              <dd class="m-0 text-muted-foreground">{item.text}</dd>
             </div>
           {/each}
         </dl>
       </div>
     </section>
 
-    <section id="technology" class="scroll-mt-12 border-b" aria-labelledby="technology-heading">
-      <div class="wrap grid gap-8 py-12 lg:py-20">
-        <div class="grid gap-4">
-          {@render eyebrow('Technology')}
-          <h2 id="technology-heading" class="text-xl font-semibold tracking-tight">How it is built.</h2>
-        </div>
-        <dl class="grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+    <section id="technology" class="scroll-mt-16 border-t-[1.5px] border-rule" aria-labelledby="technology-heading">
+      <div class="wrap flex flex-col gap-7 py-12 lg:py-16">
+        <SheetHeading id="technology-heading" title="How it is built" label={sheet(afterTour + 3, 'Technology')} />
+        <dl class="m-0 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
           {#each technology as item (item.name)}
-            <div class="grid content-start gap-1 border-t pt-4">
-              <dt class="text-sm font-semibold">{item.name}</dt>
-              <dd class="text-sm text-muted-foreground">{item.text}</dd>
+            <div class="flex flex-col gap-1 border-t border-rule pt-4">
+              <dt class="font-semibold">{item.name}</dt>
+              <dd class="m-0 text-muted-foreground">{item.text}</dd>
             </div>
           {/each}
         </dl>
       </div>
     </section>
 
-    <section class="border-b bg-muted/40">
+    <section class="border-t-[1.5px] border-rule bg-card">
       <div class="wrap grid gap-6 py-12 lg:grid-cols-[1fr_auto] lg:items-center">
-        <p class="max-w-3xl text-sm text-muted-foreground">
+        <p class="m-0 max-w-3xl text-muted-foreground">
+          <span class="mr-2 font-mono text-xs tracking-wider text-line uppercase">Note</span>
           Floorplan helps you think a design through and get a rough idea of its cost. It does not replace an architect,
           an engineer or plan approval. Rates are examples, not quotes, and the checks are a guide to SANS 10400 that
           must be confirmed against the standard.
         </p>
-        <div class="flex flex-wrap gap-2">
-          <Button href={app}>Open the app<ArrowRight /></Button>
-          <Button variant="outline" href={start}>Start a new project</Button>
+        <div class="flex flex-wrap gap-3">
+          <a href={app} class="inline-flex items-center gap-2 bg-brick px-5 py-3 font-semibold text-brick-foreground hover:bg-brick/90">Open the app<ArrowRight class="size-4" /></a>
+          <a href={start} class="border-[1.5px] border-rule px-5 py-3 font-semibold hover:bg-accent">Start a new project</a>
         </div>
       </div>
     </section>
   </main>
 
-  <footer>
-    <div class="wrap flex flex-wrap items-center justify-between gap-2 py-4 text-sm text-muted-foreground">
-      <span>Floorplan</span>
-      <a class="hover:text-foreground" href={REPO} rel="noreferrer">Source on GitHub</a>
+  <footer class="bg-[#1b2430] text-[#c9ced6] dark:border-t dark:border-rule">
+    <div class="wrap flex flex-col gap-8 pt-12 pb-8">
+      <div class="flex flex-wrap items-start justify-between gap-8">
+        <a href={resolve('/')} aria-label="Fermain Floorplan, home" class="block">
+          <img src={asset('/brand/floorplan-dark.svg')} alt="" width="232" height="48" class="block" loading="lazy" />
+        </a>
+        <div class="grid grid-cols-[repeat(2,minmax(0,max-content))] gap-x-10 gap-y-2.5 text-[15px] text-[#f6f4ee]">
+          <a href="#tour" class="hover:underline">Features</a>
+          <a href={app} class="hover:underline">Open the app</a>
+          <a href="#examples" class="hover:underline">Examples</a>
+          <a href={REPO} rel="noreferrer" class="hover:underline">Source on GitHub</a>
+          <a href="#community" class="hover:underline">For the community</a>
+          <a href={PRO} class="hover:underline">Floorplan Pro</a>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-4 border-t border-[#3a4452] pt-5 font-mono text-xs tracking-[0.06em] uppercase">
+        <span>Free and open source</span>
+        <a href="https://ferma.in" class="hover:underline">Fermain Floorplan · by Fermain</a>
+      </div>
     </div>
   </footer>
 </div>
@@ -314,5 +378,13 @@
       grid-template-columns: minmax(0, 5fr) minmax(0, 8fr);
       gap: 3.5rem;
     }
+  }
+
+  /* The faint blue grid of drawing paper. */
+  .sheet-ground {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--line) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--line) 6%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 </style>
