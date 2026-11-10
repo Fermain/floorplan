@@ -119,6 +119,69 @@
   color-scheme: dark;
 }
 
+/* The plan's drawing colours. On paper by day; as a blueprint in the dark theme, with pale lines on ink. */
+.plan-drawing {
+  --plan-ground: #fbfaf6;
+  --plan-paper: #fbfaf6;
+  --plan-plot: #f3f0e7;
+  --plan-ink: #1b2430;
+  --plan-muted: #566070;
+  --plan-soft: #d5d2c8;
+  --plan-line: #1f4fa3;
+  --plan-line-soft: rgb(31 79 163 / 0.28);
+  --plan-line-wash: rgb(31 79 163 / 0.1);
+  --plan-error: #b3261e;
+  --plan-error-wash: rgb(179 38 30 / 0.1);
+  --plan-caution: #9a6312;
+  --plan-ok: #2e7d4f;
+  --plan-room: rgb(27 36 48 / 0.07);
+  --plan-plate: #dedad0;
+  --plan-plate-chosen: #ebe8df;
+  --plan-plate-roof: #c9ccce;
+  --plan-plate-roof-chosen: #d9dcde;
+  --plan-contour: rgb(86 96 112 / 0.45);
+  --plan-contour-major: rgb(86 96 112 / 0.8);
+  --plan-sewer: #7c4a1e;
+  --plan-water: #0b7bb8;
+  --plan-gas: #a21caf;
+  --plan-guide: #0e7f8c;
+  --plan-verge: #d6e2c4;
+  --plan-road: #6b6b70;
+  --plan-road-line: #f5f5f4;
+  background: var(--plan-ground);
+}
+.dark .plan-drawing {
+  --plan-ground: #1b2430;
+  --plan-paper: #1b2430;
+  --plan-plot: #202b39;
+  --plan-ink: #f6f4ee;
+  --plan-muted: #9aa3b0;
+  --plan-soft: #4a5462;
+  --plan-line: #9fb7e6;
+  --plan-line-soft: rgb(159 183 230 / 0.26);
+  --plan-line-wash: rgb(159 183 230 / 0.14);
+  --plan-error: #f08a80;
+  --plan-error-wash: rgb(240 138 128 / 0.14);
+  --plan-caution: #e0b25a;
+  --plan-ok: #7fcf9e;
+  --plan-room: rgb(159 183 230 / 0.08);
+  --plan-plate: #2a3442;
+  --plan-plate-chosen: #344050;
+  --plan-plate-roof: #2f3a44;
+  --plan-plate-roof-chosen: #3a4652;
+  --plan-contour: rgb(159 183 230 / 0.3);
+  --plan-contour-major: rgb(159 183 230 / 0.55);
+  --plan-sewer: #d9a066;
+  --plan-water: #6cc4f0;
+  --plan-gas: #e28bea;
+  --plan-guide: #5fd0dc;
+  --plan-verge: #25352b;
+  --plan-road: #3a4048;
+  --plan-road-line: #9aa3b0;
+  /* Floor finishes are a faint tint on a blueprint, so the lines carry the drawing. */
+  --plan-finish: 0.14;
+}
+
 @theme inline {
   --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;

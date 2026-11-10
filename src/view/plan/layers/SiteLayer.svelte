@@ -74,7 +74,7 @@
 
 {#snippet carportShape(carport: Omit<Carport, 'id'>, state: 'placed' | 'picked' | 'ghost' | 'refused')}
   {@const ring = carportRing(carport)}
-  {@const colour = state === 'refused' ? '#dc2626' : state === 'placed' ? '#57534e' : '#2563eb'}
+  {@const colour = state === 'refused' ? 'var(--plan-error)' : state === 'placed' ? 'var(--plan-muted)' : 'var(--plan-line)'}
   <polygon
     points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
     fill={carportRoofSpec(carport.roof).colour}
@@ -103,11 +103,11 @@
       <polyline
         points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))}
         fill="none"
-        stroke={picked ? '#2563eb' : retainingSpec(wall.type).colour}
+        stroke={picked ? 'var(--plan-line)' : retainingSpec(wall.type).colour}
         stroke-width={retainingSpec(wall.type).thickness}
         stroke-linejoin="round"
       />
-      <polyline points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))} fill="none" stroke={picked ? '#1d4ed8' : '#44403c'} stroke-width={s(0.02)} />
+      <polyline points={pointsAttr(wall.points.map(([x, z]) => [x, z] as SvgPoint))} fill="none" stroke={picked ? 'var(--plan-line)' : 'var(--plan-ink)'} stroke-width={s(0.02)} />
       <!-- Ticks on the downhill side, the way the ground falls away from the wall. -->
       {#if planGround}
         {#each retainingSamples(wall, planGround).filter((_, i) => i % 2 === 0) as sample, i (i)}
@@ -116,7 +116,7 @@
             y1={sample.z}
             x2={sample.x + sample.down.x * 0.45}
             y2={sample.z + sample.down.z * 0.45}
-            stroke={picked ? '#1d4ed8' : '#44403c'}
+            stroke={picked ? 'var(--plan-line)' : 'var(--plan-ink)'}
             stroke-width={s(0.02)}
           />
         {/each}
@@ -126,17 +126,17 @@
       <polyline
         points={pointsAttr(retainingPreview.map(([x, z]) => [x, z] as SvgPoint))}
         fill="none"
-        stroke="#2563eb"
+        stroke="var(--plan-line)"
         stroke-width={s(0.05)}
         stroke-dasharray={dash(0.2, 0.12)}
       />
     {/if}
     {#if tool === 'draw-retaining'}
       {#each retainingDraft as point, i (i)}
-        <circle cx={point.x} cy={point.z} r={s(0.1)} fill="#ffffff" stroke="#2563eb" stroke-width={s(0.04)} />
+        <circle cx={point.x} cy={point.z} r={s(0.1)} fill="var(--plan-paper)" stroke="var(--plan-line)" stroke-width={s(0.04)} />
       {/each}
       {#if retainingGuide}
-        <circle cx={retainingGuide.point.x} cy={retainingGuide.point.z} r={s(0.12)} fill="#2563eb" />
+        <circle cx={retainingGuide.point.x} cy={retainingGuide.point.z} r={s(0.12)} fill="var(--plan-line)" />
       {/if}
     {/if}
   </g>
@@ -159,7 +159,7 @@
         fill-rule="evenodd"
         fill={PAVING[projectDefaults(document).apronSurface].colour}
         fill-opacity="0.55"
-        stroke={selectedPaving === 'apron' ? '#2563eb' : 'none'}
+        stroke={selectedPaving === 'apron' ? 'var(--plan-line)' : 'none'}
         stroke-width={s(0.05)}
       />
     {/each}
@@ -168,7 +168,7 @@
         points={pointsAttr(area.ring.map(([x, z]) => [x, z] as SvgPoint))}
         fill={PAVING[area.surface].colour}
         fill-opacity="0.7"
-        stroke={selectedPaving === area.id ? '#2563eb' : '#57534e'}
+        stroke={selectedPaving === area.id ? 'var(--plan-line)' : 'var(--plan-muted)'}
         stroke-width={s(selectedPaving === area.id ? 0.06 : 0.02)}
       />
     {/each}
@@ -177,7 +177,7 @@
         points={pointsAttr(pavingPreview.map(([x, z]) => [x, z] as SvgPoint))}
         fill={PAVING[pavingSurface].colour}
         fill-opacity="0.45"
-        stroke="#2563eb"
+        stroke="var(--plan-line)"
         stroke-width={s(0.04)}
         stroke-dasharray="{s(0.2)} {s(0.12)}"
       />
@@ -188,13 +188,13 @@
           cx={corner.x}
           cy={corner.z}
           r={s(i === 0 && pavingShape === 'outline' && pavingDraft.length >= 3 ? (pavingCloses ? 0.28 : 0.2) : 0.1)}
-          fill={i === 0 && pavingCloses ? '#2563eb' : '#ffffff'}
-          stroke="#2563eb"
+          fill={i === 0 && pavingCloses ? 'var(--plan-line)' : 'var(--plan-paper)'}
+          stroke="var(--plan-line)"
           stroke-width={s(0.04)}
         />
       {/each}
       {#if pavingPoint && !pavingCloses}
-        <circle cx={pavingPoint.x} cy={pavingPoint.z} r={s(0.12)} fill="#2563eb" />
+        <circle cx={pavingPoint.x} cy={pavingPoint.z} r={s(0.12)} fill="var(--plan-line)" />
       {/if}
     {/if}
   </g>
@@ -209,7 +209,7 @@
         <polygon
           points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
           fill={mat.colour}
-          stroke={isSelected ? '#2563eb' : '#44403c'}
+          stroke={isSelected ? 'var(--plan-line)' : 'var(--plan-ink)'}
           stroke-width={s(isSelected ? 0.05 : 0.015)}
         />
         <!-- Elevated soil inside the inner face -->
@@ -217,7 +217,7 @@
           points={pointsAttr(inner.map(([x, z]) => [x, z] as SvgPoint))}
           fill={BED_SOIL_COLOUR}
           fill-opacity="0.85"
-          stroke="#44403c"
+          stroke="var(--plan-ink)"
           stroke-width={s(0.015)}
         />
       {:else}
@@ -226,7 +226,7 @@
           points={pointsAttr(bed.ring.map(([x, z]) => [x, z] as SvgPoint))}
           fill={BED_SOIL_COLOUR}
           fill-opacity="0.5"
-          stroke={isSelected ? '#2563eb' : (bed.material ? mat.colour : '#57534e')}
+          stroke={isSelected ? 'var(--plan-line)' : (bed.material ? mat.colour : 'var(--plan-muted)')}
           stroke-width={s(isSelected ? 0.05 : (bed.material ? 0.025 : 0.02))}
           stroke-dasharray={!bed.material && !isSelected ? `${s(0.12)} ${s(0.08)}` : undefined}
         />
@@ -237,7 +237,7 @@
         points={pointsAttr(bedPreview.map(([x, z]) => [x, z] as SvgPoint))}
         fill={BED_SOIL_COLOUR}
         fill-opacity="0.45"
-        stroke="#2563eb"
+        stroke="var(--plan-line)"
         stroke-width={s(0.04)}
         stroke-dasharray="{s(0.2)} {s(0.12)}"
       />
@@ -248,13 +248,13 @@
           cx={corner.x}
           cy={corner.z}
           r={s(i === 0 && bedShape === 'outline' && bedDraft.length >= 3 ? (bedCloses ? 0.28 : 0.2) : 0.1)}
-          fill={i === 0 && bedCloses ? '#2563eb' : '#ffffff'}
-          stroke="#2563eb"
+          fill={i === 0 && bedCloses ? 'var(--plan-line)' : 'var(--plan-paper)'}
+          stroke="var(--plan-line)"
           stroke-width={s(0.04)}
         />
       {/each}
       {#if bedPoint && !bedCloses}
-        <circle cx={bedPoint.x} cy={bedPoint.z} r={s(0.12)} fill="#2563eb" />
+        <circle cx={bedPoint.x} cy={bedPoint.z} r={s(0.12)} fill="var(--plan-line)" />
       {/if}
     {/if}
   </g>

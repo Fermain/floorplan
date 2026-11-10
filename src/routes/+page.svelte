@@ -115,7 +115,7 @@
     { name: 'Kitchens', text: 'Lay out one room on its own. Counters close up to stoves and sinks, and a hob can be built into the worktop.' },
     { name: 'Retaining walls', text: 'Drawn along a bank and built in retaining blocks, course by course. Over a metre is flagged for an engineer.' },
     { name: 'Off-grid', text: 'Septic tanks, rainwater tanks under downpipes, gas bottles, solar panels, an inverter and a battery, all counted.' },
-    { name: 'Light and dark', text: 'The app follows your device. Drawings stay on light paper either way.' },
+    { name: 'Light and dark', text: 'The app follows your device: the plan is on paper by day and a blueprint at night.' },
     { name: 'Backups', text: 'Download every project in one file, and restore it on another machine.' },
   ]
 

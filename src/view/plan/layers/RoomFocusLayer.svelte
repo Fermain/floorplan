@@ -23,7 +23,7 @@
     <polygon
       points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
       fill="none"
-      stroke="#2563eb"
+      stroke="var(--plan-line)"
       stroke-width={s(0.03)}
       stroke-linejoin="round"
       pointer-events="none"
