@@ -22,7 +22,7 @@
         y1={line.z1}
         x2={line.x2}
         y2={line.z2}
-        stroke="#93c5fd"
+        stroke="var(--plan-line-soft)"
         stroke-width={s(0.012)}
       />
     {/each}
@@ -35,7 +35,7 @@
       y1={trace.z1}
       x2={trace.x2}
       y2={trace.z2}
-      stroke="#0891b2"
+      stroke="var(--plan-guide)"
       stroke-width={s(0.03)}
       stroke-dasharray={dash(0.12, 0.08)}
       pointer-events="none"

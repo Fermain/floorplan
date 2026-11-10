@@ -23,15 +23,15 @@
     list.map((p) => (Array.isArray(p) ? `${p[0]},${p[1]}` : `${p.x},${p.z}`)).join(' ')
 </script>
 
-<svg class={className} viewBox="{box.x} {box.z} {box.w} {box.h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Plan of the plot">
+<svg class="plan-drawing {className}" viewBox="{box.x} {box.z} {box.w} {box.h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Plan of the plot">
   <g transform="translate(0 {box.z * 2 + box.h}) scale(1 -1)">
     {#each roads as strip (strip.edge)}
-      <polygon points={points(strip.verge)} fill="#d6e2c4" />
+      <polygon points={points(strip.verge)} fill="var(--plan-verge)" />
     {/each}
     {#each roads as strip (strip.edge)}
-      <polygon points={points(strip.road)} fill="#6b6b70" />
+      <polygon points={points(strip.road)} fill="var(--plan-road)" />
     {/each}
-    <polygon points={points(ring)} fill="#eceae4" stroke="#18181b" stroke-width={box.w / 300} />
+    <polygon points={points(ring)} fill="var(--plan-plot)" stroke="var(--plan-ink)" stroke-width={box.w / 300} />
     {#each pavingPieces(document) as piece (piece.id)}
       <path
         d={[piece.polygon.outer, ...piece.polygon.holes].map((part) => `M ${part.map((p) => `${p.x} ${p.z}`).join(' L ')} Z`).join(' ')}
@@ -43,7 +43,7 @@
       <polygon points={points(carportRing(carport))} fill={carportRoofSpec(carport.roof).colour} fill-opacity="0.7" />
     {/each}
     {#each walls as polygon, i (i)}
-      <polygon points={polygon.map(([x, z]) => `${x},${z}`).join(' ')} fill="#18181b" />
+      <polygon points={polygon.map(([x, z]) => `${x},${z}`).join(' ')} fill="var(--plan-ink)" />
     {/each}
   </g>
 </svg>

@@ -1,96 +1,116 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.21 0.006 285.885);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  /* The drawing office: paper, ink, blue dimension lines and one brick accent. Square corners throughout. */
+  --radius: 0px;
+  --background: #f6f4ee;
+  --foreground: #1b2430;
+  --card: #fbfaf6;
+  --card-foreground: #1b2430;
+  --popover: #fbfaf6;
+  --popover-foreground: #1b2430;
+  --primary: #1b2430;
+  --primary-foreground: #f6f4ee;
+  --secondary: #ebe8df;
+  --secondary-foreground: #1b2430;
+  --muted: #ebe8df;
+  --muted-foreground: #566070;
+  --accent: #e4e1d8;
+  --accent-foreground: #1b2430;
+  --destructive: #b3261e;
+  --border: #d5d2c8;
+  --input: #c4c0b4;
+  --ring: #1f4fa3;
+  --rule: #1b2430;
+  --line: #1f4fa3;
+  --brick: #a4482b;
+  --brick-foreground: #ffffff;
+  --caution: #9a6312;
+  --sidebar: #f6f4ee;
+  --sidebar-foreground: #1b2430;
+  --sidebar-primary: #1b2430;
+  --sidebar-primary-foreground: #f6f4ee;
+  --sidebar-accent: #e4e1d8;
+  --sidebar-accent-foreground: #1b2430;
+  --sidebar-border: #d5d2c8;
+  --sidebar-ring: #1f4fa3;
 }
 
+/* The blueprint: the same drawing at night. */
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.552 0.016 285.938);
+  --background: #121923;
+  --foreground: #eceae4;
+  --card: #1b2430;
+  --card-foreground: #eceae4;
+  --popover: #1b2430;
+  --popover-foreground: #eceae4;
+  --primary: #eceae4;
+  --primary-foreground: #121923;
+  --secondary: #242d3a;
+  --secondary-foreground: #eceae4;
+  --muted: #242d3a;
+  --muted-foreground: #9aa3b0;
+  --accent: #2e3744;
+  --accent-foreground: #eceae4;
+  --destructive: #f08a80;
+  --border: #2e3744;
+  --input: #4a5462;
+  --ring: #9fb7e6;
+  --rule: #4a5462;
+  --line: #9fb7e6;
+  --brick: #e4936f;
+  --brick-foreground: #1b2430;
+  --caution: #e0b25a;
+  --sidebar: #121923;
+  --sidebar-foreground: #eceae4;
+  --sidebar-primary: #9fb7e6;
+  --sidebar-primary-foreground: #121923;
+  --sidebar-accent: #2e3744;
+  --sidebar-accent-foreground: #eceae4;
+  --sidebar-border: #2e3744;
+  --sidebar-ring: #9fb7e6;
 }
 
 /* A drawing surface: paper stays light whatever the theme, so the plan and elevations read the same. */
 .paper {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.21 0.006 285.885);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --background: #fbfaf6;
+  --foreground: #1b2430;
+  --card: #fbfaf6;
+  --card-foreground: #1b2430;
+  --popover: #fbfaf6;
+  --popover-foreground: #1b2430;
+  --primary: #1b2430;
+  --primary-foreground: #f6f4ee;
+  --secondary: #ebe8df;
+  --secondary-foreground: #1b2430;
+  --muted: #ebe8df;
+  --muted-foreground: #566070;
+  --accent: #e4e1d8;
+  --accent-foreground: #1b2430;
+  --destructive: #b3261e;
+  --border: #d5d2c8;
+  --input: #c4c0b4;
+  --ring: #1f4fa3;
+  --rule: #1b2430;
+  --line: #1f4fa3;
+  --brick: #a4482b;
+  --brick-foreground: #ffffff;
+  --caution: #9a6312;
+  --sidebar: #f6f4ee;
+  --sidebar-foreground: #1b2430;
+  --sidebar-primary: #1b2430;
+  --sidebar-primary-foreground: #f6f4ee;
+  --sidebar-accent: #e4e1d8;
+  --sidebar-accent-foreground: #1b2430;
+  --sidebar-border: #d5d2c8;
+  --sidebar-ring: #1f4fa3;
   color: var(--foreground);
   color-scheme: light;
 }
@@ -99,12 +119,85 @@
   color-scheme: dark;
 }
 
+/* The plan's drawing colours. On paper by day; as a blueprint in the dark theme, with pale lines on ink. */
+.plan-drawing {
+  --plan-ground: #fbfaf6;
+  --plan-paper: #fbfaf6;
+  --plan-plot: #f3f0e7;
+  --plan-ink: #1b2430;
+  --plan-muted: #566070;
+  --plan-soft: #d5d2c8;
+  --plan-line: #1f4fa3;
+  --plan-line-soft: rgb(31 79 163 / 0.28);
+  --plan-line-wash: rgb(31 79 163 / 0.1);
+  --plan-error: #b3261e;
+  --plan-error-wash: rgb(179 38 30 / 0.1);
+  --plan-caution: #9a6312;
+  --plan-ok: #2e7d4f;
+  --plan-room: rgb(27 36 48 / 0.07);
+  --plan-plate: #dedad0;
+  --plan-plate-chosen: #ebe8df;
+  --plan-plate-roof: #c9ccce;
+  --plan-plate-roof-chosen: #d9dcde;
+  --plan-contour: rgb(86 96 112 / 0.45);
+  --plan-contour-major: rgb(86 96 112 / 0.8);
+  --plan-sewer: #7c4a1e;
+  --plan-water: #0b7bb8;
+  --plan-gas: #a21caf;
+  --plan-guide: #0e7f8c;
+  --plan-course: #b01e5c;
+  --plan-verge: #d6e2c4;
+  --plan-road: #6b6b70;
+  --plan-road-line: #f5f5f4;
+  background: var(--plan-ground);
+}
+.dark .plan-drawing {
+  --plan-ground: #1b2430;
+  --plan-paper: #1b2430;
+  --plan-plot: #202b39;
+  --plan-ink: #f6f4ee;
+  --plan-muted: #9aa3b0;
+  --plan-soft: #4a5462;
+  --plan-line: #9fb7e6;
+  --plan-line-soft: rgb(159 183 230 / 0.26);
+  --plan-line-wash: rgb(159 183 230 / 0.14);
+  --plan-error: #f08a80;
+  --plan-error-wash: rgb(240 138 128 / 0.14);
+  --plan-caution: #e0b25a;
+  --plan-ok: #7fcf9e;
+  --plan-room: rgb(159 183 230 / 0.08);
+  --plan-plate: #2a3442;
+  --plan-plate-chosen: #344050;
+  --plan-plate-roof: #2f3a44;
+  --plan-plate-roof-chosen: #3a4652;
+  --plan-contour: rgb(159 183 230 / 0.3);
+  --plan-contour-major: rgb(159 183 230 / 0.55);
+  --plan-sewer: #d9a066;
+  --plan-water: #6cc4f0;
+  --plan-gas: #e28bea;
+  --plan-guide: #5fd0dc;
+  --plan-course: #f29ac0;
+  --plan-verge: #25352b;
+  --plan-road: #3a4048;
+  --plan-road-line: #9aa3b0;
+  /* Floor finishes are a faint tint on a blueprint, so the lines carry the drawing. */
+  --plan-finish: 0.14;
+}
+
 @theme inline {
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius-xs: var(--radius);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --color-rule: var(--rule);
+  --color-line: var(--line);
+  --color-brick: var(--brick);
+  --color-brick-foreground: var(--brick-foreground);
+  --color-caution: var(--caution);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -168,8 +261,12 @@
   top: 0;
   z-index: 2;
   background: var(--muted);
-  font-weight: 500;
-  font-size: 0.75rem;
+  border-bottom-color: var(--rule);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--muted-foreground);
   white-space: nowrap;
 }
@@ -178,7 +275,8 @@
 }
 .sheet .rownum {
   text-align: center;
-  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
   color: var(--muted-foreground);
   background: var(--muted);
 }
@@ -200,7 +298,7 @@
   bottom: 0;
   z-index: 2;
   background: var(--muted);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
   border-right-color: transparent;
   font-weight: 600;
   padding-block: 0.375rem;

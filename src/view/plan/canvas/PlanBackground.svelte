@@ -35,8 +35,8 @@
 </g>
 <polygon
   points={pointsAttr(plotRing.map(([x, z]) => [x, z] as SvgPoint))}
-  fill="#e7e5e4"
-  stroke="#18181b"
+  fill="var(--plan-plot)"
+  stroke="var(--plan-ink)"
   stroke-width={s(planScope === 'site' ? 0.08 : 0.06)}
 />
 {#if selectedEdge !== null}
@@ -48,7 +48,7 @@
       y1={a[1]}
       x2={b[0]}
       y2={b[1]}
-      stroke="#2563eb"
+      stroke="var(--plan-line)"
       stroke-width={s(0.08)}
       pointer-events="none"
     />
@@ -59,7 +59,7 @@
     <path
       d={contours.minor}
       fill="none"
-      stroke="#7c6a58"
+      stroke="var(--plan-contour)"
       stroke-width={s(0.016)}
       stroke-linecap="round"
     />
@@ -68,7 +68,7 @@
     <path
       d={contours.major}
       fill="none"
-      stroke="#3f3428"
+      stroke="var(--plan-contour-major)"
       stroke-width={s(0.032)}
       stroke-linecap="round"
     />
@@ -77,12 +77,12 @@
 
 <style>
   .verge {
-    fill: #d6e2c4;
+    fill: var(--plan-verge);
   }
   .carriageway {
-    fill: #6b6b70;
+    fill: var(--plan-road);
   }
   .centre-line {
-    stroke: #f5f5f4;
+    stroke: var(--plan-road-line);
   }
 </style>

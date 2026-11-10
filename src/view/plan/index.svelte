@@ -431,9 +431,9 @@
 
   function cellFill(cornerIds: string[]): string {
     const space = spaceByRoom[roomKey(cornerIds)]
-    if (!space) return 'rgba(120, 120, 120, 0.08)'
+    if (!space) return 'var(--plan-room)'
     // Each floor finish has its own pattern, drawn to scale: tiles, boards, planks, carpet.
-    if (space.finish === 'none') return 'rgba(120, 120, 120, 0.1)'
+    if (space.finish === 'none') return 'var(--plan-room)'
     const lay = layOf(cornerIds)
     return lay === 0 ? `url(#floor-${space.finish})` : `url(#floor-${space.finish}-${lay})`
   }
@@ -737,10 +737,10 @@
   function plateFill(floorId: string, ring: number): string {
     const roofed = levelFloors.some((floor) => floor.id === floorId && floor.roof)
     const selected = floorId === selectedPlateFloorId && ring === selectedPlateRing
-    if (selected && roofed) return '#d7dbe0'
-    if (selected) return '#e7e5e4'
-    if (roofed) return '#c5c9ce'
-    return '#d6d3d1'
+    if (selected && roofed) return 'var(--plan-plate-roof-chosen)'
+    if (selected) return 'var(--plan-plate-chosen)'
+    if (roofed) return 'var(--plan-plate-roof)'
+    return 'var(--plan-plate)'
   }
 
   function clientToPlan(svg: SVGSVGElement, clientX: number, clientY: number) {
@@ -3254,7 +3254,7 @@
 
 </script>
 
-<div class="root" oncontextmenu={onPlanContextMenu}>
+<div class="root plan-drawing" oncontextmenu={onPlanContextMenu}>
   <PlanToolbar
     {planScope}
     onSwitchScope={switchScope}
@@ -3371,7 +3371,7 @@
   </div>
   <svg
     bind:this={svgEl}
-    class="canvas paper"
+    class="canvas"
     class:panning={spaceHeld || (panning !== null && panning.moved !== false)}
     {viewBox}
     preserveAspectRatio="xMidYMid meet"
@@ -3392,7 +3392,7 @@
         {#if tile}
           {@const rows = tile.staggered ? 2 : 1}
           <pattern id="floor-{spec.id}" patternUnits="userSpaceOnUse" width={tile.along} height={tile.across * rows}>
-            <rect width={tile.along} height={tile.across * rows} fill={spec.colour} fill-opacity="0.4" />
+            <rect width={tile.along} height={tile.across * rows} fill={spec.colour} fill-opacity="var(--plan-finish, 0.4)" />
             <path
               d={tile.staggered
                 ? `M0 0H${tile.along}M0 ${tile.across}H${tile.along}M0 0V${tile.across}M${tile.along / 2} ${tile.across}V${tile.across * 2}`
@@ -3405,13 +3405,13 @@
           </pattern>
         {:else if spec.id === 'carpet'}
           <pattern id="floor-carpet" patternUnits="userSpaceOnUse" width="0.16" height="0.16">
-            <rect width="0.16" height="0.16" fill={spec.colour} fill-opacity="0.32" />
+            <rect width="0.16" height="0.16" fill={spec.colour} fill-opacity="var(--plan-finish, 0.32)" />
             <circle cx="0.04" cy="0.04" r="0.014" fill={spec.joint} fill-opacity="0.5" />
             <circle cx="0.12" cy="0.12" r="0.014" fill={spec.joint} fill-opacity="0.5" />
           </pattern>
         {:else}
           <pattern id="floor-{spec.id}" patternUnits="userSpaceOnUse" width="1" height="1">
-            <rect width="1" height="1" fill={spec.colour} fill-opacity="0.3" />
+            <rect width="1" height="1" fill={spec.colour} fill-opacity="var(--plan-finish, 0.3)" />
           </pattern>
         {/if}
       {/each}
@@ -3485,7 +3485,7 @@
           <polygon
             points={pointsAttr(ring.map((point) => [point.x, point.z]))}
             fill="none"
-            stroke="#a8a29e"
+            stroke="var(--plan-soft)"
             stroke-width={s(0.04)}
             stroke-dasharray={dash(0.18, 0.12)}
             pointer-events="none"
@@ -3497,10 +3497,10 @@
           {#each drawing.plan.footprints as footprint, i (i)}
             <path
               d={`${ringPath(footprint.outer)}${footprint.holes.map((hole) => ringPath(hole)).join('')}`}
-              fill="#5e666e"
+              fill="var(--plan-muted)"
               fill-opacity="0.28"
               fill-rule="evenodd"
-              stroke="#5e666e"
+              stroke="var(--plan-muted)"
               stroke-width={s(0.04)}
             />
           {/each}
@@ -3511,7 +3511,7 @@
           <polygon
             points={pointsAttr(plate.ring.map((point) => [point.x, point.z]))}
             fill={plateFill(plate.floorId, plate.index)}
-            stroke="#78716c"
+            stroke="var(--plan-muted)"
             stroke-width={s(0.045)}
             stroke-dasharray={dash(0.16, 0.1)}
             pointer-events={tool === 'select' ? 'fill' : 'none'}
@@ -3547,7 +3547,7 @@
               y1={hip.a.z}
               x2={hip.b.x}
               y2={hip.b.z}
-              stroke="#3d4450"
+              stroke="var(--plan-ink)"
               stroke-width={s(0.035)}
               stroke-linecap="round"
             />
@@ -3562,7 +3562,7 @@
               y1={line.z1}
               x2={line.x2}
               y2={line.z2}
-              stroke="#93c5fd"
+              stroke="var(--plan-line-soft)"
               stroke-width={s(0.012)}
             />
           {/each}
@@ -3578,18 +3578,18 @@
             pointer-events="none"
           />
           {#if cellChosen(room.cornerIds)}
-            <polygon points={pointsAttr(pts)} fill="rgba(37, 99, 235, 0.14)" stroke="none" pointer-events="none" />
+            <polygon points={pointsAttr(pts)} fill="var(--plan-line-wash)" stroke="none" pointer-events="none" />
           {/if}
         {/if}
       {/each}
       {#each wallPolygons as poly, i (i)}
-        <polygon points={pointsAttr(poly)} fill="#333" stroke="none" />
+        <polygon points={pointsAttr(poly)} fill="var(--plan-ink)" stroke="none" />
       {/each}
       <!-- Each hinged door open square to its wall, with the quarter circle its edge sweeps. -->
       <g class="door-swings" pointer-events="none">
         {#each swings as swing, i (i)}
-          <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="#333" stroke-width={s(0.025)} />
-          <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#333" stroke-width={s(0.012)} />
+          <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="var(--plan-ink)" stroke-width={s(0.025)} />
+          <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="var(--plan-ink)" stroke-width={s(0.012)} />
         {/each}
       </g>
       <g class="stairs" pointer-events="none">
@@ -3652,7 +3652,7 @@
         {#each shownCircuits as circuit (circuit.id)}
           {@const points = circuitLines(circuit)}
           {#if points.length > 1}
-            <polyline points={pointsAttr(points)} fill="none" stroke="#d97706" stroke-width={s(0.02)} stroke-dasharray={dash(0.15, 0.1)} />
+            <polyline points={pointsAttr(points)} fill="none" stroke="var(--plan-caution)" stroke-width={s(0.02)} stroke-dasharray={dash(0.15, 0.1)} />
           {/if}
         {/each}
       </g>
@@ -3729,17 +3729,17 @@
         <!-- Against the house as built: new wall in green, wall taken down in dashed red, openings cut and closed. -->
         <g class="changes" pointer-events="none">
           {#each changesHere.demolished as piece, i (i)}
-            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#fecaca" stroke-opacity="0.7" stroke-width={piece.thickness} />
-            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#dc2626" stroke-width={s(0.035)} stroke-dasharray={dash(0.18, 0.12)} />
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="var(--plan-error-wash)" stroke-opacity="0.7" stroke-width={piece.thickness} />
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="var(--plan-error)" stroke-width={s(0.035)} stroke-dasharray={dash(0.18, 0.12)} />
           {/each}
           {#each changesHere.built as piece, i (i)}
-            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="#16a34a" stroke-opacity="0.75" stroke-width={piece.thickness} />
+            <line x1={piece.a.x} y1={piece.a.z} x2={piece.b.x} y2={piece.b.z} stroke="var(--plan-ok)" stroke-opacity="0.75" stroke-width={piece.thickness} />
           {/each}
           {#each changesHere.cut as opening, i (i)}
-            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#16a34a" stroke="#ffffff" stroke-width={s(0.03)} />
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="var(--plan-ok)" stroke="var(--plan-paper)" stroke-width={s(0.03)} />
           {/each}
           {#each changesHere.closed as opening, i (i)}
-            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="#dc2626" stroke="#ffffff" stroke-width={s(0.03)} />
+            <circle cx={opening.at.x} cy={opening.at.z} r={s(0.16)} fill="var(--plan-error)" stroke="var(--plan-paper)" stroke-width={s(0.03)} />
           {/each}
         </g>
       {/if}
@@ -3753,7 +3753,7 @@
               y1={line.a.z}
               x2={line.b.x}
               y2={line.b.z}
-              stroke={chosenCorner.removal.kind === 'join' ? '#2563eb' : '#dc2626'}
+              stroke={chosenCorner.removal.kind === 'join' ? 'var(--plan-line)' : 'var(--plan-error)'}
               stroke-opacity="0.6"
               stroke-width={line.thickness + s(0.08)}
               stroke-linecap="round"
@@ -3776,11 +3776,11 @@
       {/if}
     {#snippet counterShape(counter: Omit<Counter, 'id'>, state: 'set' | 'picked' | 'draft' | 'refused')}
       {@const ring = counterRing(counter)}
-      {@const colour = state === 'refused' ? '#dc2626' : state === 'set' ? '#44403c' : '#2563eb'}
+      {@const colour = state === 'refused' ? 'var(--plan-error)' : state === 'set' ? 'var(--plan-ink)' : 'var(--plan-line)'}
       {#if counter.kind === 'cupboard'}
         <polygon
           points={pointsAttr(ring.map((p) => [p.x, p.z] as SvgPoint))}
-          fill="#ede9e1"
+          fill="var(--plan-plot)"
           fill-opacity={state === 'draft' || state === 'refused' ? 0.55 : 0.92}
           stroke={colour}
           stroke-width={s(state === 'set' ? 0.02 : 0.045)}
@@ -3832,7 +3832,7 @@
             y1={seam.carcass.p1.z}
             x2={seam.carcass.p2.x}
             y2={seam.carcass.p2.z}
-            stroke="#44403c"
+            stroke="var(--plan-ink)"
             stroke-opacity="0.35"
             stroke-width={s(0.015)}
             stroke-dasharray={dash(0.06, 0.04)}
@@ -3843,16 +3843,16 @@
           y1={seam.miter.p1.z}
           x2={seam.miter.p2.x}
           y2={seam.miter.p2.z}
-          stroke="#44403c"
+          stroke="var(--plan-ink)"
           stroke-width={s(0.022)}
         />
       {/each}
       {#if counterGuide}
         <polygon
           points={pointsAttr(counterGuide.run.map((p) => [p.x, p.z] as SvgPoint))}
-          fill="#2563eb"
+          fill="var(--plan-line)"
           fill-opacity="0.06"
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.02)}
           stroke-dasharray={dash(0.1, 0.07)}
         />
@@ -3869,14 +3869,14 @@
             width={s(1.4)}
             height={s(0.32)}
             rx={s(0.06)}
-            fill={counterDraft.problem ? '#fee2e2' : '#eff6ff'}
-            stroke={counterDraft.problem ? '#dc2626' : '#2563eb'}
+            fill={counterDraft.problem ? 'var(--plan-error-wash)' : 'var(--plan-line-wash)'}
+            stroke={counterDraft.problem ? 'var(--plan-error)' : 'var(--plan-line)'}
             stroke-width={s(0.015)}
           />
           <text
             x={midX}
             y={midZ + s(0.02)}
-            fill={counterDraft.problem ? '#dc2626' : '#1d4ed8'}
+            fill={counterDraft.problem ? 'var(--plan-error)' : 'var(--plan-line)'}
             font-size={s(0.16)}
             font-weight="600"
             text-anchor="middle"
@@ -3887,14 +3887,14 @@
         </g>
       {/if}
       {#each counterGuide?.labels ?? [] as label, i (i)}
-        <text transform={upright(label.x, label.z, label.angle)} fill="#1d4ed8" font-size={s(0.3)} text-anchor="middle" dominant-baseline="middle">
+        <text transform={upright(label.x, label.z, label.angle)} fill="var(--plan-line)" font-size={s(0.3)} text-anchor="middle" dominant-baseline="middle">
           {label.text}
         </text>
       {/each}
       {#if tool === 'draw-counter'}
         {@const mark = counterStart ?? counterHover}
         {#if mark && (mark.face || counterKind !== 'base')}
-          <circle cx={mark.point.x} cy={mark.point.z} r={s(0.09)} fill="#2563eb" />
+          <circle cx={mark.point.x} cy={mark.point.z} r={s(0.09)} fill="var(--plan-line)" />
         {/if}
       {/if}
     </g>
@@ -3908,8 +3908,8 @@
           cx={startPt.x}
           cy={startPt.z}
           r={s(0.12)}
-          fill="#ffffff"
-          stroke="#2563eb"
+          fill="var(--plan-paper)"
+          stroke="var(--plan-line)"
           stroke-width={s(0.035)}
           class="cursor-ew-resize hover:scale-125 transition-transform"
           role="button"
@@ -3925,8 +3925,8 @@
           cx={endPt.x}
           cy={endPt.z}
           r={s(0.12)}
-          fill="#ffffff"
-          stroke="#2563eb"
+          fill="var(--plan-paper)"
+          stroke="var(--plan-line)"
           stroke-width={s(0.035)}
           class="cursor-ew-resize hover:scale-125 transition-transform"
           role="button"
@@ -3947,9 +3947,9 @@
           {@const isHovered = hoveredZone === zone}
           <polygon
             points={pointsAttr(zone.polygon.map((p) => [p.x, p.z] as SvgPoint))}
-            fill="#2563eb"
+            fill="var(--plan-line)"
             fill-opacity={isHovered ? 0.16 : 0.05}
-            stroke="#2563eb"
+            stroke="var(--plan-line)"
             stroke-opacity={isHovered ? 0.8 : 0.25}
             stroke-width={s(isHovered ? 0.03 : 0.018)}
             stroke-dasharray={isHovered ? undefined : dash(0.08, 0.05)}
@@ -4017,13 +4017,13 @@
                 width={s(1.7)}
                 height={s(0.44)}
                 rx={s(0.22)}
-                fill="#2563eb"
+                fill="var(--plan-line)"
                 class="shadow-md"
               />
               <text
                 x={zone.midPoint.x}
                 y={zone.midPoint.z + s(0.01)}
-                fill="#ffffff"
+                fill="var(--plan-paper)"
                 font-size={s(0.18)}
                 font-weight="600"
                 text-anchor="middle"
@@ -4106,11 +4106,11 @@
             {/each}
             <!-- Gates: a swinging one open with the arc it sweeps, a sliding one run back beside the fence. -->
             {#each drawn?.swings ?? [] as swing, i (i)}
-              <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="#44403c" stroke-width={s(0.03)} />
-              <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#44403c" stroke-width={s(0.015)} stroke-dasharray={dash(0.08, 0.06)} />
+              <line x1={swing.leaf[0].x} y1={swing.leaf[0].z} x2={swing.leaf[1].x} y2={swing.leaf[1].z} stroke="var(--plan-ink)" stroke-width={s(0.03)} />
+              <polyline points={pointsAttr(swing.arc.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="var(--plan-ink)" stroke-width={s(0.015)} stroke-dasharray={dash(0.08, 0.06)} />
             {/each}
             {#each drawn?.slides ?? [] as slide, i (i)}
-              <polygon points={pointsAttr(slide.ring.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="#44403c" stroke-width={s(0.02)} stroke-dasharray={dash(0.08, 0.06)} />
+              <polygon points={pointsAttr(slide.ring.map((p) => [p.x, p.z] as SvgPoint))} fill="none" stroke="var(--plan-ink)" stroke-width={s(0.02)} stroke-dasharray={dash(0.08, 0.06)} />
             {/each}
           {:else}
             <line
@@ -4118,7 +4118,7 @@
               y1={a.z}
               x2={b.x}
               y2={b.z}
-              stroke="#666"
+              stroke="var(--plan-muted)"
               stroke-width={s(0.02)}
               stroke-dasharray={dash(0.2, 0.15)}
             />
@@ -4130,10 +4130,10 @@
         {@const angle = (Math.atan2(spot.dir.z, spot.dir.x) * 180) / Math.PI}
         <g transform="translate({spot.x} {spot.z}) rotate({angle})" pointer-events="none">
           {#if spot.support.type === 'column'}
-            <rect x={-side / 2} y={-side / 2} width={side} height={side} fill="#f5f5f4" stroke="#44403c" stroke-width={s(0.015)} />
-            <circle r={0.12} fill="#a8a29e" stroke="#44403c" stroke-width={s(0.012)} />
+            <rect x={-side / 2} y={-side / 2} width={side} height={side} fill="var(--plan-paper)" stroke="var(--plan-ink)" stroke-width={s(0.015)} />
+            <circle r={0.12} fill="var(--plan-soft)" stroke="var(--plan-ink)" stroke-width={s(0.012)} />
           {:else if spot.support.type === 'pole'}
-            <circle r={side / 2} fill="#8b6b4a" stroke="#44403c" stroke-width={s(0.012)} />
+            <circle r={side / 2} fill="#8b6b4a" stroke="var(--plan-ink)" stroke-width={s(0.012)} />
           {:else}
             <rect
               x={-side / 2}
@@ -4141,7 +4141,7 @@
               width={side}
               height={side}
               fill={spot.support.type === 'steel' ? '#3a3f44' : '#a8927a'}
-              stroke="#44403c"
+              stroke="var(--plan-ink)"
               stroke-width={s(0.012)}
             />
           {/if}
@@ -4158,7 +4158,7 @@
                 y1={a.z}
                 x2={b.x}
                 y2={b.z}
-                stroke="#b91c1c"
+                stroke="var(--plan-error)"
                 stroke-width={s(0.06)}
                 stroke-linecap="round"
                 pointer-events="none"
@@ -4176,7 +4176,7 @@
             y1={a.z}
             x2={b.x}
             y2={b.z}
-            stroke={wall.id === selectedWallId ? '#2563eb' : 'transparent'}
+            stroke={wall.id === selectedWallId ? 'var(--plan-line)' : 'transparent'}
             stroke-width={s(wall.id === selectedWallId ? 0.08 : 0.14)}
             stroke-linecap="round"
             pointer-events={tool === 'select' && planScope === 'building' ? 'stroke' : 'none'}
@@ -4197,7 +4197,7 @@
           y1={outlineReference.az}
           x2={outlineReference.bx}
           y2={outlineReference.bz}
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.08)}
           pointer-events="none"
         />
@@ -4210,7 +4210,7 @@
             y1={corner.z}
             x2={next.x}
             y2={next.z}
-            stroke={rectanglePreview.allowed ? '#2563eb' : '#b91c1c'}
+            stroke={rectanglePreview.allowed ? 'var(--plan-line)' : 'var(--plan-error)'}
             stroke-width={s(0.04)}
             stroke-dasharray={dash(0.15, 0.1)}
             pointer-events="none"
@@ -4219,7 +4219,7 @@
         {#if rectanglePreview.widthLabel}
           <text
             transform={upright(rectanglePreview.widthLabel.x, rectanglePreview.widthLabel.z, rectanglePreview.widthLabel.rotate)}
-            fill="#1d4ed8"
+            fill="var(--plan-line)"
             font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
@@ -4231,7 +4231,7 @@
         {#if rectanglePreview.depthLabel}
           <text
             transform={upright(rectanglePreview.depthLabel.x, rectanglePreview.depthLabel.z, rectanglePreview.depthLabel.rotate)}
-            fill="#1d4ed8"
+            fill="var(--plan-line)"
             font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
@@ -4246,7 +4246,7 @@
           cx={previewLine.x1}
           cy={previewLine.z1}
           r={s(0.18)}
-          fill="#2563eb"
+          fill="var(--plan-line)"
           pointer-events="none"
         />
         <line
@@ -4254,7 +4254,7 @@
           y1={previewLine.z1}
           x2={previewLine.x2}
           y2={previewLine.z2}
-          stroke={previewLine.allowed ? '#2563eb' : '#b91c1c'}
+          stroke={previewLine.allowed ? 'var(--plan-line)' : 'var(--plan-error)'}
           stroke-width={s(0.04)}
           stroke-dasharray={dash(0.15, 0.1)}
           pointer-events="none"
@@ -4263,7 +4263,7 @@
           <path
             d={previewLine.angle.path}
             fill="none"
-            stroke="#2563eb"
+            stroke="var(--plan-line)"
             stroke-width={s(0.03)}
             pointer-events="none"
           />
@@ -4271,7 +4271,7 @@
         {#if previewLine.angle}
           <text
             transform={upright(previewLine.angle.x, previewLine.angle.z)}
-            fill="#1d4ed8"
+            fill="var(--plan-line)"
             font-size={s(0.42)}
             text-anchor="middle"
             dominant-baseline="middle"
@@ -4283,7 +4283,7 @@
         {#if previewLine.lengthLabel}
           <text
             transform={upright(previewLine.lengthLabel.x, previewLine.lengthLabel.z, previewLine.lengthLabel.rotate)}
-            fill="#1d4ed8"
+            fill="var(--plan-line)"
             font-size={s(0.38)}
             text-anchor="middle"
             dominant-baseline="middle"
@@ -4299,21 +4299,21 @@
             cx={corner.x}
             cy={corner.z}
             r={s(hoveredCorner?.id === corner.id ? 0.28 : (planScope === 'building' ? 0.16 : 0.08))}
-            fill={hoveredCorner?.id === corner.id ? '#2563eb' : (planScope === 'building' ? '#18181b' : '#71717a')}
+            fill={hoveredCorner?.id === corner.id ? 'var(--plan-line)' : (planScope === 'building' ? 'var(--plan-ink)' : 'var(--plan-muted)')}
             pointer-events="none"
           />
         {/each}
       {/if}
       {#if rotateHandle}
         <g class="rotate" transform={`translate(${rotateHandle.x} ${rotateHandle.z})`} onpointerdown={beginRotate}>
-          <circle r={turnRadius} fill="#fff" stroke="#2563eb" stroke-width={s(0.04)} />
-          <path d={ROTATE_ICON} fill="#2563eb" pointer-events="none" transform="scale({turnScale}) translate(-0.39 -0.39) scale(0.0325)" />
+          <circle r={turnRadius} fill="var(--plan-paper)" stroke="var(--plan-line)" stroke-width={s(0.04)} />
+          <path d={ROTATE_ICON} fill="var(--plan-line)" pointer-events="none" transform="scale({turnScale}) translate(-0.39 -0.39) scale(0.0325)" />
         </g>
       {/if}
       {#if rotateLabel}
         <text
           transform={upright(rotateLabel.x, rotateLabel.z)}
-          fill="#1d4ed8"
+          fill="var(--plan-line)"
           font-size={s(0.42)}
           text-anchor="middle"
           dominant-baseline="middle"
@@ -4328,7 +4328,7 @@
           cy={rectanglePreview.corners[2].z}
           r={s(0.22)}
           fill="none"
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.045)}
           pointer-events="none"
         />
@@ -4338,7 +4338,7 @@
           cy={previewLine.z2}
           r={s(0.22)}
           fill="none"
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.045)}
           pointer-events="none"
         />
@@ -4348,7 +4348,7 @@
           cy={hoveredBelow.z}
           r={s(0.22)}
           fill="none"
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.045)}
           pointer-events="none"
         />
@@ -4358,7 +4358,7 @@
           cy={hoveredWall.z}
           r={s(0.22)}
           fill="none"
-          stroke="#2563eb"
+          stroke="var(--plan-line)"
           stroke-width={s(0.045)}
           pointer-events="none"
         />
@@ -4369,7 +4369,7 @@
           cy={pointerPlan.z}
           r={CORNER_SNAP_M}
           fill="none"
-          stroke="#93c5fd"
+          stroke="var(--plan-line-soft)"
           stroke-width={s(0.025)}
           pointer-events="none"
         />
@@ -4446,7 +4446,7 @@
     width: 100%;
     height: 100%;
     min-height: 0;
-    background: #f4f4f5;
+    background: var(--plan-ground);
   }
 
   .stage {
@@ -4506,14 +4506,14 @@
   }
 
   .room-name {
-    fill: #27272a;
-    font-family: system-ui, sans-serif;
+    fill: var(--plan-ink);
+    font-family: var(--font-sans);
     font-weight: 600;
   }
 
   .room-area {
-    fill: #52525b;
-    font-family: system-ui, sans-serif;
+    fill: var(--plan-muted);
+    font-family: var(--font-sans);
   }
 
   .service-line {
@@ -4521,123 +4521,123 @@
     stroke-linecap: round;
   }
   .service-line.sewer {
-    stroke: #7c4a1e;
+    stroke: var(--plan-sewer);
   }
   .downpipe {
-    fill: #ffffff;
-    stroke: #57534e;
+    fill: var(--plan-paper);
+    stroke: var(--plan-muted);
   }
   .downpipe.linked {
-    fill: #0284c7;
-    stroke: #0369a1;
+    fill: var(--plan-water);
+    stroke: var(--plan-water);
   }
   .downpipe-lead {
-    stroke: #0284c7;
+    stroke: var(--plan-water);
     stroke-linecap: round;
   }
   .service-line.gas {
-    stroke: #a21caf;
+    stroke: var(--plan-gas);
     stroke-dasharray: 0.12 0.08;
   }
   .service-line.gas.chosen {
     stroke-dasharray: none;
   }
   .service-line.water {
-    stroke: #0284c7;
+    stroke: var(--plan-water);
     stroke-dasharray: 0.3 0.15;
   }
   .service-mark.sewer {
-    fill: #fef3c7;
-    stroke: #7c4a1e;
+    fill: var(--plan-paper);
+    stroke: var(--plan-sewer);
   }
   .service-mark.water {
-    fill: #e0f2fe;
-    stroke: #0284c7;
+    fill: var(--plan-paper);
+    stroke: var(--plan-water);
   }
   .service-line.overflow {
     stroke-dasharray: 0.2 0.12;
   }
   .service-mark.septic {
-    fill: #e7e5e4;
-    stroke: #7c4a1e;
+    fill: var(--plan-plot);
+    stroke: var(--plan-sewer);
   }
   .service-mark.soakaway {
-    fill: #f5f5f4;
-    stroke: #7c4a1e;
+    fill: var(--plan-paper);
+    stroke: var(--plan-sewer);
     stroke-dasharray: 0.2 0.12;
   }
   .service-handle {
-    fill: #ffffff;
-    stroke: #2563eb;
+    fill: var(--plan-paper);
+    stroke: var(--plan-line);
   }
   .service-handle.active {
-    fill: #2563eb;
+    fill: var(--plan-line);
   }
   .service-add {
-    fill: #ffffff;
-    stroke: #93c5fd;
+    fill: var(--plan-paper);
+    stroke: var(--plan-line-soft);
   }
   .service-add-mark {
-    stroke: #2563eb;
+    stroke: var(--plan-line);
   }
   .service-exit {
-    fill: #7c4a1e;
+    fill: var(--plan-sewer);
   }
   .service-depth {
-    fill: #7c4a1e;
-    font-family: system-ui, sans-serif;
+    fill: var(--plan-sewer);
+    font-family: var(--font-sans);
   }
   .service-depth.short {
-    fill: #b91c1c;
+    fill: var(--plan-error);
     font-weight: 600;
   }
 
   .stair-flight {
-    fill: #fafaf9;
-    stroke: #52525b;
+    fill: var(--plan-paper);
+    stroke: var(--plan-muted);
     stroke-width: 0.03;
   }
 
   .stair-flight.chosen {
-    fill: #eff6ff;
-    stroke: #2563eb;
+    fill: var(--plan-line-wash);
+    stroke: var(--plan-line);
   }
 
   .stair-flight.preview {
-    fill: rgba(37, 99, 235, 0.08);
-    stroke: #2563eb;
+    fill: var(--plan-line-wash);
+    stroke: var(--plan-line);
     stroke-dasharray: 0.15 0.1;
   }
 
   .stair-flight.preview.invalid {
-    fill: rgba(185, 28, 28, 0.08);
-    stroke: #b91c1c;
+    fill: var(--plan-error-wash);
+    stroke: var(--plan-error);
   }
 
   .stair-nosing {
-    stroke: #71717a;
+    stroke: var(--plan-muted);
     stroke-width: 0.015;
   }
 
   .stair-arrow {
-    stroke: #27272a;
+    stroke: var(--plan-ink);
     stroke-width: 0.025;
   }
 
   .stair-foot {
-    fill: #27272a;
+    fill: var(--plan-ink);
   }
 
   .stair-void {
-    fill: rgba(255, 255, 255, 0.6);
-    stroke: #71717a;
+    fill: color-mix(in srgb, var(--plan-paper) 60%, transparent);
+    stroke: var(--plan-muted);
     stroke-width: 0.025;
     stroke-dasharray: 0.2 0.12;
   }
 
   .room-name.short,
   .room-area.short {
-    fill: #b45309;
+    fill: var(--plan-caution);
   }
 
   .rotate {

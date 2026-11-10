@@ -124,7 +124,7 @@
 <div class="flex flex-wrap items-center gap-2 border-b bg-background px-2 py-1.5 sm:gap-3 sm:px-3" class:hidden={documentStore.readOnly}>
   {#if focusedCells}
     <div class="flex items-center gap-1.5 text-xs font-medium px-1">
-      <span class="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Room</span>
+      <span class="font-mono text-[10px] tracking-widest text-line uppercase">Room</span>
       <span class="font-semibold text-foreground truncate max-w-[120px] sm:max-w-none">{focusedCells.name}</span>
     </div>
     <div class="h-4 w-px bg-border shrink-0"></div>
@@ -139,7 +139,7 @@
       aria-label="Room interior tools"
     >
       <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-        <MousePointer2 /><span class="hidden sm:inline">Select</span>
+        <MousePointer2 /><span class="hidden sm:inline">Select</span><span class="ml-0.5 font-mono text-[10px] opacity-60 max-sm:hidden" aria-hidden="true">V</span>
       </ToggleGroup.Item>
       <ToggleGroup.Item value="draw-counter" aria-label="Counters & Cupboards" title="Counters & Cupboards: kitchen worktops and built-in cupboards" class="max-sm:px-2">
         <ChefHat /><span class="hidden sm:inline">Counters</span>
@@ -183,7 +183,7 @@
         aria-label="Building tools"
       >
         <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-          <MousePointer2 /><span class="hidden sm:inline">Select</span>
+          <MousePointer2 /><span class="hidden sm:inline">Select</span><span class="ml-0.5 font-mono text-[10px] opacity-60 max-sm:hidden" aria-hidden="true">V</span>
         </ToggleGroup.Item>
         <ToggleGroup.Item value="draw-double" aria-label="Wall" title="Wall. Hold Shift to draw a rectangle." class="max-sm:px-2">
           <BrickWall /><span class="hidden sm:inline">Wall</span>
@@ -213,7 +213,7 @@
         aria-label="Site tools"
       >
         <ToggleGroup.Item value="select" aria-label="Select" title="Select (V)" class="max-sm:px-2">
-          <MousePointer2 /><span class="hidden sm:inline">Select</span>
+          <MousePointer2 /><span class="hidden sm:inline">Select</span><span class="ml-0.5 font-mono text-[10px] opacity-60 max-sm:hidden" aria-hidden="true">V</span>
         </ToggleGroup.Item>
         <ToggleGroup.Item value="draw-paving" aria-label="Paving" title="Paving: driveways, paths and patios on the ground" class="max-sm:px-2">
           <Grid2x2 /><span class="hidden sm:inline">Paving</span>

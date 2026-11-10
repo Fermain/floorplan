@@ -126,28 +126,28 @@
 
 <style>
   .fixture {
-    --ink: #52525b;
+    --ink: var(--plan-muted);
     stroke: var(--ink);
     stroke-width: var(--line);
     fill: none;
   }
   .fixture.electrical {
-    --ink: #b45309;
+    --ink: var(--plan-caution);
   }
   .fixture.plumbing {
-    --ink: #0369a1;
+    --ink: var(--plan-water);
   }
   .fixture.gas {
-    --ink: #a21caf;
+    --ink: var(--plan-gas);
   }
   .fixture.building {
-    --ink: #0f766e;
+    --ink: var(--plan-guide);
   }
   .fixture.invalid {
-    --ink: #b91c1c;
+    --ink: var(--plan-error);
   }
   .fixture .fill {
-    fill: #ffffff;
+    fill: var(--plan-paper);
   }
   .fixture .solid {
     fill: var(--ink);
@@ -159,7 +159,7 @@
     opacity: 0.75;
   }
   .fixture.chosen {
-    --ink: #2563eb;
+    --ink: var(--plan-line);
     stroke-width: calc(var(--line) * 2);
   }
 </style>
