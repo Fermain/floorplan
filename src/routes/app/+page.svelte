@@ -16,6 +16,7 @@
   import { EXAMPLES, type Example } from '$lib/examples'
   import { projectFacts } from '$lib/model/summary'
   import { takeoff, totalCost } from '$lib/cost/quantities'
+  import Lockup from '$lib/components/brand/Lockup.svelte'
   import PlanThumbnail from '$lib/components/project/PlanThumbnail.svelte'
   import SettingsDialog from '$lib/components/app/SettingsDialog.svelte'
 
@@ -242,10 +243,10 @@
 {/snippet}
 
 <div class="flex h-dvh flex-col overflow-hidden bg-muted/40">
-  <header class="flex flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-1.5">
-    <div class="flex items-baseline gap-2">
-      <h1 class="text-sm font-semibold">Floorplan</h1>
-      <p class="text-sm text-muted-foreground max-md:hidden">House design, priced and checked as you draw.</p>
+  <header class="flex min-h-14 flex-wrap items-center justify-between gap-2 border-b border-rule bg-background px-3 py-2 md:px-4">
+    <div class="flex items-center gap-4">
+      <h1><Lockup /></h1>
+      <p class="font-mono text-[11px] tracking-wider text-muted-foreground uppercase max-md:hidden">Projects</p>
     </div>
     <div class="flex items-center gap-2">
       <Button variant="ghost" size="sm" onclick={() => (settingsOpen = true)}><Settings /><span class="max-sm:sr-only">Settings</span></Button>

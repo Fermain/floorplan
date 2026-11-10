@@ -6,7 +6,6 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
-  import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Check from '@lucide/svelte/icons/check'
   import Upload from '@lucide/svelte/icons/upload'
   import OpeningFields from '$lib/components/project/OpeningFields.svelte'
@@ -25,6 +24,7 @@
   import { loadHeightfield, loadPlot } from '$lib/plot/load'
   import { DEFAULT_SAMPLE_ID, documentFromSample, documentFromSite, levelGround, samplePlot } from '$lib/plot/samples'
   import { DEFAULT_WALL_SYSTEM_ID } from '$lib/model/systems'
+  import RoomSymbol from '$lib/components/brand/RoomSymbol.svelte'
   import Zap from '@lucide/svelte/icons/zap'
   import { homeHref, sectionHref } from '$lib/routes/links'
   import { draft, draftDefaults, NEW_APRON_M, resetDraft } from '$lib/state/newProject.svelte'
@@ -145,29 +145,26 @@
 </svelte:head>
 
 <div class="flex min-h-dvh flex-col bg-muted/40">
-  <header class="flex items-center gap-2 border-b bg-background px-2 py-2 sm:gap-3 sm:px-3">
-    <Button variant="ghost" size="icon-sm" href={homeHref()} aria-label="All projects"><ArrowLeft /></Button>
-    <span class="hidden text-sm font-medium sm:inline">New project</span>
-    <ol class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm" aria-label="Steps">
+  <header class="flex h-12 items-stretch border-b border-rule bg-background md:h-14">
+    <a href={homeHref()} aria-label="All projects" title="All projects" class="grid aspect-square h-full place-items-center border-r border-rule hover:bg-accent">
+      <RoomSymbol />
+    </a>
+    <span class="hidden items-center border-r border-rule px-4 text-[15px] font-semibold sm:flex">New project</span>
+    <ol class="flex min-w-0 flex-1 items-stretch overflow-x-auto text-sm" aria-label="Steps">
       {#each STEPS as item, i (item.id)}
-        <li>
+        <li class="flex">
           <button
             type="button"
             class={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1',
-              item.id === step ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/60',
+              'flex shrink-0 items-center gap-2 border-r px-3 md:px-4',
+              item.id === step ? 'border-rule bg-card font-semibold' : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+              item.id === step && i > 0 && '-ml-px border-l',
             )}
             aria-current={item.id === step ? 'step' : undefined}
             onclick={() => go(item.id)}
           >
-            <span
-              class={cn(
-                'flex size-5 items-center justify-center rounded-full border text-xs',
-                i < index && 'border-primary bg-primary text-primary-foreground',
-                i === index && 'border-primary',
-              )}
-            >
-              {#if i < index}<Check class="size-3" />{:else}{i + 1}{/if}
+            <span class={cn('font-mono text-[11px] font-normal', i <= index && 'text-line')}>
+              {#if i < index}<Check class="size-3" />{:else}{String(i + 1).padStart(2, '0')}{/if}
             </span>
             <span class={item.id === step ? '' : 'max-sm:sr-only'}>{item.label}</span>
           </button>
