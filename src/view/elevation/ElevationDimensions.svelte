@@ -199,30 +199,30 @@
   }
 
   line {
-    stroke: #1d4ed8;
+    stroke: var(--plan-line);
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
   }
 
   .witness {
-    stroke: #93c5fd;
+    stroke: var(--plan-line-soft);
   }
 
   text {
-    fill: #1e3a8a;
+    fill: var(--plan-line);
     font-family: system-ui, sans-serif;
     paint-order: stroke;
-    stroke: #f4f4f5;
+    stroke: var(--plan-ground);
     stroke-width: var(--halo);
     stroke-linejoin: round;
   }
 
   .overall {
-    fill: #52525b;
+    fill: var(--plan-muted);
   }
 
   .centre line {
-    stroke: #be185d;
+    stroke: var(--plan-course);
     stroke-dasharray: 10 3 2 3;
   }
 
@@ -232,36 +232,36 @@
   }
 
   .centre path {
-    fill: #be185d;
+    fill: var(--plan-course);
     stroke: none;
   }
 
   .centre text {
-    fill: #9d174d;
+    fill: var(--plan-course);
   }
 
   .centre.on line {
-    stroke: #15803d;
+    stroke: var(--plan-ok);
   }
 
   .centre.on path {
-    fill: #15803d;
+    fill: var(--plan-ok);
   }
 
   .centre.on text {
-    fill: #166534;
+    fill: var(--plan-ok);
   }
 
   .heights line {
-    stroke: #b45309;
+    stroke: var(--plan-caution);
   }
 
   .heights text {
-    fill: #92400e;
+    fill: var(--plan-caution);
   }
 
   .conduit {
-    stroke: #d97706;
+    stroke: var(--plan-caution);
     stroke-width: 1.5px;
     stroke-dasharray: 5 4;
   }
@@ -274,15 +274,15 @@
   }
   .pipe.cold,
   .port.cold {
-    stroke: #0284c7;
+    stroke: var(--plan-water);
   }
   .pipe.hot,
   .port.hot {
-    stroke: #dc2626;
+    stroke: var(--plan-error);
   }
   .pipe.gas,
   .port.gas {
-    stroke: #a21caf;
+    stroke: var(--plan-gas);
   }
   .pipe.gas {
     stroke-dasharray: none;
@@ -290,74 +290,74 @@
   }
   .pipe.waste,
   .port.waste {
-    stroke: #78716c;
+    stroke: var(--plan-muted);
   }
   .port {
-    fill: #1c1917;
+    fill: var(--plan-ink);
     stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
   }
 
   .pipe.clash {
-    stroke: #dc2626;
+    stroke: var(--plan-error);
     stroke-width: 2.5px;
   }
 
   .conduit.clash {
-    stroke: #dc2626;
+    stroke: var(--plan-error);
     stroke-width: 2px;
   }
 
   .fittings line {
-    stroke: #b45309;
+    stroke: var(--plan-caution);
   }
 
   .fittings text {
-    fill: #92400e;
+    fill: var(--plan-caution);
   }
 
   .chosen-fitting rect {
     fill: none;
-    stroke: #2563eb;
+    stroke: var(--plan-line);
     stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
   }
 
   .chosen-fitting text {
-    fill: #1d4ed8;
+    fill: var(--plan-line);
   }
 
   .ffl line {
-    stroke: #15803d;
+    stroke: var(--plan-ok);
     stroke-dasharray: 6 4;
   }
 
   .ffl text {
-    fill: #166534;
+    fill: var(--plan-ok);
   }
 
   .ffl text.low {
-    fill: #b45309;
+    fill: var(--plan-caution);
   }
 
   .ground polyline {
     fill: none;
-    stroke: #78350f;
+    stroke: var(--plan-caution);
     stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
   }
 
   .ground polyline.natural {
-    stroke: #a8a29e;
+    stroke: var(--plan-soft);
     stroke-width: 1px;
     stroke-dasharray: 3 3;
   }
 
   .ground text {
-    fill: #78350f;
+    fill: var(--plan-caution);
   }
 
   .ground text.natural {
-    fill: #78716c;
+    fill: var(--plan-muted);
   }
 </style>

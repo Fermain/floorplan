@@ -1306,7 +1306,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
   }
 </script>
 
-<div class="root">
+<div class="root plan-drawing">
   {#if !wall || !frame}
     <p class="empty">No wall selected</p>
   {:else}
@@ -1452,8 +1452,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
     </div>
     {/if}
     <div class="scene">
-      <!-- These sit on the paper, so they take its light colours whatever the theme. -->
-      <div class="paper absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 bg-transparent">
+      <div class="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 bg-transparent">
         {#if onExit}
           <Button variant="outline" size="sm" class="shadow-xs" title="Back to the plan (Esc)" onclick={onExit}>
             <ArrowLeft />Back to plan
@@ -1479,7 +1478,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
         {/if}
       </div>
       <div
-        class="viewport paper"
+        class="viewport"
         class:elevation={locked}
         class:placing={locked && mode === 'place'}
         onpointerdown={onViewportPointerDown}
@@ -1871,7 +1870,7 @@ import type { Floor, Opening, OpeningKind, Wall, WallFinish, WallSystemId } from
 
   .viewport {
     position: relative;
-    background: var(--background);
+    background: var(--plan-ground);
     flex: 1;
     min-height: 0;
     min-width: 0;
