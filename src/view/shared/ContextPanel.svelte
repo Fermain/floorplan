@@ -173,8 +173,18 @@
   }
 
   .context-actions {
+    grid-template-columns: minmax(0, 1fr);
     border-bottom: 1px solid var(--border);
     padding-bottom: 0.75rem;
+  }
+  /* A long label wraps inside the panel rather than running out of it. */
+  .context-actions :global(:is(button, a)) {
+    min-width: 0;
+    height: auto;
+    min-height: 1.75rem;
+    padding-block: 0.25rem;
+    white-space: normal;
+    text-align: left;
   }
 </style>
 

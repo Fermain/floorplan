@@ -17,7 +17,6 @@
   import SettingsDialog from '$lib/components/app/SettingsDialog.svelte'
   import Breadcrumbs from '$lib/components/app/Breadcrumbs.svelte'
   import RoomSymbol from '$lib/components/brand/RoomSymbol.svelte'
-  import { resolveLocality } from '$lib/locality'
   import { statusLine } from '$lib/state/status.svelte'
   import { workspace } from '$lib/state/workspace.svelte'
   import type { Document } from '$lib/model/types'
@@ -98,7 +97,6 @@
           : '',
   )
 
-  const locality = $derived(resolveLocality(documentStore.document))
   const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
   // The line under the project's name, as on a drawing's title block: when it was last saved, the country it is
@@ -109,7 +107,7 @@
     if (viewing) out.push({ text: 'Preview', tone: 'line' })
     const saved = session.project?.updatedAt
     if (saved) out.push({ text: day.format(saved) })
-    out.push({ text: locality.status === 'draft' ? `${locality.id} draft` : locality.id })
+    out.push({ text: 'ZA' })
     if (saveLabel) out.push({ text: saveLabel, tone: session.saveState === 'error' ? 'error' : 'line' })
     return out
   })
@@ -314,7 +312,7 @@
         </button>
       {/if}
     </div>
-    <span class="shrink-0 tracking-wider whitespace-nowrap uppercase max-sm:hidden">{locality.checks.code} · {locality.currency.code}</span>
+    <span class="shrink-0 tracking-wider whitespace-nowrap uppercase max-sm:hidden">SANS 10400 · ZAR</span>
   </footer>
 </div>
 <SettingsDialog bind:open={settingsOpen} />

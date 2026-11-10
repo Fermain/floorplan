@@ -3832,7 +3832,7 @@
             y1={seam.carcass.p1.z}
             x2={seam.carcass.p2.x}
             y2={seam.carcass.p2.z}
-            stroke="#44403c"
+            stroke="var(--plan-ink)"
             stroke-opacity="0.35"
             stroke-width={s(0.015)}
             stroke-dasharray={dash(0.06, 0.04)}
@@ -3843,7 +3843,7 @@
           y1={seam.miter.p1.z}
           x2={seam.miter.p2.x}
           y2={seam.miter.p2.z}
-          stroke="#44403c"
+          stroke="var(--plan-ink)"
           stroke-width={s(0.022)}
         />
       {/each}
@@ -3869,14 +3869,14 @@
             width={s(1.4)}
             height={s(0.32)}
             rx={s(0.06)}
-            fill={counterDraft.problem ? '#fee2e2' : '#eff6ff'}
-            stroke={counterDraft.problem ? '#dc2626' : '#2563eb'}
+            fill={counterDraft.problem ? 'var(--plan-error-wash)' : 'var(--plan-line-wash)'}
+            stroke={counterDraft.problem ? 'var(--plan-error)' : 'var(--plan-line)'}
             stroke-width={s(0.015)}
           />
           <text
             x={midX}
             y={midZ + s(0.02)}
-            fill={counterDraft.problem ? '#dc2626' : '#1d4ed8'}
+            fill={counterDraft.problem ? 'var(--plan-error)' : 'var(--plan-line)'}
             font-size={s(0.16)}
             font-weight="600"
             text-anchor="middle"
@@ -3908,8 +3908,8 @@
           cx={startPt.x}
           cy={startPt.z}
           r={s(0.12)}
-          fill="#ffffff"
-          stroke="#2563eb"
+          fill="var(--plan-paper)"
+          stroke="var(--plan-line)"
           stroke-width={s(0.035)}
           class="cursor-ew-resize hover:scale-125 transition-transform"
           role="button"
@@ -3925,8 +3925,8 @@
           cx={endPt.x}
           cy={endPt.z}
           r={s(0.12)}
-          fill="#ffffff"
-          stroke="#2563eb"
+          fill="var(--plan-paper)"
+          stroke="var(--plan-line)"
           stroke-width={s(0.035)}
           class="cursor-ew-resize hover:scale-125 transition-transform"
           role="button"
@@ -3947,9 +3947,9 @@
           {@const isHovered = hoveredZone === zone}
           <polygon
             points={pointsAttr(zone.polygon.map((p) => [p.x, p.z] as SvgPoint))}
-            fill="#2563eb"
+            fill="var(--plan-line)"
             fill-opacity={isHovered ? 0.16 : 0.05}
-            stroke="#2563eb"
+            stroke="var(--plan-line)"
             stroke-opacity={isHovered ? 0.8 : 0.25}
             stroke-width={s(isHovered ? 0.03 : 0.018)}
             stroke-dasharray={isHovered ? undefined : dash(0.08, 0.05)}
@@ -4017,13 +4017,13 @@
                 width={s(1.7)}
                 height={s(0.44)}
                 rx={s(0.22)}
-                fill="#2563eb"
+                fill="var(--plan-line)"
                 class="shadow-md"
               />
               <text
                 x={zone.midPoint.x}
                 y={zone.midPoint.z + s(0.01)}
-                fill="#ffffff"
+                fill="var(--plan-paper)"
                 font-size={s(0.18)}
                 font-weight="600"
                 text-anchor="middle"
