@@ -1,3 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <text y="0.9em" font-size="90">🏠</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 48 48">
+  <style>
+    .ink { fill: #1b2430 }
+    .line { fill: #1f4fa3 }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #f6f4ee }
+      .line { fill: #9fb7e6 }
+    }
+  </style>
+  <path class="ink" d="M0 0H14V6H6V40H0Z M26 0H40V40H23V34H34V6H26Z"/>
+  <rect class="ink" x="20" y="26" width="3" height="14"/>
+  <path class="line" d="M20 26A14 14 0 0 0 6 40H9A11 11 0 0 1 20 29Z"/>
 </svg>
