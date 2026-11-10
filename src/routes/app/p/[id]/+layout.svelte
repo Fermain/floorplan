@@ -2,12 +2,9 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { untrack } from 'svelte'
-  import ArrowLeft from '@lucide/svelte/icons/arrow-left'
-  import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { settings } from '$lib/state/settings.svelte'
   import Redo2 from '@lucide/svelte/icons/redo-2'
   import Undo2 from '@lucide/svelte/icons/undo-2'
-  import { Badge } from '$lib/components/ui/badge'
   import { Button } from '$lib/components/ui/button'
   import { Input } from '$lib/components/ui/input'
   import { exportFloorSvg } from '$lib/export/svg'
@@ -15,11 +12,12 @@
   import { documentStore } from '$lib/state/document.svelte'
   import { deleteProject, saveProject } from '$lib/state/projects'
   import { exampleOf, session } from '$lib/state/session.svelte'
-  import Eye from '@lucide/svelte/icons/eye'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import ProjectMenubar from '$lib/components/app/ProjectMenubar.svelte'
   import SettingsDialog from '$lib/components/app/SettingsDialog.svelte'
   import Breadcrumbs from '$lib/components/app/Breadcrumbs.svelte'
+  import RoomSymbol from '$lib/components/brand/RoomSymbol.svelte'
+  import { resolveLocality } from '$lib/locality'
   import { statusLine } from '$lib/state/status.svelte'
   import { workspace } from '$lib/state/workspace.svelte'
   import type { Document } from '$lib/model/types'
@@ -99,6 +97,24 @@
           ? 'Saved'
           : '',
   )
+
+  const locality = $derived(resolveLocality(documentStore.document))
+  const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  // The line under the project's name, as on a drawing's title block: when it was last saved, the country it is
+  // drawn for, and whether the work is safe.
+  type Particular = { text: string; tone?: 'line' | 'error' }
+  const particulars = $derived.by((): Particular[] => {
+    const out: Particular[] = []
+    if (viewing) out.push({ text: 'Preview', tone: 'line' })
+    const saved = session.project?.updatedAt
+    if (saved) out.push({ text: day.format(saved) })
+    out.push({ text: locality.status === 'draft' ? `${locality.id} draft` : locality.id })
+    if (saveLabel) out.push({ text: saveLabel, tone: session.saveState === 'error' ? 'error' : 'line' })
+    return out
+  })
+
+  const note = $derived(!!statusLine.text && (statusLine.error || settings.hints))
 
   function startRename() {
     nameDraft = session.project?.name ?? ''
@@ -185,50 +201,48 @@
   <title>{pageTitle}</title>
 </svelte:head>
 
-<div class="flex h-dvh flex-col overflow-hidden bg-muted/40">
-  <header class="z-20 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 border-b bg-background px-2 py-1.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:gap-3 md:px-3 md:py-2">
-    <div class="flex min-w-0 items-center gap-1 md:gap-2">
-      <Button variant="ghost" size="icon-sm" href={homeHref()} aria-label="All projects">
-        <ArrowLeft />
-      </Button>
-      {#if viewing}
-        <span class="min-w-0 truncate px-1.5 py-0.5 text-sm font-medium">{session.project?.name ?? '…'}</span>
-        <Badge variant="secondary" class="shrink-0 gap-1 font-normal max-sm:hidden"><Eye class="size-3" />Preview</Badge>
-      {:else if renaming}
-        <Input
-          class="h-7 w-40 max-w-full sm:w-56"
-          bind:value={nameDraft}
-          autofocus
-          onblur={() => void finishRename()}
-          onkeydown={(event) => {
-            if (event.key === 'Enter') void finishRename()
-            if (event.key === 'Escape') renaming = false
-          }}
-        />
-      {:else}
-        <button
-          type="button"
-          class="min-w-0 truncate rounded-md px-1.5 py-0.5 text-sm font-medium hover:bg-muted"
-          title="Rename"
-          onclick={startRename}
-        >
-          {session.project?.name ?? '…'}
-        </button>
-      {/if}
-      {#if workspace.breadcrumbs.length > 0}
-        <ChevronRight class="size-3.5 shrink-0 text-muted-foreground/50 max-sm:hidden" aria-hidden="true" />
-        <div class="min-w-0 truncate max-sm:hidden">
-          <Breadcrumbs items={workspace.breadcrumbs} />
-        </div>
-      {/if}
-      {#if saveLabel}
-        <Badge variant={session.saveState === 'error' ? 'destructive' : 'secondary'} class="shrink-0 font-normal">
-          {saveLabel}
-        </Badge>
-      {/if}
+<div class="flex h-dvh flex-col overflow-hidden bg-background">
+  <!-- The title block: the symbol, the project's name over a line of particulars, the numbered sheets, and undo. -->
+  <header class="z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] border-b border-rule bg-background md:h-14 md:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+    <a href={homeHref()} aria-label="All projects" title="All projects" class="grid size-12 place-items-center border-r border-rule hover:bg-accent md:size-14">
+      <RoomSymbol />
+    </a>
+    <div class="flex min-w-0 flex-col justify-center gap-0.5 px-3 md:px-4">
+      <div class="flex min-w-0 items-center gap-1.5">
+        {#if viewing}
+          <span class="min-w-0 truncate text-[15px] font-semibold">{session.project?.name ?? '…'}</span>
+        {:else if renaming}
+          <Input
+            class="h-6 w-40 max-w-full sm:w-56"
+            bind:value={nameDraft}
+            autofocus
+            onblur={() => void finishRename()}
+            onkeydown={(event) => {
+              if (event.key === 'Enter') void finishRename()
+              if (event.key === 'Escape') renaming = false
+            }}
+          />
+        {:else}
+          <button type="button" class="-mx-1 min-w-0 truncate px-1 text-left text-[15px] font-semibold hover:bg-accent" title="Rename" onclick={startRename}>
+            {session.project?.name ?? '…'}
+          </button>
+        {/if}
+        {#if workspace.breadcrumbs.length > 0}
+          <ChevronRight class="size-3.5 shrink-0 text-muted-foreground/50 max-sm:hidden" aria-hidden="true" />
+          <div class="min-w-0 truncate max-sm:hidden">
+            <Breadcrumbs items={workspace.breadcrumbs} />
+          </div>
+        {/if}
+      </div>
+      <p class="flex min-w-0 items-center gap-1.5 truncate font-mono text-[11px] tracking-wider whitespace-nowrap text-muted-foreground uppercase">
+        {#each particulars as item, index (item.text)}
+          {#if index > 0}<span aria-hidden="true">·</span>{/if}
+          <span class={item.tone === 'error' ? 'text-destructive' : item.tone === 'line' ? 'text-line' : ''}>{item.text}</span>
+        {/each}
+      </p>
     </div>
 
-    <div class="flex items-center justify-end gap-0.5 md:col-start-3">
+    <div class="flex items-center justify-end gap-0.5 px-2 md:col-start-4 md:px-3">
       {#if viewing}
         <Button size="sm" disabled={copying} onclick={() => void openCopy()}>{copying ? 'Opening…' : 'Open a copy to edit'}</Button>
       {:else}
@@ -244,20 +258,23 @@
         <ProjectMenubar {id} {active} {viewing} actions={menuActions} compact />
       </div>
     </div>
+    <!-- The sheets. The one in view has ink sides and a paper fill, and no bar beneath it. -->
     <nav
-      class="col-span-2 mt-1.5 flex items-center gap-1 overflow-x-auto md:col-span-1 md:col-start-2 md:row-start-1 md:mt-0 md:justify-center md:overflow-visible md:rounded-lg md:bg-muted md:p-1"
-      aria-label="Project"
+      class="col-span-full flex h-9 items-stretch overflow-x-auto border-t border-border text-sm md:col-span-1 md:col-start-3 md:row-start-1 md:h-auto md:overflow-visible md:border-t-0 md:border-l md:border-rule"
+      aria-label="Sheets"
     >
-      {#each sections as section (section.id)}
-        <Button
-          size="sm"
-          variant={active === section.id ? 'outline' : 'ghost'}
+      {#each sections as section, index (section.id)}
+        {@const current = active === section.id}
+        <a
           href={sectionHref(id, section.id)}
-          aria-current={active === section.id ? 'page' : undefined}
-          class="shrink-0 {active === section.id ? 'shadow-xs' : 'text-muted-foreground'}"
+          aria-current={current ? 'page' : undefined}
+          class="flex shrink-0 items-center gap-2 border-r px-3 md:px-4 {current
+            ? 'border-rule bg-card font-semibold text-foreground'
+            : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'} {current && index > 0 ? '-ml-px border-l' : ''}"
         >
-          {section.label}
-        </Button>
+          <span class="font-mono text-[11px] font-normal {current ? 'text-line' : ''}">{String(index + 1).padStart(2, '0')}</span>
+          <span>{section.label}</span>
+        </a>
       {/each}
     </nav>
   </header>
@@ -277,26 +294,27 @@
       {/if}
     </div>
   </main>
-  {#if statusLine.text && (statusLine.error || settings.hints)}
-    <!-- A status bar under the drawing rather than a note floating over it, so it never covers the controls.
-         One line; a tap or click opens a long message out in full. -->
-    <footer
-      class="z-10 border-t px-3 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] text-xs sm:text-sm {statusLine.error
-        ? 'border-destructive/30 bg-destructive/10 text-destructive'
-        : 'bg-background text-muted-foreground'}"
-      aria-live="polite"
-    >
-      <button
-        type="button"
-        class="flex w-full items-start gap-1.5 text-left"
-        aria-expanded={statusOpen}
-        title={statusOpen ? undefined : statusLine.text}
-        onclick={() => (statusOpen = !statusOpen)}
-      >
-        {#if statusLine.error}<TriangleAlert class="mt-0.5 size-3.5 shrink-0" />{/if}
-        <span class={statusOpen ? '' : 'truncate'}>{statusLine.text}</span>
-      </button>
-    </footer>
-  {/if}
+  <!-- The notes line under the drawing: what the tool in hand wants, or what has gone wrong. It is always there,
+       so the drawing never shifts when a note comes or goes. A tap or click opens a long note out in full. -->
+  <footer
+    class="z-10 flex min-h-[30px] items-start gap-4 border-t border-rule bg-background px-3 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] font-mono text-[11px] leading-[18px] text-muted-foreground"
+  >
+    <div class="min-w-0 flex-1" aria-live="polite">
+      {#if note}
+        <button
+          type="button"
+          class="flex w-full min-w-0 items-start gap-1.5 text-left"
+          aria-expanded={statusOpen}
+          title={statusOpen ? undefined : statusLine.text}
+          onclick={() => (statusOpen = !statusOpen)}
+        >
+          <span class="shrink-0 tracking-wider {statusLine.error ? 'text-destructive' : 'text-line'}">{statusLine.error ? 'CHECK' : 'NOTE'}</span>
+          <span aria-hidden="true">·</span>
+          <span class="{statusOpen ? '' : 'truncate'} {statusLine.error ? 'text-destructive' : ''}">{statusLine.text}</span>
+        </button>
+      {/if}
+    </div>
+    <span class="shrink-0 tracking-wider whitespace-nowrap uppercase max-sm:hidden">{locality.checks.code} · {locality.currency.code}</span>
+  </footer>
 </div>
 <SettingsDialog bind:open={settingsOpen} />
