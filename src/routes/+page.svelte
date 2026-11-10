@@ -3,6 +3,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import { EXAMPLES } from '$lib/examples'
   import { exampleHref } from '$lib/routes/links'
+  import HeroSlides from '$lib/components/marketing/HeroSlides.svelte'
   import SheetHeading from '$lib/components/marketing/SheetHeading.svelte'
 
   const REPO = 'https://github.com/Fermain/floorplan'
@@ -131,6 +132,22 @@
   const PRO = 'https://pro.floorplan.ferma.in'
   const heroTitle = 'Design a house\nbrick by brick.'
 
+  // The screens in the slider at the top: the tour's pictures, each with three notes under it, the first its name.
+  const slideNotes: Record<string, string[]> = {
+    review: ['Review in 3D', 'Summer · 12:00', 'Sun and shadow'],
+    plan: ['Plan', 'Ground floor', 'Rooms named and measured'],
+    focus: ['Wall focus', '1 791 whole · 270 cut', '2 lintels · 1.97 m, 2.78 m'],
+    quantities: ['Quantities', 'Your rates', 'R 1 558 864,00'],
+    services: ['Services', 'Drains, water, power', 'Routes through the house'],
+    alterations: ['Alterations', 'New wall in green', 'Taken down in red'],
+    checks: ['Checks', 'SANS 10400', '10 rooms in order'],
+  }
+  const slideOrder = ['review', 'plan', 'focus', 'quantities', 'services', 'alterations', 'checks']
+  const slides = slideOrder.flatMap((id) => {
+    const item = tour.find((entry) => entry.id === id)
+    return item ? [{ image: `/shots/${item.image}`, alt: item.alt, notes: slideNotes[id] }] : []
+  })
+
   // What it means that the app is free, said three ways.
   const commons = [
     { name: 'Free to use', text: 'Everything on this page, with no trial, no account and no card.' },
@@ -185,7 +202,7 @@
         </div>
         <p class="m-0 font-mono text-xs tracking-wider text-muted-foreground uppercase">In your browser · No account · Projects stay on your machine</p>
       </div>
-      {@render shot('review.jpg', 'A face-brick farmhouse with solar panels, two cottages and a garage on a sloping plot, seen in the 3D Review', true)}
+      <HeroSlides {slides} />
     </section>
 
     <section id="community" class="scroll-mt-16 border-t-[1.5px] border-rule bg-card" aria-label="For the community">
